@@ -1,0 +1,12 @@
+data/*.sqlite3
+data/*.sqlite3-*
+data/backups/
+data/uploads/
+node_modules/
+.vercel/
+.env
+__pycache__/
+*.pyc
+.DS_Store
+.vercel
+.env*.local
