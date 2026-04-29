@@ -35,18 +35,29 @@ MODULE_TABLES = {
 }
 
 DEFAULT_PERMS = {
-    "Super Admin": ["dashboard", "tasks", "daily_progress", "schedule", "programs", "finance", "documents", "settings"],
+    "Super Admin + Manager": ["dashboard", "tasks", "daily_progress", "schedule", "programs", "finance", "documents", "settings"],
+    "Program Admin + Kepala Marketing/Kreatif": ["dashboard", "tasks", "daily_progress", "schedule", "programs", "documents"],
+    "Staff Kreatif": ["dashboard", "tasks", "daily_progress", "documents"],
+    "Staff Marketing": ["dashboard", "tasks", "daily_progress", "schedule", "documents"],
     "Finance": ["dashboard", "daily_progress", "finance"],
-    "Program Admin": ["dashboard", "tasks", "daily_progress", "schedule", "programs", "documents"],
-    "Trainer": ["dashboard", "daily_progress", "schedule", "programs", "documents"],
-    "Staff": ["dashboard", "tasks", "daily_progress", "schedule", "documents"],
+    "Staff Finance + Dokumen": ["dashboard", "daily_progress", "finance", "documents"],
+    "Kepala Trainer": ["dashboard", "daily_progress", "schedule", "programs", "documents"],
 }
 DEFAULT_ROLE_COLORS = {
-    "Super Admin": "#5B8DF6",
+    "Super Admin + Manager": "#F97316",
+    "Program Admin + Kepala Marketing/Kreatif": "#22C55E",
+    "Staff Kreatif": "#22C55E",
+    "Staff Marketing": "#22C55E",
+    "Staff Finance + Dokumen": "#7C3AED",
+    "Kepala Trainer": "#7C3AED",
     "Finance": "#34D399",
-    "Program Admin": "#A78BFA",
-    "Trainer": "#FBBF24",
-    "Staff": "#6B7280",
+}
+SUPER_ADMIN_ROLES = {"Super Admin", "Super Admin + Manager"}
+LEGACY_ROLE_MIGRATIONS = {
+    "Super Admin": "Super Admin + Manager",
+    "Program Admin": "Program Admin + Kepala Marketing/Kreatif",
+    "Trainer": "Kepala Trainer",
+    "Staff": "Staff Marketing",
 }
 EMPTY_STATE = {
     "userId": None,
@@ -259,9 +270,18 @@ def seed_defaults(conn):
             """
             INSERT INTO roles (name, permissions, color)
             VALUES (?, ?, ?)
-            ON CONFLICT(name) DO NOTHING
+            ON CONFLICT(name) DO UPDATE SET
+                permissions=excluded.permissions,
+                color=excluded.color,
+                updated_at=CURRENT_TIMESTAMP
             """,
             (role, json.dumps(perms), DEFAULT_ROLE_COLORS.get(role, "#6B7280")),
+        )
+    for old_role, new_role in LEGACY_ROLE_MIGRATIONS.items():
+        conn.execute("UPDATE users SET role=?, updated_at=CURRENT_TIMESTAMP WHERE role=?", (new_role, old_role))
+        conn.execute(
+            "DELETE FROM roles WHERE name=? AND NOT EXISTS (SELECT 1 FROM users WHERE role=?)",
+            (old_role, old_role),
         )
     row = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()
     if row["c"] == 0:
@@ -276,7 +296,7 @@ def seed_defaults(conn):
                 "admin",
                 "admin@grcc.id",
                 hash_password(os.environ.get("ADMIN_INITIAL_PASSWORD", "admin12345")),
-                "Super Admin",
+                "Super Admin + Manager",
                 "Manajemen",
                 "AG",
             ),
@@ -610,7 +630,7 @@ class GRCCHandler(SimpleHTTPRequestHandler):
     def require_admin(self):
         if not self.require_user():
             return False
-        if self.user["role"] == "Super Admin":
+        if self.user["role"] in SUPER_ADMIN_ROLES:
             return True
         json_response(self, HTTPStatus.FORBIDDEN, {"error": "Hanya Super Admin yang boleh mengakses fitur ini"})
         return False
@@ -717,7 +737,7 @@ class GRCCHandler(SimpleHTTPRequestHandler):
         username = str(payload.get("username") or "").strip().lower()
         email = str(payload.get("email") or "").strip().lower()
         password = str(payload.get("password") or "")
-        role = str(payload.get("role") or "Staff").strip()
+        role = str(payload.get("role") or "Staff Marketing").strip()
         dept = str(payload.get("dept") or "").strip()
         av = str(payload.get("av") or initials(name)).strip()[:3].upper()
         if not name or not username or not email:
@@ -818,7 +838,7 @@ class GRCCHandler(SimpleHTTPRequestHandler):
         with connect_db() as conn:
             try:
                 if old_name and old_name != name:
-                    if old_name == "Super Admin":
+                    if old_name in SUPER_ADMIN_ROLES:
                         return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Role Super Admin tidak boleh diganti nama"})
                     conn.execute("UPDATE roles SET name=?, permissions=?, color=?, updated_at=CURRENT_TIMESTAMP WHERE name=?", (name, json.dumps(permissions), color, old_name))
                     audit(conn, self.user, "rename", "role", name, {"oldName": old_name, "permissions": permissions})
@@ -843,7 +863,7 @@ class GRCCHandler(SimpleHTTPRequestHandler):
 
     def delete_role(self, path):
         name = unquote(path.rsplit("/", 1)[-1])
-        if name == "Super Admin":
+        if name in SUPER_ADMIN_ROLES:
             return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Role Super Admin tidak boleh dihapus"})
         with connect_db() as conn:
             if conn.execute("SELECT id FROM users WHERE role = ? AND active = 1 LIMIT 1", (name,)).fetchone():

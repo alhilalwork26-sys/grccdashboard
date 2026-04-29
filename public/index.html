@@ -1167,16 +1167,41 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
 <script>
 /* ===== DATA ===== */
 const ACCOUNTS = [
-  {id:'owner',name:'Administrator GRCC', username:'admin', email:'admin@grcc.id', pw:'admin12345', role:'Super Admin', dept:'Manajemen', av:'AG'},
+  {id:'owner',name:'Administrator GRCC', username:'admin', email:'admin@grcc.id', pw:'admin12345', role:'Super Admin + Manager', dept:'Manajemen', av:'AG'},
 ];
 const PERMS = {
-  'Super Admin':  ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','settings'],
-  'Finance':      ['dashboard','daily_progress','finance'],
-  'Program Admin':['dashboard','tasks','daily_progress','schedule','programs','documents'],
-  'Trainer':      ['dashboard','daily_progress','schedule','programs','documents'],
-  'Staff':        ['dashboard','tasks','daily_progress','schedule','documents'],
+  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','settings'],
+  'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','documents'],
+  'Staff Kreatif': ['dashboard','tasks','daily_progress','documents'],
+  'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','documents'],
+  'Finance': ['dashboard','daily_progress','finance'],
+  'Staff Finance + Dokumen': ['dashboard','daily_progress','finance','documents'],
+  'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','documents'],
 };
-const ROLE_COLORS = {'Super Admin':'#5B8DF6','Finance':'#34D399','Program Admin':'#A78BFA','Trainer':'#FBBF24','Staff':'#6B7280'};
+const ROLE_COLORS = {
+  'Super Admin + Manager':'#F97316',
+  'Program Admin + Kepala Marketing/Kreatif':'#22C55E',
+  'Staff Kreatif':'#22C55E',
+  'Staff Marketing':'#22C55E',
+  'Finance':'#34D399',
+  'Staff Finance + Dokumen':'#7C3AED',
+  'Kepala Trainer':'#7C3AED'
+};
+const ROLE_GROUPS = {
+  superAdmin: ['Super Admin','Super Admin + Manager'],
+  programAdmin: ['Program Admin','Program Admin + Kepala Marketing/Kreatif'],
+  finance: ['Finance','Staff Finance + Dokumen'],
+  trainer: ['Trainer','Kepala Trainer'],
+  staff: ['Staff','Staff Kreatif','Staff Marketing']
+};
+function roleNameOf(userOrRole){ return typeof userOrRole === 'string' ? userOrRole : (userOrRole?.role || ''); }
+function roleIn(userOrRole, roles){ return roles.includes(roleNameOf(userOrRole)); }
+function isSuperAdminRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.superAdmin); }
+function isProgramAdminRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.programAdmin); }
+function isManagerRole(userOrRole){ return isSuperAdminRole(userOrRole) || isProgramAdminRole(userOrRole); }
+function isFinanceRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.finance); }
+function isTrainerRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.trainer); }
+function isStaffRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.staff); }
 const NAV = [
   {id:'dashboard',label:'Dashboard',  icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`},
   {id:'tasks',    label:'Task Management', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`},
@@ -1384,7 +1409,7 @@ function runAutomaticReminders(){
   if(!state.reminderLog) state.reminderLog = {};
   const todayKey = today();
   const now = new Date();
-  const admins = ACCOUNTS.filter(a => ['Super Admin','Program Admin'].includes(a.role)).map(a => a.id);
+  const admins = ACCOUNTS.filter(a => isManagerRole(a)).map(a => a.id);
   const financeWatchers = getReminderRecipientsByPage('finance');
   const progressWatchers = getReminderRecipientsByPage('daily_progress');
 
@@ -1581,13 +1606,13 @@ function missingTaskEvidenceLabels(t){
 function renderTasks(){
   if(state.taskDetail) return renderTaskDetail();
   const u=state.user;
-  const canEdit = ['Super Admin','Program Admin'].includes(u.role);
+  const canEdit = isManagerRole(u);
   const fs=state.filterTaskStatus, fu=state.filterTaskUser, ss=state.searchTask;
   const filtered = state.tasks.filter(t=>{
     if(fs!=='Semua'&&t.status!==fs) return false;
     if(fu!=='Semua'&&t.assignee!==fu) return false;
     if(ss&&!t.title.toLowerCase().includes(ss.toLowerCase())) return false;
-    if(u.role==='Staff'&&t.aId!==u.id) return false;
+    if(isStaffRole(u)&&t.aId!==u.id) return false;
     return true;
   });
   const users=['Semua',...new Set(state.tasks.map(t=>t.assignee))];
@@ -1648,8 +1673,8 @@ function renderTaskDetail(){
   if(!t) return renderTasks();
   normalizeTaskEvidence(t);
   const u=state.user;
-  const canEdit=['Super Admin','Program Admin'].includes(u.role);
-  const canAddEvidence = canEdit || t.aId === u.id || ['Finance','Trainer','Staff'].includes(u.role);
+  const canEdit=isManagerRole(u);
+  const canAddEvidence = canEdit || t.aId === u.id || isFinanceRole(u) || isTrainerRole(u) || isStaffRole(u);
   return `
   <button class="back-btn" onclick="state.taskDetail=null;renderPage()">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -1831,7 +1856,7 @@ function saveTaskEvidenceLink(taskId){
 }
 function openTaskModal(editId){
   const t = editId?state.tasks.find(x=>x.id===editId):null;
-  const isSuperAdminCreate = state.user?.role === 'Super Admin' && !editId;
+  const isSuperAdminCreate = isSuperAdminRole(state.user) && !editId;
   const assigneeBlock = isSuperAdminCreate
     ? `<div class="form-group">
         <label class="form-label">Assign ke beberapa orang</label>
@@ -1925,7 +1950,7 @@ function saveTask(editId){
     return;
   }
 
-  const isSuperAdminCreate = state.user?.role === 'Super Admin';
+  const isSuperAdminCreate = isSuperAdminRole(state.user);
   let selectedIds = [];
 
   if(isSuperAdminCreate){
@@ -2009,8 +2034,8 @@ normalizeSimpleDailyProgress();
 function renderDailyProgress(){
   normalizeSimpleDailyProgress();
   const u = state.user;
-  const canMonitor = ['Super Admin','Program Admin'].includes(u.role);
-  const canWrite = u.role !== 'Super Admin';
+  const canMonitor = isManagerRole(u);
+  const canWrite = !isSuperAdminRole(u);
 
   const mine = state.dailyProgresses
     .filter(x => x.userId === u.id)
@@ -2189,7 +2214,7 @@ function renderDailyProgress(){
         `).join('')}
       </div>
       <div style="margin-top:18px;font-size:12px;color:var(--muted);line-height:1.7">
-        Format ini dibuat lebih sederhana: pagi isi rencana kerja, sore isi hasil pengerjaan, lalu Super Admin dan Program Admin memantau perkembangannya.
+        Format ini dibuat lebih sederhana: pagi isi rencana kerja, sore isi hasil pengerjaan, lalu Super Admin + Manager dan Program Admin memantau perkembangannya.
       </div>
     </div>` : ''}
   </div>`;
@@ -2259,12 +2284,12 @@ function saveDailyProgress(){
     toast('Progres harian berhasil disimpan');
   }
 
-  if(['Program Admin','Finance','Trainer','Staff'].includes(state.user.role)){
+  if(isProgramAdminRole(state.user) || isFinanceRole(state.user) || isTrainerRole(state.user) || isStaffRole(state.user)){
     createAppNotification({
       title:'Progres harian diperbarui',
       message:`${state.user.name} mengirim progres harian tanggal ${fmtD(date)}.`,
       type:'info',
-      recipientRoles:['Super Admin','Program Admin'],
+      recipientRoles:['Super Admin','Super Admin + Manager','Program Admin','Program Admin + Kepala Marketing/Kreatif'],
       linkPage:'daily_progress',
       dedupeKey:`daily_progress_simple_${state.user.id}_${date}_${progressStatus}`
     });
@@ -2275,7 +2300,7 @@ function saveDailyProgress(){
 /* ===== SCHEDULE ===== */
 function renderSchedule(){
   const u=state.user;
-  const canEdit=['Super Admin','Program Admin'].includes(u.role);
+  const canEdit=isManagerRole(u);
   const month=state.calMonth;
   const year=month.getFullYear(), mo=month.getMonth();
   const firstDay=new Date(year,mo,1).getDay();
@@ -2683,8 +2708,8 @@ function triggerExpInvoiceUpload(expenseId){
 function renderPrograms(){
   if(state.progDetail) return renderProgDetail();
   const u=state.user;
-  const canEdit=['Super Admin','Program Admin'].includes(u.role);
-  const myProgs=u.role==='Trainer'?state.programs.filter(p=>p.tId===u.id):state.programs;
+  const canEdit=isManagerRole(u);
+  const myProgs=isTrainerRole(u)?state.programs.filter(p=>p.tId===u.id):state.programs;
   return `
   ${canEdit?`<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
     <button class="btn btn-pri" onclick="openProgModal()">
@@ -2725,7 +2750,7 @@ function renderProgDetail(){
   const p=state.programs.find(x=>x.id===state.progDetail);
   if(!p) return renderPrograms();
   const u=state.user;
-  const canAtt=['Super Admin','Program Admin','Trainer'].includes(u.role);
+  const canAtt=isManagerRole(u) || isTrainerRole(u);
   return `
   <button class="back-btn" onclick="state.progDetail=null;renderPage()">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -2786,7 +2811,7 @@ function setAtt(pid,name,val){
   renderPage();
 }
 function openProgModal(){
-  const trainers=ACCOUNTS.filter(a=>['Trainer','Super Admin'].includes(a.role));
+  const trainers=ACCOUNTS.filter(a=>isTrainerRole(a) || isSuperAdminRole(a));
   const html=`
     <div class="form-group"><label class="form-label">Nama Program <span>*</span></label>
       <input id="pf-name" class="form-control" placeholder="Nama program training...">
@@ -2829,7 +2854,7 @@ function saveProg(){
 /* ===== DOCUMENTS ===== */
 function renderDocuments(){
   const u=state.user;
-  const canUpload=['Super Admin','Program Admin','Finance','Trainer'].includes(u.role);
+  const canUpload=isManagerRole(u) || isFinanceRole(u) || isTrainerRole(u);
   const sf=state.searchDoc, ff=state.folderDoc;
   const folders=['Semua',...new Set(state.docs.map(d=>d.folder))];
   const filtered=state.docs.filter(d=>{
@@ -3000,7 +3025,7 @@ function afterRender(){}
 /* ===== INIT LOGIN PAGE ===== */
 function initLogin(){
   const qc=document.getElementById('quick-accounts');
-  qc.innerHTML=`<div style="font-size:11px;color:var(--muted);line-height:1.7">Masuk dengan akun Super Admin awal, lalu buat akun tim dari menu Pengaturan.</div>`;
+  qc.innerHTML=`<div style="font-size:11px;color:var(--muted);line-height:1.7">Masuk dengan akun Super Admin + Manager, lalu buat akun tim dari menu Pengaturan.</div>`;
   document.getElementById('hdr-date').textContent=new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 }
 function quickFill(email,pw){
@@ -3106,13 +3131,13 @@ const FAB_CONFIG = [
     label: 'Tambah Task',
     icon: '✅', color: 'rgba(91,141,246,0.15)',
     action: ()=>{ closeFab(); navigate('tasks'); setTimeout(()=>openTaskModal(), 120); },
-    canShow: u => ['Super Admin','Program Admin'].includes(u.role)
+    canShow: u => isManagerRole(u)
   },
   {
     label: 'Tambah Jadwal',
     icon: '📅', color: 'rgba(52,211,153,0.15)',
     action: ()=>{ closeFab(); navigate('schedule'); setTimeout(()=>openSchedModal(), 120); },
-    canShow: u => ['Super Admin','Program Admin'].includes(u.role)
+    canShow: u => isManagerRole(u)
   },
   {
     label: 'Catat Pengeluaran',
@@ -3124,7 +3149,7 @@ const FAB_CONFIG = [
     label: 'Progres Harian',
     icon: '📝', color: 'rgba(167,139,250,0.15)',
     action: ()=>{ closeFab(); navigate('daily_progress'); },
-    canShow: u => (PERMS[u.role]||[]).includes('daily_progress') && u.role !== 'Super Admin'
+    canShow: u => (PERMS[u.role]||[]).includes('daily_progress') && !isSuperAdminRole(u)
   },
 ];
 
@@ -3872,7 +3897,7 @@ if(state.user){
   function scanDeadlineReminders(){
     ensureNotifState();
     const now = new Date();
-    const admins = ACCOUNTS.filter(a => ['Super Admin','Program Admin'].includes(a.role)).map(a => a.id);
+    const admins = ACCOUNTS.filter(a => isManagerRole(a)).map(a => a.id);
     state.tasks.filter(t => t.status !== 'Done' && t.deadline).forEach(t => {
       const due = new Date(t.deadline + 'T23:59:59');
       const days = Math.ceil((due - now) / 86400000);
@@ -4018,7 +4043,7 @@ if(state.user){
       originalSaveScheduleNotif(editId);
       const latest = [...state.schedules].sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
       if(latest){
-        const recipients = ACCOUNTS.filter(a => ['Super Admin','Program Admin','Trainer','Staff'].includes(a.role)).map(a => a.id);
+        const recipients = ACCOUNTS.filter(a => isManagerRole(a) || isTrainerRole(a) || isStaffRole(a)).map(a => a.id);
         createAppNotification({ title: editId ? 'Jadwal diperbarui' : 'Jadwal baru ditambahkan', message:`${latest.name} dijadwalkan pada ${fmtD(latest.date)}.`, type:'info', recipientUserIds: recipients, linkPage:'schedule', dedupeKey:`sched_${latest.id}_${latest.date}_${latest.endDate}` });
       }
     };
@@ -4039,7 +4064,7 @@ if(state.user){
       originalSetAttNotif(pid,name,val);
       const prog = state.programs.find(p => p.id === pid);
       if(prog){
-        createAppNotification({ title:'Absensi peserta diperbarui', message:`Absensi ${name} pada ${prog.name} telah diperbarui.`, type:'info', recipientRoles:['Super Admin','Program Admin'], linkPage:'programs', linkId:pid, dedupeKey:`att_${pid}_${name}_${val}` });
+        createAppNotification({ title:'Absensi peserta diperbarui', message:`Absensi ${name} pada ${prog.name} telah diperbarui.`, type:'info', recipientRoles:['Super Admin','Super Admin + Manager','Program Admin','Program Admin + Kepala Marketing/Kreatif'], linkPage:'programs', linkId:pid, dedupeKey:`att_${pid}_${name}_${val}` });
       }
     };
   }
@@ -4122,7 +4147,7 @@ if(state.user){
 
   window.renderUserManagementCard = function(){
     ensureAccountUsernames();
-    if(state.user?.role !== 'Super Admin') return '';
+    if(!isSuperAdminRole(state.user)) return '';
     return `
       <div class="card" style="padding:20px;margin-top:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px">
@@ -4149,7 +4174,7 @@ if(state.user){
   };
 
   window.renderRoleManagementCard = function(){
-    if(state.user?.role !== 'Super Admin') return '';
+    if(!isSuperAdminRole(state.user)) return '';
     return `
       <div class="card" style="padding:20px;margin-top:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px">
@@ -4171,7 +4196,7 @@ if(state.user){
                 <div style="font-size:10.5px;color:var(--muted)">${(PERMS[role] || []).map(p => PAGE_LABELS[p] || p).join(', ') || 'Belum ada akses'}</div>
               </div>
               <button class="btn btn-sec btn-sm" onclick="openRoleModal('${escHtml(role)}')">Edit</button>
-              ${role !== 'Super Admin' && !ACCOUNTS.some(a => a.role === role) ? `<button class="btn btn-dan btn-sm" onclick="deleteRole('${escHtml(role)}')">Hapus</button>` : ''}
+              ${!isSuperAdminRole(role) && !ACCOUNTS.some(a => a.role === role) ? `<button class="btn btn-dan btn-sm" onclick="deleteRole('${escHtml(role)}')">Hapus</button>` : ''}
             </div>
           `).join('')}
         </div>
@@ -4181,7 +4206,7 @@ if(state.user){
   const originalRenderSettingsUsers = renderSettings;
   renderSettings = function(){
     const base = originalRenderSettingsUsers();
-    if(state.user?.role !== 'Super Admin') return base;
+    if(!isSuperAdminRole(state.user)) return base;
     const marker = '<div class="card" style="padding:20px">';
     const idx = base.indexOf(marker);
     if(idx === -1) return base + renderUserManagementCard();
@@ -4215,7 +4240,7 @@ if(state.user){
     const username = document.getElementById('um-username')?.value.trim().toLowerCase();
     const email = document.getElementById('um-email')?.value.trim();
     const password = document.getElementById('um-password')?.value || '';
-    const role = document.getElementById('um-role')?.value || 'Staff';
+    const role = document.getElementById('um-role')?.value || 'Staff Marketing';
     const dept = document.getElementById('um-dept')?.value.trim();
     if(!name || !username || !email){ toast('Nama, username, dan email wajib diisi', 'error'); return; }
     if(!/^[a-z0-9._-]{3,32}$/.test(username)){ toast('Username minimal 3 karakter, hanya huruf/angka/titik/strip/underscore', 'error'); return; }
@@ -4249,14 +4274,14 @@ if(state.user){
     const perms = new Set(PERMS[roleName] || ['dashboard']);
     const html = `
       <div style="display:grid;gap:12px">
-        <div class="form-group"><label class="form-label">Nama Role <span>*</span></label><input id="rm-name" class="form-control" value="${escHtml(roleName)}" ${roleName === 'Super Admin' ? 'disabled' : ''} placeholder="contoh: HRD, Direktur, Auditor"></div>
+        <div class="form-group"><label class="form-label">Nama Role <span>*</span></label><input id="rm-name" class="form-control" value="${escHtml(roleName)}" ${isSuperAdminRole(roleName) ? 'disabled' : ''} placeholder="contoh: HRD, Direktur, Auditor"></div>
         <div class="form-group"><label class="form-label">Warna Role</label><input id="rm-color" class="form-control" type="color" value="${ROLE_COLORS[roleName] || '#6B7280'}"></div>
         <div class="form-group">
           <label class="form-label">Akses Halaman</label>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
             ${NAV.map(n => `
               <label style="display:flex;align-items:center;gap:8px;font-size:12px;padding:9px;border:1px solid var(--border);border-radius:9px;background:rgba(255,255,255,0.025)">
-                <input type="checkbox" class="rm-perm" value="${escHtml(n.id)}" ${perms.has(n.id) || roleName === 'Super Admin' ? 'checked' : ''} ${roleName === 'Super Admin' ? 'disabled' : ''}>
+                <input type="checkbox" class="rm-perm" value="${escHtml(n.id)}" ${perms.has(n.id) || isSuperAdminRole(roleName) ? 'checked' : ''} ${isSuperAdminRole(roleName) ? 'disabled' : ''}>
                 ${escHtml(n.label)}
               </label>
             `).join('')}
@@ -4278,7 +4303,7 @@ if(state.user){
     if(!/^[A-Za-z0-9 _.-]{3,40}$/.test(name)){ toast('Nama role minimal 3 karakter', 'error'); return; }
     if(oldName && oldName !== name && PERMS[name]){ toast('Nama role sudah ada', 'error'); return; }
     const selected = [...document.querySelectorAll('.rm-perm:checked')].map(el => el.value);
-    const perms = oldName === 'Super Admin' ? PERMS['Super Admin'] : [...new Set(['dashboard', ...selected])];
+    const perms = isSuperAdminRole(oldName) ? PERMS[oldName] : [...new Set(['dashboard', ...selected])];
     if(oldName && oldName !== name){
       delete PERMS[oldName];
       ROLE_COLORS[name] = ROLE_COLORS[oldName] || color;
@@ -4295,7 +4320,7 @@ if(state.user){
   };
 
   window.deleteRole = function(roleName){
-    if(roleName === 'Super Admin' || ACCOUNTS.some(a => a.role === roleName)) return;
+    if(isSuperAdminRole(roleName) || ACCOUNTS.some(a => a.role === roleName)) return;
     if(!confirm(`Hapus role ${roleName}?`)) return;
     delete PERMS[roleName];
     delete ROLE_COLORS[roleName];
@@ -4616,7 +4641,7 @@ if(state.user){
     const username = document.getElementById('um-username')?.value.trim().toLowerCase();
     const email = document.getElementById('um-email')?.value.trim();
     const password = document.getElementById('um-password')?.value || '';
-    const role = document.getElementById('um-role')?.value || 'Staff';
+    const role = document.getElementById('um-role')?.value || 'Staff Marketing';
     const dept = document.getElementById('um-dept')?.value.trim();
     if(!name || !username || !email){ toast('Nama, username, dan email wajib diisi', 'error'); return; }
     if(!editId && password.length < 6){ toast('Password minimal 6 karakter', 'error'); return; }
@@ -4657,7 +4682,7 @@ if(state.user){
     const color = document.getElementById('rm-color')?.value || '#6B7280';
     const selected = [...document.querySelectorAll('.rm-perm:checked')].map(el => el.value);
     if(!name){ toast('Nama role wajib diisi', 'error'); return; }
-    const permissions = oldName === 'Super Admin' ? PERMS['Super Admin'] : [...new Set(['dashboard', ...selected])];
+    const permissions = isSuperAdminRole(oldName) ? PERMS[oldName] : [...new Set(['dashboard', ...selected])];
     try {
       await apiJson(oldName ? `${AUTH_API.roles}/${encodeURIComponent(oldName)}` : AUTH_API.roles, {
         method: oldName ? 'PUT' : 'POST',
@@ -4680,7 +4705,7 @@ if(state.user){
   };
 
   window.deleteRole = async function(roleName){
-    if(roleName === 'Super Admin' || ACCOUNTS.some(a => a.role === roleName)) return;
+    if(isSuperAdminRole(roleName) || ACCOUNTS.some(a => a.role === roleName)) return;
     if(!confirm(`Hapus role ${roleName}?`)) return;
     try {
       await apiJson(`${AUTH_API.roles}/${encodeURIComponent(roleName)}`, {method:'DELETE'});

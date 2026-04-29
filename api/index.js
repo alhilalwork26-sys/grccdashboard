@@ -12,18 +12,29 @@ const MODULE_TABLES = {
   notifications: 'notifications'
 };
 const DEFAULT_PERMS = {
-  'Super Admin': ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','settings'],
+  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','settings'],
+  'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','documents'],
+  'Staff Kreatif': ['dashboard','tasks','daily_progress','documents'],
+  'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','documents'],
   Finance: ['dashboard','daily_progress','finance'],
-  'Program Admin': ['dashboard','tasks','daily_progress','schedule','programs','documents'],
-  Trainer: ['dashboard','daily_progress','schedule','programs','documents'],
-  Staff: ['dashboard','tasks','daily_progress','schedule','documents']
+  'Staff Finance + Dokumen': ['dashboard','daily_progress','finance','documents'],
+  'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','documents']
 };
 const DEFAULT_ROLE_COLORS = {
-  'Super Admin': '#5B8DF6',
+  'Super Admin + Manager': '#F97316',
+  'Program Admin + Kepala Marketing/Kreatif': '#22C55E',
+  'Staff Kreatif': '#22C55E',
+  'Staff Marketing': '#22C55E',
   Finance: '#34D399',
-  'Program Admin': '#A78BFA',
-  Trainer: '#FBBF24',
-  Staff: '#6B7280'
+  'Staff Finance + Dokumen': '#7C3AED',
+  'Kepala Trainer': '#7C3AED'
+};
+const SUPER_ADMIN_ROLES = new Set(['Super Admin', 'Super Admin + Manager']);
+const LEGACY_ROLE_MIGRATIONS = {
+  'Super Admin': 'Super Admin + Manager',
+  'Program Admin': 'Program Admin + Kepala Marketing/Kreatif',
+  Trainer: 'Kepala Trainer',
+  Staff: 'Staff Marketing'
 };
 const EMPTY_STATE = {
   userId: null,
@@ -132,11 +143,15 @@ async function ensureSchema() {
     await sql.query(`CREATE TABLE IF NOT EXISTS ${table} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
   }
   for (const [role, permissions] of Object.entries(DEFAULT_PERMS)) {
-    await sql`INSERT INTO roles (name, permissions, color) VALUES (${role}, ${JSON.stringify(permissions)}, ${DEFAULT_ROLE_COLORS[role] || '#6B7280'}) ON CONFLICT (name) DO NOTHING`;
+    await sql`INSERT INTO roles (name, permissions, color) VALUES (${role}, ${JSON.stringify(permissions)}, ${DEFAULT_ROLE_COLORS[role] || '#6B7280'}) ON CONFLICT (name) DO UPDATE SET permissions = EXCLUDED.permissions, color = EXCLUDED.color, updated_at = now()`;
+  }
+  for (const [oldRole, newRole] of Object.entries(LEGACY_ROLE_MIGRATIONS)) {
+    await sql`UPDATE users SET role = ${newRole}, updated_at = now() WHERE role = ${oldRole}`;
+    await sql`DELETE FROM roles WHERE name = ${oldRole} AND NOT EXISTS (SELECT 1 FROM users WHERE role = ${oldRole})`;
   }
   const users = await sql`SELECT count(*)::int AS count FROM users`;
   if (users[0].count === 0) {
-    await sql`INSERT INTO users (id, name, username, email, password_hash, role, dept, av) VALUES ('owner', 'Administrator GRCC', 'admin', 'admin@grcc.id', ${hashPassword(process.env.ADMIN_INITIAL_PASSWORD || 'admin12345')}, 'Super Admin', 'Manajemen', 'AG')`;
+    await sql`INSERT INTO users (id, name, username, email, password_hash, role, dept, av) VALUES ('owner', 'Administrator GRCC', 'admin', 'admin@grcc.id', ${hashPassword(process.env.ADMIN_INITIAL_PASSWORD || 'admin12345')}, 'Super Admin + Manager', 'Manajemen', 'AG')`;
   }
   await sql`INSERT INTO app_state (id, payload) VALUES (1, ${JSON.stringify(EMPTY_STATE)}) ON CONFLICT (id) DO NOTHING`;
   schemaReady = true;
@@ -165,7 +180,7 @@ async function requireUser(req, res) {
 async function requireAdmin(req, res) {
   const user = await requireUser(req, res);
   if (!user) return null;
-  if (user.role !== 'Super Admin') {
+  if (!SUPER_ADMIN_ROLES.has(user.role)) {
     send(res, 403, { error: 'Hanya Super Admin yang boleh mengakses fitur ini' });
     return null;
   }
@@ -308,7 +323,7 @@ async function handle(req, res) {
     const username = String(body.username || '').trim().toLowerCase();
     const email = String(body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
-    const role = String(body.role || 'Staff').trim();
+    const role = String(body.role || 'Staff Marketing').trim();
     const dept = String(body.dept || '').trim();
     const av = String(body.av || initials(name)).trim().slice(0, 3).toUpperCase();
     if (!name || !username || !email) return send(res, 400, { error: 'Nama, username, dan email wajib diisi' });
@@ -358,7 +373,7 @@ async function handle(req, res) {
     const color = String(body.color || '#6B7280');
     if (!name) return send(res, 400, { error: 'Nama role wajib diisi' });
     if (oldName && oldName !== name) {
-      if (oldName === 'Super Admin') return send(res, 400, { error: 'Role Super Admin tidak boleh diganti nama' });
+      if (SUPER_ADMIN_ROLES.has(oldName)) return send(res, 400, { error: 'Role Super Admin tidak boleh diganti nama' });
       await sql`UPDATE roles SET name=${name}, permissions=${JSON.stringify(permissions)}, color=${color}, updated_at=now() WHERE name=${oldName}`;
       await audit(actor, 'rename', 'role', name, { oldName, permissions });
     } else {
@@ -372,7 +387,7 @@ async function handle(req, res) {
     const actor = await requireAdmin(req, res);
     if (!actor) return;
     const name = decodeURIComponent(path.split('/').pop());
-    if (name === 'Super Admin') return send(res, 400, { error: 'Role Super Admin tidak boleh dihapus' });
+    if (SUPER_ADMIN_ROLES.has(name)) return send(res, 400, { error: 'Role Super Admin tidak boleh dihapus' });
     const used = await sql`SELECT id FROM users WHERE role=${name} AND active=true LIMIT 1`;
     if (used[0]) return send(res, 400, { error: 'Role masih dipakai user' });
     await sql`DELETE FROM roles WHERE name=${name}`;
