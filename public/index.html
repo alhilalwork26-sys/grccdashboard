@@ -114,19 +114,32 @@ a { text-decoration: none; }
   0%,100% { background-position:0% 50%; }
   50% { background-position:100% 50%; }
 }
+@keyframes cukRainbowShift {
+  0% { background-position:0% 50%; }
+  50% { background-position:100% 50%; }
+  100% { background-position:0% 50%; }
+}
+@keyframes cukFloatGlow {
+  0%,100% { box-shadow:0 0 0 1px rgba(255,255,255,.24), 0 8px 24px rgba(91,141,246,.18), 0 0 18px rgba(167,139,250,.22); }
+  50% { box-shadow:0 0 0 1px rgba(255,255,255,.38), 0 10px 30px rgba(52,211,153,.22), 0 0 24px rgba(251,113,133,.28); }
+}
 .important-warning-icon {
   width:54px;height:54px;border-radius:16px;background:rgba(251,191,36,.14);color:var(--amber);
   display:flex;align-items:center;justify-content:center;margin:0 auto 12px;
   border:1px solid rgba(251,191,36,.28);animation:warningPulse 1.35s ease-in-out infinite;
 }
 .cuk-ai-btn {
-  display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border-radius:8px;
-  color:#DDD6FE;background:linear-gradient(120deg,rgba(91,141,246,.14),rgba(167,139,250,.18),rgba(52,211,153,.1));
-  background-size:220% 220%;border:1px solid rgba(167,139,250,.28);animation:cukGlow 4s ease infinite;
-  transition:transform .15s, border-color .15s;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:104px;
+  padding:7px 11px;border-radius:999px;color:white;font-size:11px;font-weight:950;letter-spacing:.01em;
+  background:linear-gradient(110deg,#2F7CFF,#8B5CF6,#EC4899,#F97316,#22C55E,#38BDF8,#8B5CF6);
+  background-size:360% 360%;border:1px solid rgba(255,255,255,.3);
+  animation:cukRainbowShift 5s ease infinite, cukFloatGlow 2.8s ease-in-out infinite;
+  transition:transform .15s, filter .15s; text-shadow:0 1px 8px rgba(0,0,0,.28);
 }
-.cuk-ai-btn:hover { transform:translateY(-1px); border-color:rgba(221,214,254,.55); }
+.cuk-ai-btn:hover { transform:translateY(-2px) scale(1.02); filter:saturate(1.2) brightness(1.07); }
 .cuk-ai-btn svg { animation:cukSparkle 2.1s ease-in-out infinite; }
+.cuk-ai-label { display:inline-flex;align-items:center;gap:4px;white-space:nowrap; }
+.cuk-ai-status { opacity:.92;font-weight:800; }
 .cuk-summary-box {
   border:1px solid rgba(167,139,250,.22);border-radius:12px;padding:14px;
   background:linear-gradient(135deg,rgba(91,141,246,.08),rgba(167,139,250,.08),rgba(52,211,153,.045));
@@ -3017,7 +3030,7 @@ function renderDocuments(){
             <td>
               <button class="cuk-ai-btn" onclick="openCukAiSummary('${d.id}')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6L12 3z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16z"/></svg>
-                ${d.aiSummary ? 'Lihat' : 'Ringkas'}
+                <span class="cuk-ai-label">CUK AI <span class="cuk-ai-status">${d.aiSummary ? 'Lihat' : 'Ringkas'}</span></span>
               </button>
             </td>
             <td style="font-size:12px;color:var(--sub)">${escHtml(d.by)}</td>
@@ -3677,7 +3690,7 @@ function openImportantDocPinModal(doc){
 function cukAiHero(summary=''){
   return `
     <div style="text-align:center;margin-bottom:14px">
-      <div class="important-warning-icon" style="background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.3);color:#DDD6FE;animation:cukSparkle 2.2s ease-in-out infinite">
+      <div class="important-warning-icon" style="background:linear-gradient(135deg,rgba(47,124,255,.16),rgba(236,72,153,.16),rgba(34,197,94,.12));border-color:rgba(167,139,250,.35);color:#8B5CF6;animation:cukSparkle 2.2s ease-in-out infinite, cukFloatGlow 2.8s ease-in-out infinite">
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6L12 3z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16z"/></svg>
       </div>
       <div style="font-size:16px;font-weight:950">CUK AI</div>
@@ -3685,6 +3698,30 @@ function cukAiHero(summary=''){
     </div>
     ${summary ? `<div class="cuk-summary-box"><div class="cuk-summary-text">${escHtml(summary)}</div></div>` : ''}
   `;
+}
+function localCukAiSummary(doc, reason=''){
+  return `Ringkasan preview CUK AI
+
+Dokumen: ${doc.name || '-'}
+Folder: ${doc.folder || '-'}
+Akses: ${doc.visibility === 'important' ? 'Penting' : 'Public'}
+Ukuran: ${doc.size || '-'}
+Diupload oleh: ${doc.by || '-'}
+Tanggal: ${doc.date || '-'}
+
+Status:
+Dokumen ini belum bisa dibaca langsung dari server${reason ? ` (${reason})` : ''}. CUK AI menampilkan preview berdasarkan data dokumen yang tersedia di dashboard.
+
+Supaya CUK AI bisa merangkum isi dokumen asli, upload ulang dokumen melalui website production sampai statusnya tersimpan ke server.`;
+}
+function showCukAiSummaryResult(doc, summary, model='cuk-ai-preview', cached=false){
+  showModal(`CUK AI · ${doc.name}`, `
+    ${cukAiHero(summary)}
+    <div style="font-size:10px;color:var(--muted);margin-top:10px">Model: ${escHtml(model || '-')} ${cached ? '· dari cache' : ''}</div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal();renderPage()">Tutup</button>
+      <button class="btn btn-pri" onclick="runCukAiSummary('${doc.id}', true)">Ringkas Ulang</button>
+    </div>`, 620);
 }
 function openCukAiPinModal(doc){
   const html = `
@@ -3727,11 +3764,11 @@ async function runCukAiSummary(id, refresh=false){
   if(!doc) return;
   const pin = document.getElementById('cuk-ai-pin')?.value || '';
   if(doc.visibility === 'important' && !pin && !refresh){toast('PIN wajib diisi','error');return;}
-  if(location.protocol === 'file:'){
-    const localSummary = `Ringkasan lokal CUK AI\n\nDokumen: ${doc.name}\nFolder: ${doc.folder}\nAkses: ${doc.visibility === 'important' ? 'Penting' : 'Public'}\n\nUntuk ringkasan isi dokumen yang sebenarnya, buka website production dan pastikan file sudah tersimpan di server.`;
+  if(location.protocol === 'file:' || doc.isLocal || !doc.downloadUrl || doc.downloadUrl.startsWith('blob:')){
+    const localSummary = localCukAiSummary(doc, location.protocol === 'file:' ? 'mode file lokal' : 'file belum tersimpan di server');
     state.docs = state.docs.map(d => d.id === id ? {...d, aiSummary:localSummary, aiSummaryModel:'cuk-ai-local-preview', aiSummaryAt:new Date().toISOString()} : d);
     persistPatched();
-    showModal(`CUK AI · ${doc.name}`, `${cukAiHero(localSummary)}<div class="modal-footer"><button class="btn btn-pri" onclick="closeModal();renderPage()">Tutup</button></div>`, 620);
+    showCukAiSummaryResult(doc, localSummary, 'cuk-ai-local-preview');
     return;
   }
   showModal('Ringkas dengan CUK AI', `
@@ -3751,15 +3788,17 @@ async function runCukAiSummary(id, refresh=false){
     if(!res.ok) throw new Error(data.error || `CUK AI gagal (${res.status})`);
     state.docs = state.docs.map(d => d.id === id ? {...d, aiSummary:data.summary, aiSummaryModel:data.model, aiSummaryAt:data.summarizedAt || new Date().toISOString()} : d);
     persistPatched();
-    showModal(`CUK AI · ${doc.name}`, `
-      ${cukAiHero(data.summary)}
-      <div style="font-size:10px;color:var(--muted);margin-top:10px">Model: ${escHtml(data.model || '-')} ${data.cached ? '· dari cache' : ''}</div>
-      <div class="modal-footer">
-        <button class="btn btn-sec" onclick="closeModal();renderPage()">Tutup</button>
-        <button class="btn btn-pri" onclick="runCukAiSummary('${doc.id}', true)">Ringkas Ulang</button>
-      </div>`, 620);
+    showCukAiSummaryResult(doc, data.summary, data.model, data.cached);
     toast('CUK AI selesai merangkum dokumen');
   } catch(err) {
+    if(/dokumen tidak ditemukan|not found|404/i.test(err.message || '')){
+      const localSummary = localCukAiSummary(doc, 'belum ada di database server');
+      state.docs = state.docs.map(d => d.id === id ? {...d, aiSummary:localSummary, aiSummaryModel:'cuk-ai-preview', aiSummaryAt:new Date().toISOString()} : d);
+      persistPatched();
+      showCukAiSummaryResult(doc, localSummary, 'cuk-ai-preview');
+      toast('CUK AI membuat preview karena file belum ditemukan di server', 'info');
+      return;
+    }
     showModal('CUK AI belum berhasil', `
       ${cukAiHero()}
       <div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.22);border-radius:10px;padding:12px;font-size:12px;color:var(--sub)">${escHtml(err.message || 'Ringkasan gagal dibuat')}</div>
