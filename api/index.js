@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { Readable } = require('stream');
 const { neon } = require('@neondatabase/serverless');
 const { get, put } = require('@vercel/blob');
+const { handleUpload } = require('@vercel/blob/client');
 
 const SESSION_DAYS = 7;
 const MODULE_TABLES = {
@@ -607,6 +608,54 @@ async function handle(req, res) {
     await sql`DELETE FROM roles WHERE name=${name}`;
     await audit(actor, 'delete', 'role', name, { before: beforeRows[0] || { name } });
     return send(res, 200, { ok: true });
+  }
+
+  if (path === '/documents/client-upload' && method === 'POST') {
+    const body = await readBody(req);
+    const request = new Request(`https://${req.headers.host || 'local.invalid'}${req.url}`, {
+      method: req.method,
+      headers: req.headers
+    });
+    const jsonResponse = await handleUpload({
+      body,
+      request,
+      onBeforeGenerateToken: async (_pathname, clientPayload) => {
+        const user = await currentUser(req);
+        if (!user) throw new Error('Sesi tidak valid, silakan login ulang');
+        const payload = JSON.parse(clientPayload || '{}');
+        const id = String(payload.id || '').trim();
+        const filename = String(payload.filename || '').trim();
+        const contentType = String(payload.contentType || 'application/octet-stream');
+        const size = Number(payload.size || 0);
+        const visibility = String(payload.visibility || 'public') === 'important' ? 'important' : 'public';
+        const pin = String(payload.pin || '');
+        if (!id || !filename) throw new Error('id dan filename wajib diisi');
+        if (visibility === 'important' && !canManageImportantDocuments(user)) throw new Error('Hanya Super Admin/Admin yang boleh membuat dokumen penting');
+        if (visibility === 'important' && pin.length < 4) throw new Error('PIN dokumen penting minimal 4 digit/karakter');
+        return {
+          tokenPayload: JSON.stringify({
+            id,
+            filename,
+            contentType,
+            size,
+            visibility,
+            pinHash: visibility === 'important' ? hashPassword(pin) : '',
+            userId: user.id,
+            userName: user.name,
+            userRole: user.role
+          })
+        };
+      },
+      onUploadCompleted: async ({ blob, tokenPayload }) => {
+        const payload = JSON.parse(tokenPayload || '{}');
+        const actor = { id: payload.userId, name: payload.userName, role: payload.userRole };
+        const previous = await sql`SELECT filename, content_type, blob_url, blob_access, visibility, size, uploaded_by FROM documents WHERE id=${payload.id}`;
+        const access = blob.url && blob.url.includes('.private.blob.vercel-storage.com') ? 'private' : 'public';
+        await sql`INSERT INTO documents (id, filename, content_type, blob_url, blob_access, visibility, pin_hash, size, uploaded_by, uploaded_at) VALUES (${payload.id}, ${payload.filename}, ${payload.contentType || blob.contentType || 'application/octet-stream'}, ${blob.url}, ${access}, ${payload.visibility || 'public'}, ${payload.pinHash || ''}, ${payload.size || 0}, ${payload.userId}, now()) ON CONFLICT (id) DO UPDATE SET filename=EXCLUDED.filename, content_type=EXCLUDED.content_type, blob_url=EXCLUDED.blob_url, blob_access=EXCLUDED.blob_access, visibility=EXCLUDED.visibility, pin_hash=EXCLUDED.pin_hash, size=EXCLUDED.size, uploaded_by=EXCLUDED.uploaded_by, ai_summary='', ai_summary_at=NULL, ai_summary_model='', uploaded_at=now()`;
+        await audit(actor, previous[0] ? 'replace' : 'upload', 'document', payload.id, { before: previous[0] || null, after: { filename: payload.filename, contentType: payload.contentType || blob.contentType, size: payload.size, visibility: payload.visibility || 'public', blobAccess: access, pinProtected: payload.visibility === 'important' } });
+      }
+    });
+    return send(res, 200, jsonResponse);
   }
 
   if (path === '/documents' && method === 'POST') {

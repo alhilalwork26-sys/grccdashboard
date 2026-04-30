@@ -4907,7 +4907,7 @@ if(state.user){
         return;
       }
       if(!res.ok) throw new Error('HTTP ' + res.status);
-      setSyncStatus('Tersimpan ke server', 'success');
+      setSyncStatus('Data dashboard tersimpan', 'success');
     } catch(err) {
       console.warn('sinkronisasi backend gagal', err);
       setSyncStatus('Mode lokal: server tidak tersambung', 'error');
@@ -4983,6 +4983,39 @@ if(state.user){
     });
   }
 
+  async function uploadDocumentToServer(file, doc, options={}){
+    try {
+      const { upload } = await import('https://esm.sh/@vercel/blob@2.3.0/client');
+      const safeName = String(doc.name || file.name).replace(/[^A-Za-z0-9._-]+/g, '_');
+      await upload(`grcc/${doc.id}_${safeName}`, file, {
+        access: 'public',
+        handleUploadUrl: '/api/documents/client-upload',
+        clientPayload: JSON.stringify({
+          id: doc.id,
+          filename: doc.name || file.name,
+          contentType: file.type || 'application/octet-stream',
+          size: file.size,
+          visibility: options.visibility || doc.visibility || 'public',
+          pin: options.pin || ''
+        })
+      });
+      return {downloadUrl: `/api/documents/${encodeURIComponent(doc.id)}/download`, size: file.size};
+    } catch(err) {
+      if(file.size > 3.5 * 1024 * 1024) {
+        throw new Error(`Upload file besar gagal: ${err.message || 'koneksi Blob gagal'}. Coba refresh lalu upload ulang dari production.`);
+      }
+      const dataUrl = await readFileAsDataUrl(file);
+      const res = await fetch(API.documents, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: doc.id, filename: doc.name || file.name, contentType: file.type || 'application/octet-stream', dataUrl, visibility: options.visibility || doc.visibility || 'public', pin: options.pin || ''})
+      });
+      const saved = await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(saved.error || 'HTTP ' + res.status);
+      return saved;
+    }
+  }
+
   async function uploadDocumentFile(file, docRecord=null, options={}){
     if(location.protocol === 'file:') return;
     try {
@@ -4993,14 +5026,7 @@ if(state.user){
         state.docs = [...state.docs, doc];
         renderPage();
       }
-      const dataUrl = await readFileAsDataUrl(file);
-      const res = await fetch(API.documents, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({id: doc.id, filename: doc.name || file.name, contentType: file.type || 'application/octet-stream', dataUrl, visibility: options.visibility || doc.visibility || 'public', pin: options.pin || ''})
-      });
-      const saved = await res.json().catch(()=>({}));
-      if(!res.ok) throw new Error(saved.error || 'HTTP ' + res.status);
+      const saved = await uploadDocumentToServer(file, doc, options);
       state.docs = state.docs.map(item => item.id === doc.id ? {
         ...item,
         downloadUrl: saved.downloadUrl,
