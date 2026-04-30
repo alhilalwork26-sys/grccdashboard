@@ -1448,9 +1448,13 @@ function runAutomaticReminders(){
   });
 
   ACCOUNTS.filter(a => a.active !== false).forEach(a => {
-    const hasProgress = state.dailyProgresses.some(p => p.userId === a.id && p.date === todayKey);
-    if(!hasProgress && (PERMS[a.role] || []).includes('daily_progress')){
-      once(`daily_progress_missing_${a.id}`, {title:'Progres harian belum diisi', message:`${a.name} belum mengisi progres harian tanggal ${fmtD(todayKey)}.`, type:a.id===state.user.id?'warning':'info', recipientUserIds:[...new Set([a.id, ...progressWatchers])], linkPage:'daily_progress'});
+    if(!(PERMS[a.role] || []).includes('daily_progress')) return;
+    const progress = state.dailyProgresses.find(p => p.userId === a.id && p.date === todayKey);
+    const recipients = [...new Set([a.id, ...progressWatchers])];
+    if(!progress && now.getHours() >= 9){
+      once(`daily_progress_morning_missing_${a.id}`, {title:'Input pagi belum diisi', message:`${a.name} belum menyimpan input pagi tanggal ${fmtD(todayKey)}.`, type:a.id===state.user.id?'warning':'info', recipientUserIds:recipients, linkPage:'daily_progress'});
+    } else if(progress?.morningPlan && !progress?.eveningUpdate && now.getHours() >= 16){
+      once(`daily_progress_evening_missing_${a.id}`, {title:'Update sore belum diisi', message:`${a.name} sudah input pagi, tetapi belum mengisi update sore tanggal ${fmtD(todayKey)}.`, type:a.id===state.user.id?'warning':'info', recipientUserIds:recipients, linkPage:'daily_progress'});
     }
   });
 
@@ -2137,7 +2141,8 @@ function renderDailyProgress(){
 
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
       <button class="btn btn-sec" onclick="resetDailyProgressSimpleForm()">Reset</button>
-      <button class="btn btn-pri" onclick="saveDailyProgress()">Simpan Progres</button>
+      <button class="btn btn-sec" onclick="saveDailyProgress('morning')">Simpan Input Pagi</button>
+      <button class="btn btn-pri" onclick="saveDailyProgress('evening')">Simpan Update Sore</button>
     </div>
   </div>` : ''}
 
@@ -2254,30 +2259,37 @@ function resetDailyProgressSimpleForm(){
   document.getElementById('dp-morning-chip').textContent = 'Jam input: --:--';
   document.getElementById('dp-evening-chip').textContent = 'Jam update: --:--';
 }
-function saveDailyProgress(){
+function saveDailyProgress(phase='full'){
   const date = document.getElementById('dp-date')?.value;
   const progressStatus = document.getElementById('dp-status')?.value || 'On Track';
   const morningPlan = document.getElementById('dp-morning-plan')?.value.trim();
   const eveningUpdate = document.getElementById('dp-evening-update')?.value.trim();
   const blockers = document.getElementById('dp-blockers')?.value.trim() || '';
   const tomorrowPlan = document.getElementById('dp-nextplan')?.value.trim() || '';
-  if(!date || !morningPlan || !eveningUpdate){
-    toast('Tanggal, input pagi, dan update sore wajib diisi', 'error');
+  if(!date || !morningPlan){
+    toast('Tanggal dan input pagi wajib diisi', 'error');
+    return;
+  }
+  if(phase === 'evening' && !eveningUpdate){
+    toast('Update sore wajib diisi sebelum menyimpan sore', 'error');
     return;
   }
 
   const nowIso = new Date().toISOString();
   const existing = state.dailyProgresses.find(x => x.userId === state.user.id && x.date === date);
+  const shouldSaveEvening = phase === 'evening' || (phase === 'full' && Boolean(eveningUpdate));
   if(existing){
     existing.morningInputTime = existing.morningInputTime || nowIso;
-    existing.eveningUpdateTime = nowIso;
     existing.morningPlan = morningPlan;
-    existing.eveningUpdate = eveningUpdate;
+    if(shouldSaveEvening){
+      existing.eveningUpdateTime = nowIso;
+      existing.eveningUpdate = eveningUpdate;
+    }
     existing.blockers = blockers;
     existing.tomorrowPlan = tomorrowPlan;
     existing.progressStatus = progressStatus;
     existing.updatedAt = nowIso;
-    toast('Progres harian berhasil diperbarui');
+    toast(shouldSaveEvening ? 'Update sore berhasil disimpan' : 'Input pagi berhasil diperbarui');
   } else {
     state.dailyProgresses.unshift({
       id: uid(),
@@ -2286,25 +2298,29 @@ function saveDailyProgress(){
       role: state.user.role,
       date,
       morningPlan,
-      eveningUpdate,
+      eveningUpdate: shouldSaveEvening ? eveningUpdate : '',
       blockers,
       tomorrowPlan,
       progressStatus,
       morningInputTime: nowIso,
-      eveningUpdateTime: nowIso,
+      eveningUpdateTime: shouldSaveEvening ? nowIso : '',
       updatedAt: nowIso
     });
-    toast('Progres harian berhasil disimpan');
+    toast(shouldSaveEvening ? 'Progres harian berhasil disimpan' : 'Input pagi berhasil disimpan');
   }
 
   if(isProgramAdminRole(state.user) || isFinanceRole(state.user) || isTrainerRole(state.user) || isStaffRole(state.user)){
+    const title = shouldSaveEvening ? 'Update sore dikirim' : 'Input pagi dikirim';
+    const message = shouldSaveEvening
+      ? `${state.user.name} mengirim update sore tanggal ${fmtD(date)}.`
+      : `${state.user.name} mengirim input pagi tanggal ${fmtD(date)}.`;
     createAppNotification({
-      title:'Progres harian diperbarui',
-      message:`${state.user.name} mengirim progres harian tanggal ${fmtD(date)}.`,
+      title,
+      message,
       type:'info',
       recipientRoles:['Super Admin','Super Admin + Manager','Program Admin','Program Admin + Kepala Marketing/Kreatif'],
       linkPage:'daily_progress',
-      dedupeKey:`daily_progress_simple_${state.user.id}_${date}_${progressStatus}`
+      dedupeKey:`daily_progress_${shouldSaveEvening ? 'evening' : 'morning'}_${state.user.id}_${date}`
     });
   }
   persistPatched();
