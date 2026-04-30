@@ -209,7 +209,12 @@ a { text-decoration: none; }
   display:flex; align-items:center; justify-content:center;
   color:#fff; font-weight:700; flex-shrink:0;
   letter-spacing:.3px; font-family:var(--font);
+  overflow:hidden;
+  background-size:cover;
+  background-position:center;
+  border:1px solid rgba(255,255,255,0.1);
 }
+.av img { width:100%; height:100%; object-fit:cover; display:block; }
 
 /* ═══════════════════════════════════════════════
    HEADER
@@ -1268,8 +1273,17 @@ function badge(v, type='status'){
   const s = m||{bg:'#F1F5F9',c:'#475569',bd:'#CBD5E1'};
   return `<span class="badge" style="background:${s.bg};color:${s.c};border-color:${s.bd||s.bg}">${escHtml(v)}</span>`;
 }
-function av(t,sz=34,bg='var(--navy)'){
-  return `<div class="av" style="width:${sz}px;height:${sz}px;font-size:${sz*0.35}px;background:${bg}">${escHtml(t||'?')}</div>`;
+function av(t,sz=34,bg='var(--navy)',avatarUrl=''){
+  const safeUrl = String(avatarUrl || '').replace(/"/g, '&quot;');
+  return `<div class="av" style="width:${sz}px;height:${sz}px;font-size:${sz*0.35}px;background:${bg}">${avatarUrl ? `<img src="${safeUrl}" alt="">` : escHtml(t||'?')}</div>`;
+}
+function setAvatar(el, user, sz=36, bg='var(--navy)'){
+  if(!el || !user) return;
+  el.style.width = `${sz}px`;
+  el.style.height = `${sz}px`;
+  el.style.fontSize = `${sz * 0.35}px`;
+  el.style.background = bg;
+  el.innerHTML = user.avatarUrl ? `<img src="${String(user.avatarUrl).replace(/"/g, '&quot;')}" alt="">` : escHtml(user.av || initialsFromName(user.name));
 }
 function btn(label,cls,onclick,extra=''){
   return `<button class="btn ${cls}" onclick="${onclick}" ${extra}>${label}</button>`;
@@ -1344,11 +1358,10 @@ function togglePw(){
 /* ===== SIDEBAR & NAV ===== */
 function initApp(){
   const u = state.user;
-  document.getElementById('sb-av').textContent = u.av;
+  setAvatar(document.getElementById('sb-av'), u, 36, 'rgba(91,141,246,0.2)');
   document.getElementById('sb-name').textContent = u.name;
   document.getElementById('sb-role').textContent = u.role;
-  document.getElementById('hdr-av').textContent = u.av;
-  document.getElementById('hdr-av').style.background = ROLE_COLORS[u.role]||'var(--navy)';
+  setAvatar(document.getElementById('hdr-av'), u, 34, ROLE_COLORS[u.role]||'var(--navy)');
   document.getElementById('hdr-name').textContent = u.name;
   document.getElementById('hdr-role2').textContent = u.role;
   document.getElementById('hdr-date').textContent = new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
@@ -2947,11 +2960,15 @@ function renderSettings(){
     <div class="card" style="padding:24px">
       <div style="font-size:15px;font-weight:800;margin-bottom:20px">Profil Akun</div>
       <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:20px">
-        ${av(u.av,72)}
+        <div id="profile-avatar-preview">${av(u.av,72,ROLE_COLORS[u.role]||'var(--navy)',u.avatarUrl)}</div>
         <div style="margin-top:10px;font-size:15px;font-weight:800">${escHtml(u.name)}</div>
         ${badge(u.role)}
       </div>
       <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="form-group"><label class="form-label">Foto Profil</label>
+          <input id="set-avatar-file" class="form-control" type="file" accept="image/png,image/jpeg,image/webp" onchange="previewProfileAvatar(this)">
+          <div class="inline-help" style="margin-top:6px">Opsional. JPG, PNG, atau WebP maksimal 1.5 MB.</div>
+        </div>
         <div class="form-group"><label class="form-label">Nama Lengkap</label>
           <input id="set-name" class="form-control" value="${escHtml(u.name)}">
         </div>
@@ -3484,7 +3501,21 @@ function downloadDoc(id){
   downloadTextFilePatch(d.name.endsWith('.txt') ? d.name : `${d.name}.txt`, fallback);
   toast(`File contoh diunduh: ${d.name}`, 'info');
 }
-function saveProfile(){
+function previewProfileAvatar(input){
+  const file = input.files?.[0];
+  if(!file) return;
+  if(!/^image\/(png|jpe?g|webp)$/.test(file.type)){ toast('Foto harus PNG, JPG, atau WebP', 'error'); input.value=''; return; }
+  if(file.size > 1.5 * 1024 * 1024){ toast('Ukuran foto maksimal 1.5 MB', 'error'); input.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    window.pendingProfileAvatarDataUrl = reader.result;
+    const preview = document.getElementById('profile-avatar-preview');
+    if(preview) preview.innerHTML = av('',72,ROLE_COLORS[state.user?.role]||'var(--navy)',reader.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveProfile(){
   const name = document.getElementById('set-name')?.value.trim();
   const email = document.getElementById('set-email')?.value.trim();
   const password = document.getElementById('set-password')?.value || '';
@@ -3492,14 +3523,45 @@ function saveProfile(){
   if(!/^\S+@\S+\.\S+$/.test(email)){ toast('Format email tidak valid', 'error'); return; }
   if(ACCOUNTS.some(a => a.id !== state.user.id && a.email.toLowerCase() === email.toLowerCase())){ toast('Email sudah digunakan akun lain', 'error'); return; }
   const oldName = state.user.name;
+  if(location.protocol !== 'file:'){
+    try {
+      const data = await fetch('/api/profile', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({name, email, password, avatarUrl: state.user.avatarUrl || '', avatarDataUrl: window.pendingProfileAvatarDataUrl || ''})
+      }).then(async res => {
+        const payload = await res.json().catch(() => ({}));
+        if(!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
+        return payload;
+      });
+      const acc = ACCOUNTS.find(a => a.id === data.user.id);
+      if(acc) Object.assign(acc, data.user);
+      state.user = data.user;
+      state.tasks = state.tasks.map(t => t.aId === state.user.id ? {...t, assignee: state.user.name} : t);
+      state.schedules = state.schedules.map(s => s.pic === oldName ? {...s, pic: state.user.name} : s);
+      state.expenses = state.expenses.map(e => e.pic === oldName ? {...e, pic: state.user.name} : e);
+      state.programs = state.programs.map(p => p.tId === state.user.id ? {...p, trainer: state.user.name} : p);
+      window.pendingProfileAvatarDataUrl = '';
+      initApp();
+      renderPage();
+      toast('Profil berhasil diperbarui');
+      return;
+    } catch(err) {
+      toast(err.message || 'Profil gagal diperbarui', 'error');
+      return;
+    }
+  }
   const initials = name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
   const acc = ACCOUNTS.find(a => a.id === state.user.id);
   if(acc){
     acc.name = name;
     acc.email = email;
     acc.av = initials || acc.av;
+    acc.avatarUrl = window.pendingProfileAvatarDataUrl || acc.avatarUrl || '';
     if(password) acc.pw = password;
   }
+  window.pendingProfileAvatarDataUrl = '';
   state.user = ACCOUNTS.find(a => a.id === state.user.id) || state.user;
   state.tasks = state.tasks.map(t => t.aId === state.user.id ? {...t, assignee: state.user.name} : t);
   state.schedules = state.schedules.map(s => s.pic === oldName ? {...s, pic: state.user.name} : s);
@@ -4160,7 +4222,7 @@ if(state.user){
         <div style="display:flex;flex-direction:column;gap:8px">
           ${ACCOUNTS.map(a => `
             <div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,0.025)">
-              ${av(a.av || initialsFromName(a.name),32,ROLE_COLORS[a.role]||'var(--navy)')}
+              ${av(a.av || initialsFromName(a.name),32,ROLE_COLORS[a.role]||'var(--navy)',a.avatarUrl)}
               <div style="flex:1;min-width:0">
                 <div style="font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.name)}</div>
                 <div style="font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@${escHtml(a.username)} · ${escHtml(a.email)} · ${escHtml(a.role)}</div>
@@ -4216,8 +4278,17 @@ if(state.user){
   window.openUserModal = function(editId=''){
     ensureAccountUsernames();
     const user = editId ? ACCOUNTS.find(a => a.id === editId) : null;
+    window.pendingUserAvatarDataUrl = '';
     const html = `
       <div style="display:grid;gap:12px">
+        <div style="display:flex;align-items:center;gap:14px;padding:12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.025)">
+          <div id="um-avatar-preview">${av(user?.av || initialsFromName(user?.name || 'User'),58,ROLE_COLORS[user?.role]||'var(--navy)',user?.avatarUrl)}</div>
+          <div style="flex:1;min-width:0">
+            <label class="form-label" style="margin-bottom:6px">Foto Profil</label>
+            <input id="um-avatar-file" class="form-control" type="file" accept="image/png,image/jpeg,image/webp" onchange="previewUserAvatar(this)">
+            <div class="inline-help" style="margin-top:6px">Opsional. Gunakan foto JPG, PNG, atau WebP maksimal 1.5 MB.</div>
+          </div>
+        </div>
         <div class="form-group"><label class="form-label">Nama Lengkap <span>*</span></label><input id="um-name" class="form-control" value="${escHtml(user?.name || '')}" placeholder="Nama staf"></div>
         <div class="form-group"><label class="form-label">Username <span>*</span></label><input id="um-username" class="form-control" value="${escHtml(user?.username || '')}" placeholder="contoh: rini atau finance01"></div>
         <div class="form-group"><label class="form-label">Email <span>*</span></label><input id="um-email" class="form-control" type="email" value="${escHtml(user?.email || '')}" placeholder="nama@grcc.id"></div>
@@ -4233,6 +4304,20 @@ if(state.user){
         <button class="btn btn-pri" onclick="saveUserAccount('${editId}')">Simpan Akun</button>
       </div>`;
     showModal(user ? 'Edit Akun' : 'Tambah Akun', html, 560);
+  };
+
+  window.previewUserAvatar = function(input){
+    const file = input.files?.[0];
+    if(!file) return;
+    if(!/^image\/(png|jpe?g|webp)$/.test(file.type)){ toast('Foto harus PNG, JPG, atau WebP', 'error'); input.value=''; return; }
+    if(file.size > 1.5 * 1024 * 1024){ toast('Ukuran foto maksimal 1.5 MB', 'error'); input.value=''; return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      window.pendingUserAvatarDataUrl = reader.result;
+      const preview = document.getElementById('um-avatar-preview');
+      if(preview) preview.innerHTML = av('',58,'var(--navy)',reader.result);
+    };
+    reader.readAsDataURL(file);
   };
 
   window.saveUserAccount = function(editId=''){
@@ -4257,7 +4342,8 @@ if(state.user){
       pw: password || existing?.pw || '',
       role,
       dept,
-      av: initialsFromName(name)
+      av: initialsFromName(name),
+      avatarUrl: window.pendingUserAvatarDataUrl || existing?.avatarUrl || ''
     };
     if(existing) Object.assign(existing, data);
     else ACCOUNTS.push(data);
@@ -4643,12 +4729,23 @@ if(state.user){
     const password = document.getElementById('um-password')?.value || '';
     const role = document.getElementById('um-role')?.value || 'Staff Marketing';
     const dept = document.getElementById('um-dept')?.value.trim();
+    const existing = editId ? ACCOUNTS.find(a => a.id === editId) : null;
     if(!name || !username || !email){ toast('Nama, username, dan email wajib diisi', 'error'); return; }
     if(!editId && password.length < 6){ toast('Password minimal 6 karakter', 'error'); return; }
     try {
       const data = await apiJson(editId ? `${AUTH_API.users}/${encodeURIComponent(editId)}` : AUTH_API.users, {
         method: editId ? 'PUT' : 'POST',
-        body: JSON.stringify({name, username, email, password, role, dept, av: initialsFromName(name)})
+        body: JSON.stringify({
+          name,
+          username,
+          email,
+          password,
+          role,
+          dept,
+          av: initialsFromName(name),
+          avatarUrl: existing?.avatarUrl || '',
+          avatarDataUrl: window.pendingUserAvatarDataUrl || ''
+        })
       });
       const idx = ACCOUNTS.findIndex(a => a.id === data.user.id);
       if(idx >= 0) ACCOUNTS.splice(idx, 1, data.user);

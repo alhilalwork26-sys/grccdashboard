@@ -122,6 +122,7 @@ function publicUser(row) {
     role: row.role,
     dept: row.dept || '',
     av: row.av || 'U',
+    avatarUrl: row.avatar_url || '',
     active: row.active !== false
   };
 }
@@ -130,11 +131,28 @@ function initials(name) {
   return String(name || 'User').split(/\s+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() || 'U';
 }
 
+async function uploadAvatarDataUrl(dataUrl, userId) {
+  if (!dataUrl) return '';
+  if (!process.env.BLOB_READ_WRITE_TOKEN) throw new Error('BLOB_READ_WRITE_TOKEN belum diset');
+  const match = String(dataUrl).match(/^data:(image\/(?:png|jpeg|jpg|webp));base64,(.+)$/);
+  if (!match) throw new Error('Foto profil harus berupa PNG, JPG, atau WebP');
+  const contentType = match[1] === 'image/jpg' ? 'image/jpeg' : match[1];
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length > 1.5 * 1024 * 1024) throw new Error('Ukuran foto profil maksimal 1.5 MB');
+  const ext = contentType.split('/')[1].replace('jpeg', 'jpg');
+  const blob = await put(`profiles/${userId}_${Date.now()}.${ext}`, buffer, {
+    access: process.env.BLOB_ACCESS === 'private' ? 'private' : 'public',
+    contentType
+  });
+  return blob.url;
+}
+
 async function ensureSchema() {
   if (schemaReady) return;
   const sql = db();
   await sql`CREATE TABLE IF NOT EXISTS roles (name text PRIMARY KEY, permissions jsonb NOT NULL, color text NOT NULL DEFAULT '#6B7280', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
-  await sql`CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY, name text NOT NULL, username text NOT NULL UNIQUE, email text NOT NULL UNIQUE, password_hash text NOT NULL, role text NOT NULL REFERENCES roles(name) ON UPDATE CASCADE, dept text NOT NULL DEFAULT '', av text NOT NULL DEFAULT 'U', active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY, name text NOT NULL, username text NOT NULL UNIQUE, email text NOT NULL UNIQUE, password_hash text NOT NULL, role text NOT NULL REFERENCES roles(name) ON UPDATE CASCADE, dept text NOT NULL DEFAULT '', av text NOT NULL DEFAULT 'U', avatar_url text NOT NULL DEFAULT '', active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url text NOT NULL DEFAULT ''`;
   await sql`CREATE TABLE IF NOT EXISTS sessions (token text PRIMARY KEY, user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at bigint NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TABLE IF NOT EXISTS app_state (id integer PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TABLE IF NOT EXISTS documents (id text PRIMARY KEY, filename text NOT NULL, content_type text NOT NULL, blob_url text NOT NULL, size integer NOT NULL, uploaded_by text, uploaded_at timestamptz NOT NULL DEFAULT now())`;
@@ -167,7 +185,7 @@ async function currentUser(req) {
   if (!token) return null;
   const sql = db();
   await sql`DELETE FROM sessions WHERE expires_at < ${Math.floor(Date.now() / 1000)}`;
-  const rows = await sql`SELECT u.id, u.name, u.username, u.email, u.role, u.dept, u.av, u.active FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ${token} AND s.expires_at >= ${Math.floor(Date.now() / 1000)} AND u.active = true`;
+  const rows = await sql`SELECT u.id, u.name, u.username, u.email, u.role, u.dept, u.av, u.avatar_url, u.active FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ${token} AND s.expires_at >= ${Math.floor(Date.now() / 1000)} AND u.active = true`;
   return rows[0] ? publicUser(rows[0]) : null;
 }
 
@@ -189,7 +207,7 @@ async function requireAdmin(req, res) {
 
 async function listUsers() {
   const sql = db();
-  const rows = await sql`SELECT id, name, username, email, role, dept, av, active FROM users WHERE active = true ORDER BY name`;
+  const rows = await sql`SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE active = true ORDER BY name`;
   return rows.map(publicUser);
 }
 
@@ -291,6 +309,32 @@ async function handle(req, res) {
     return send(res, 200, { user });
   }
 
+  if (path === '/profile' && method === 'PUT') {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const body = await readBody(req);
+    const name = String(body.name || '').trim();
+    const email = String(body.email || '').trim().toLowerCase();
+    const password = String(body.password || '');
+    const avatarDataUrl = String(body.avatarDataUrl || '');
+    let avatarUrl = String(body.avatarUrl || user.avatarUrl || '').trim();
+    if (!name || !email) return send(res, 400, { error: 'Nama dan email wajib diisi' });
+    try {
+      const current = await sql`SELECT password_hash, avatar_url FROM users WHERE id = ${user.id}`;
+      if (!current[0]) return send(res, 404, { error: 'User tidak ditemukan' });
+      if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, user.id);
+      if (!avatarUrl) avatarUrl = current[0].avatar_url || '';
+      const av = initials(name);
+      await sql`UPDATE users SET name=${name}, email=${email}, password_hash=${password ? hashPassword(password) : current[0].password_hash}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${user.id}`;
+      await audit(user, 'update', 'profile', user.id, { avatarUpdated: Boolean(avatarDataUrl) });
+      const rows = await sql`SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=${user.id}`;
+      return send(res, 200, { ok: true, user: publicUser(rows[0]) });
+    } catch (err) {
+      if (err.message) return send(res, 409, { error: err.message });
+      return send(res, 409, { error: 'Email mungkin sudah digunakan akun lain' });
+    }
+  }
+
   if (path === '/state' && method === 'GET') {
     const user = await requireUser(req, res);
     if (!user) return;
@@ -326,21 +370,26 @@ async function handle(req, res) {
     const role = String(body.role || 'Staff Marketing').trim();
     const dept = String(body.dept || '').trim();
     const av = String(body.av || initials(name)).trim().slice(0, 3).toUpperCase();
+    const avatarDataUrl = String(body.avatarDataUrl || '');
+    let avatarUrl = String(body.avatarUrl || '').trim();
     if (!name || !username || !email) return send(res, 400, { error: 'Nama, username, dan email wajib diisi' });
     if (!updateId && password.length < 6) return send(res, 400, { error: 'Password minimal 6 karakter' });
     try {
       let id = updateId;
       if (updateId) {
-        const current = await sql`SELECT password_hash FROM users WHERE id = ${updateId}`;
+        const current = await sql`SELECT password_hash, avatar_url FROM users WHERE id = ${updateId}`;
         if (!current[0]) return send(res, 404, { error: 'User tidak ditemukan' });
-        await sql`UPDATE users SET name=${name}, username=${username}, email=${email}, password_hash=${password ? hashPassword(password) : current[0].password_hash}, role=${role}, dept=${dept}, av=${av}, updated_at=now() WHERE id=${updateId}`;
-        await audit(actor, 'update', 'user', updateId, { username, role });
+        if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, updateId);
+        if (!avatarUrl) avatarUrl = current[0].avatar_url || '';
+        await sql`UPDATE users SET name=${name}, username=${username}, email=${email}, password_hash=${password ? hashPassword(password) : current[0].password_hash}, role=${role}, dept=${dept}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${updateId}`;
+        await audit(actor, 'update', 'user', updateId, { username, role, avatarUpdated: Boolean(avatarDataUrl) });
       } else {
         id = crypto.randomBytes(8).toString('base64url');
-        await sql`INSERT INTO users (id, name, username, email, password_hash, role, dept, av) VALUES (${id}, ${name}, ${username}, ${email}, ${hashPassword(password)}, ${role}, ${dept}, ${av})`;
-        await audit(actor, 'create', 'user', id, { username, role });
+        if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, id);
+        await sql`INSERT INTO users (id, name, username, email, password_hash, role, dept, av, avatar_url) VALUES (${id}, ${name}, ${username}, ${email}, ${hashPassword(password)}, ${role}, ${dept}, ${av}, ${avatarUrl})`;
+        await audit(actor, 'create', 'user', id, { username, role, avatarUpdated: Boolean(avatarDataUrl) });
       }
-      const rows = await sql`SELECT id, name, username, email, role, dept, av, active FROM users WHERE id=${id}`;
+      const rows = await sql`SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=${id}`;
       return send(res, 200, { ok: true, user: publicUser(rows[0]) });
     } catch (err) {
       return send(res, 409, { error: 'Username/email mungkin sudah digunakan atau role tidak valid' });

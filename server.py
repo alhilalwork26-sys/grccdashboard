@@ -149,12 +149,18 @@ def connect_db():
             role TEXT NOT NULL REFERENCES roles(name) ON UPDATE CASCADE,
             dept TEXT NOT NULL DEFAULT '',
             av TEXT NOT NULL DEFAULT 'U',
+            avatar_url TEXT NOT NULL DEFAULT '',
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc).lower():
+            raise
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS sessions (
@@ -339,13 +345,14 @@ def public_user(row):
         "role": row["role"],
         "dept": row["dept"],
         "av": row["av"],
+        "avatarUrl": row["avatar_url"] if "avatar_url" in row.keys() else "",
         "active": bool(row["active"]),
     }
 
 
 def list_users(conn):
     rows = conn.execute(
-        "SELECT id, name, username, email, role, dept, av, active FROM users WHERE active = 1 ORDER BY name"
+        "SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE active = 1 ORDER BY name"
     ).fetchall()
     return [public_user(row) for row in rows]
 
@@ -546,6 +553,10 @@ class GRCCHandler(SimpleHTTPRequestHandler):
 
     def do_PUT(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/profile":
+            if not self.require_user():
+                return
+            return self.put_profile()
         if parsed.path == "/api/state":
             if not self.require_user():
                 return
@@ -610,7 +621,7 @@ class GRCCHandler(SimpleHTTPRequestHandler):
             conn.execute("DELETE FROM sessions WHERE expires_at < ?", (now_ts(),))
             row = conn.execute(
                 """
-                SELECT u.id, u.name, u.username, u.email, u.role, u.dept, u.av, u.active
+                SELECT u.id, u.name, u.username, u.email, u.role, u.dept, u.av, u.avatar_url, u.active
                 FROM sessions s
                 JOIN users u ON u.id = s.user_id
                 WHERE s.token = ? AND s.expires_at >= ? AND u.active = 1
@@ -729,6 +740,47 @@ class GRCCHandler(SimpleHTTPRequestHandler):
     def put_user(self, path):
         return self.save_user(unquote(path.rsplit("/", 1)[-1]))
 
+    def put_profile(self):
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        name = str(payload.get("name") or "").strip()
+        email = str(payload.get("email") or "").strip().lower()
+        password = str(payload.get("password") or "")
+        avatar_url = str(payload.get("avatarDataUrl") or payload.get("avatarUrl") or "").strip()
+        if not name or not email:
+            return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Nama dan email wajib diisi"})
+        if avatar_url and not (avatar_url.startswith("data:image/") or avatar_url.startswith("http://") or avatar_url.startswith("https://")):
+            return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Format foto profil tidak valid"})
+        if avatar_url.startswith("data:image/") and len(avatar_url) > 2_200_000:
+            return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Ukuran foto profil maksimal 1.5 MB"})
+        with connect_db() as conn:
+            try:
+                row = conn.execute("SELECT id, password_hash, avatar_url FROM users WHERE id = ?", (self.user["id"],)).fetchone()
+                if not row:
+                    return json_response(self, HTTPStatus.NOT_FOUND, {"error": "User tidak ditemukan"})
+                password_hash = hash_password(password) if password else row["password_hash"]
+                if not avatar_url:
+                    avatar_url = row["avatar_url"]
+                av = initials(name)
+                conn.execute(
+                    """
+                    UPDATE users
+                    SET name=?, email=?, password_hash=?, av=?, avatar_url=?, updated_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                    """,
+                    (name, email, password_hash, av, avatar_url, self.user["id"]),
+                )
+                audit(conn, self.user, "update", "profile", self.user["id"], {"avatarUpdated": bool(payload.get("avatarDataUrl"))})
+                conn.commit()
+            except sqlite3.IntegrityError:
+                return json_response(self, HTTPStatus.CONFLICT, {"error": "Email mungkin sudah digunakan akun lain"})
+            user = conn.execute(
+                "SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=?",
+                (self.user["id"],),
+            ).fetchone()
+        return json_response(self, HTTPStatus.OK, {"ok": True, "user": public_user(user)})
+
     def save_user(self, user_id=None):
         payload = self.read_json_body()
         if payload is None:
@@ -740,6 +792,11 @@ class GRCCHandler(SimpleHTTPRequestHandler):
         role = str(payload.get("role") or "Staff Marketing").strip()
         dept = str(payload.get("dept") or "").strip()
         av = str(payload.get("av") or initials(name)).strip()[:3].upper()
+        avatar_url = str(payload.get("avatarDataUrl") or payload.get("avatarUrl") or "").strip()
+        if avatar_url and not (avatar_url.startswith("data:image/") or avatar_url.startswith("http://") or avatar_url.startswith("https://")):
+            return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Format foto profil tidak valid"})
+        if avatar_url.startswith("data:image/") and len(avatar_url) > 2_200_000:
+            return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Ukuran foto profil maksimal 1.5 MB"})
         if not name or not username or not email:
             return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Nama, username, dan email wajib diisi"})
         if not user_id and len(password) < 6:
@@ -749,34 +806,36 @@ class GRCCHandler(SimpleHTTPRequestHandler):
                 return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Role tidak ditemukan"})
             try:
                 if user_id:
-                    row = conn.execute("SELECT id, password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+                    row = conn.execute("SELECT id, password_hash, avatar_url FROM users WHERE id = ?", (user_id,)).fetchone()
                     if not row:
                         return json_response(self, HTTPStatus.NOT_FOUND, {"error": "User tidak ditemukan"})
                     password_hash = hash_password(password) if password else row["password_hash"]
+                    if not avatar_url:
+                        avatar_url = row["avatar_url"]
                     conn.execute(
                         """
                         UPDATE users
-                        SET name=?, username=?, email=?, password_hash=?, role=?, dept=?, av=?, updated_at=CURRENT_TIMESTAMP
+                        SET name=?, username=?, email=?, password_hash=?, role=?, dept=?, av=?, avatar_url=?, updated_at=CURRENT_TIMESTAMP
                         WHERE id=?
                         """,
-                        (name, username, email, password_hash, role, dept, av, user_id),
+                        (name, username, email, password_hash, role, dept, av, avatar_url, user_id),
                     )
                     audit(conn, self.user, "update", "user", user_id, {"username": username, "role": role})
                 else:
                     user_id = secrets.token_urlsafe(8)
                     conn.execute(
                         """
-                        INSERT INTO users (id, name, username, email, password_hash, role, dept, av)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO users (id, name, username, email, password_hash, role, dept, av, avatar_url)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (user_id, name, username, email, hash_password(password), role, dept, av),
+                        (user_id, name, username, email, hash_password(password), role, dept, av, avatar_url),
                     )
                     audit(conn, self.user, "create", "user", user_id, {"username": username, "role": role})
                 conn.commit()
             except sqlite3.IntegrityError:
                 return json_response(self, HTTPStatus.CONFLICT, {"error": "Username atau email sudah digunakan"})
             row = conn.execute(
-                "SELECT id, name, username, email, role, dept, av, active FROM users WHERE id=?",
+                "SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=?",
                 (user_id,),
             ).fetchone()
         return json_response(self, HTTPStatus.OK, {"ok": True, "user": public_user(row)})
