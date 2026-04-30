@@ -463,6 +463,45 @@ def audit(conn, actor, action, entity_type, entity_id=None, details=None):
     )
 
 
+def normalized_user(row):
+    if not row:
+        return None
+    return {
+        "name": row["name"] or "",
+        "username": row["username"] or "",
+        "email": row["email"] or "",
+        "role": row["role"] or "",
+        "dept": row["dept"] or "",
+        "av": row["av"] or "",
+        "avatarUrl": row["avatar_url"] or "",
+        "active": bool(row["active"]),
+    }
+
+
+def audit_diff(before, after, fields):
+    before = before or {}
+    after = after or {}
+    before_diff = {}
+    after_diff = {}
+    for field in fields:
+        if before.get(field) != after.get(field):
+            before_diff[field] = before.get(field)
+            after_diff[field] = after.get(field)
+    return {"before": before_diff, "after": after_diff}
+
+
+def role_snapshot(row):
+    if not row:
+        return None
+    permissions = row["permissions"]
+    if isinstance(permissions, str):
+        try:
+            permissions = json.loads(permissions)
+        except json.JSONDecodeError:
+            permissions = []
+    return {"name": row["name"], "permissions": permissions, "color": row["color"]}
+
+
 def safe_filename(filename):
     name = Path(filename or "file").name
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "file"
@@ -756,9 +795,10 @@ class GRCCHandler(SimpleHTTPRequestHandler):
             return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Ukuran foto profil maksimal 1.5 MB"})
         with connect_db() as conn:
             try:
-                row = conn.execute("SELECT id, password_hash, avatar_url FROM users WHERE id = ?", (self.user["id"],)).fetchone()
+                row = conn.execute("SELECT id, name, username, email, role, dept, av, avatar_url, active, password_hash FROM users WHERE id = ?", (self.user["id"],)).fetchone()
                 if not row:
                     return json_response(self, HTTPStatus.NOT_FOUND, {"error": "User tidak ditemukan"})
+                before_user = normalized_user(row)
                 password_hash = hash_password(password) if password else row["password_hash"]
                 if not avatar_url:
                     avatar_url = row["avatar_url"]
@@ -771,14 +811,16 @@ class GRCCHandler(SimpleHTTPRequestHandler):
                     """,
                     (name, email, password_hash, av, avatar_url, self.user["id"]),
                 )
-                audit(conn, self.user, "update", "profile", self.user["id"], {"avatarUpdated": bool(payload.get("avatarDataUrl"))})
+                user = conn.execute(
+                    "SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=?",
+                    (self.user["id"],),
+                ).fetchone()
+                after_user = normalized_user(user)
+                diff = audit_diff(before_user, after_user, ["name", "email", "av", "avatarUrl"])
+                audit(conn, self.user, "update", "profile", self.user["id"], {**diff, "changed": list(diff["after"].keys()), "passwordChanged": bool(password), "avatarUpdated": bool(payload.get("avatarDataUrl"))})
                 conn.commit()
             except sqlite3.IntegrityError:
                 return json_response(self, HTTPStatus.CONFLICT, {"error": "Email mungkin sudah digunakan akun lain"})
-            user = conn.execute(
-                "SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=?",
-                (self.user["id"],),
-            ).fetchone()
         return json_response(self, HTTPStatus.OK, {"ok": True, "user": public_user(user)})
 
     def save_user(self, user_id=None):
@@ -806,9 +848,10 @@ class GRCCHandler(SimpleHTTPRequestHandler):
                 return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Role tidak ditemukan"})
             try:
                 if user_id:
-                    row = conn.execute("SELECT id, password_hash, avatar_url FROM users WHERE id = ?", (user_id,)).fetchone()
+                    row = conn.execute("SELECT id, name, username, email, role, dept, av, avatar_url, active, password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
                     if not row:
                         return json_response(self, HTTPStatus.NOT_FOUND, {"error": "User tidak ditemukan"})
+                    before_user = normalized_user(row)
                     password_hash = hash_password(password) if password else row["password_hash"]
                     if not avatar_url:
                         avatar_url = row["avatar_url"]
@@ -820,9 +863,9 @@ class GRCCHandler(SimpleHTTPRequestHandler):
                         """,
                         (name, username, email, password_hash, role, dept, av, avatar_url, user_id),
                     )
-                    audit(conn, self.user, "update", "user", user_id, {"username": username, "role": role})
                 else:
                     user_id = secrets.token_urlsafe(8)
+                    before_user = None
                     conn.execute(
                         """
                         INSERT INTO users (id, name, username, email, password_hash, role, dept, av, avatar_url)
@@ -830,14 +873,19 @@ class GRCCHandler(SimpleHTTPRequestHandler):
                         """,
                         (user_id, name, username, email, hash_password(password), role, dept, av, avatar_url),
                     )
-                    audit(conn, self.user, "create", "user", user_id, {"username": username, "role": role})
+                row = conn.execute(
+                    "SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=?",
+                    (user_id,),
+                ).fetchone()
+                after_user = normalized_user(row)
+                if before_user:
+                    diff = audit_diff(before_user, after_user, ["name", "username", "email", "role", "dept", "av", "avatarUrl", "active"])
+                    audit(conn, self.user, "update", "user", user_id, {**diff, "changed": list(diff["after"].keys()), "passwordChanged": bool(password), "avatarUpdated": bool(payload.get("avatarDataUrl"))})
+                else:
+                    audit(conn, self.user, "create", "user", user_id, {"after": after_user, "passwordSet": True, "avatarUpdated": bool(payload.get("avatarDataUrl"))})
                 conn.commit()
             except sqlite3.IntegrityError:
                 return json_response(self, HTTPStatus.CONFLICT, {"error": "Username atau email sudah digunakan"})
-            row = conn.execute(
-                "SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=?",
-                (user_id,),
-            ).fetchone()
         return json_response(self, HTTPStatus.OK, {"ok": True, "user": public_user(row)})
 
     def delete_user(self, path):
@@ -845,9 +893,10 @@ class GRCCHandler(SimpleHTTPRequestHandler):
         if user_id == self.user["id"]:
             return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Tidak bisa menghapus akun sendiri"})
         with connect_db() as conn:
+            before = conn.execute("SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id = ?", (user_id,)).fetchone()
             conn.execute("UPDATE users SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (user_id,))
             conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-            audit(conn, self.user, "delete", "user", user_id)
+            audit(conn, self.user, "delete", "user", user_id, {"before": normalized_user(before)})
             conn.commit()
         return json_response(self, HTTPStatus.OK, {"ok": True})
 
@@ -899,10 +948,11 @@ class GRCCHandler(SimpleHTTPRequestHandler):
                 if old_name and old_name != name:
                     if old_name in SUPER_ADMIN_ROLES:
                         return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Role Super Admin tidak boleh diganti nama"})
+                    before_role = role_snapshot(conn.execute("SELECT name, permissions, color FROM roles WHERE name = ?", (old_name,)).fetchone())
                     conn.execute("UPDATE roles SET name=?, permissions=?, color=?, updated_at=CURRENT_TIMESTAMP WHERE name=?", (name, json.dumps(permissions), color, old_name))
-                    audit(conn, self.user, "rename", "role", name, {"oldName": old_name, "permissions": permissions})
+                    audit(conn, self.user, "rename", "role", name, {"before": before_role or {"name": old_name}, "after": {"name": name, "permissions": permissions, "color": color}, "oldName": old_name})
                 else:
-                    exists = conn.execute("SELECT name FROM roles WHERE name = ?", (name,)).fetchone()
+                    before_role = role_snapshot(conn.execute("SELECT name, permissions, color FROM roles WHERE name = ?", (name,)).fetchone())
                     conn.execute(
                         """
                         INSERT INTO roles (name, permissions, color, updated_at)
@@ -914,7 +964,12 @@ class GRCCHandler(SimpleHTTPRequestHandler):
                         """,
                         (name, json.dumps(permissions), color),
                     )
-                    audit(conn, self.user, "update" if exists else "create", "role", name, {"permissions": permissions})
+                    after_role = {"name": name, "permissions": permissions, "color": color}
+                    if before_role:
+                        diff = audit_diff(before_role, after_role, ["name", "permissions", "color"])
+                        audit(conn, self.user, "update", "role", name, {**diff, "changed": list(diff["after"].keys())})
+                    else:
+                        audit(conn, self.user, "create", "role", name, {"after": after_role, "changed": list(after_role.keys())})
                 conn.commit()
             except sqlite3.IntegrityError:
                 return json_response(self, HTTPStatus.CONFLICT, {"error": "Role tidak bisa disimpan"})
@@ -927,8 +982,9 @@ class GRCCHandler(SimpleHTTPRequestHandler):
         with connect_db() as conn:
             if conn.execute("SELECT id FROM users WHERE role = ? AND active = 1 LIMIT 1", (name,)).fetchone():
                 return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Role masih dipakai user"})
+            before_role = role_snapshot(conn.execute("SELECT name, permissions, color FROM roles WHERE name = ?", (name,)).fetchone())
             conn.execute("DELETE FROM roles WHERE name = ?", (name,))
-            audit(conn, self.user, "delete", "role", name)
+            audit(conn, self.user, "delete", "role", name, {"before": before_role or {"name": name}})
             conn.commit()
         return json_response(self, HTTPStatus.OK, {"ok": True})
 
@@ -949,6 +1005,7 @@ class GRCCHandler(SimpleHTTPRequestHandler):
         storage_path = document_storage_path(doc_id, filename)
         storage_path.write_bytes(content)
         with connect_db() as conn:
+            previous = conn.execute("SELECT filename, content_type AS contentType, storage_path, size, uploaded_by FROM documents WHERE id = ?", (doc_id,)).fetchone()
             conn.execute(
                 """
                 INSERT INTO documents (id, filename, content_type, storage_path, size, uploaded_by, uploaded_at)
@@ -963,7 +1020,8 @@ class GRCCHandler(SimpleHTTPRequestHandler):
                 """,
                 (doc_id, filename, content_type, str(storage_path.relative_to(ROOT)), len(content), self.user["id"]),
             )
-            audit(conn, self.user, "upload", "document", doc_id, {"filename": filename, "size": len(content)})
+            before_doc = dict(previous) if previous else None
+            audit(conn, self.user, "replace" if previous else "upload", "document", doc_id, {"before": before_doc, "after": {"filename": filename, "contentType": content_type, "size": len(content), "blobAccess": "local-private"}})
             conn.commit()
         return json_response(self, HTTPStatus.OK, {"ok": True, "downloadUrl": f"/api/documents/{doc_id}/download", "size": len(content)})
 
@@ -977,6 +1035,9 @@ class GRCCHandler(SimpleHTTPRequestHandler):
         if not file_path.exists():
             return json_response(self, HTTPStatus.NOT_FOUND, {"error": "File dokumen tidak ditemukan di storage"})
         content_type = row["content_type"] or mimetypes.guess_type(row["filename"])[0] or "application/octet-stream"
+        with connect_db() as conn:
+            audit(conn, self.user, "download", "document", doc_id, {"filename": row["filename"], "size": row["size"], "accessChecked": True})
+            conn.commit()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(row["size"]))

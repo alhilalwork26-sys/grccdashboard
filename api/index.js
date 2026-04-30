@@ -1,6 +1,7 @@
 const crypto = require('crypto');
+const { Readable } = require('stream');
 const { neon } = require('@neondatabase/serverless');
-const { put } = require('@vercel/blob');
+const { get, put } = require('@vercel/blob');
 
 const SESSION_DAYS = 7;
 const MODULE_TABLES = {
@@ -114,6 +115,7 @@ function verifyPassword(password, stored) {
 }
 
 function publicUser(row) {
+  const rawAvatarUrl = row.avatar_url || '';
   return {
     id: row.id,
     name: row.name,
@@ -122,7 +124,7 @@ function publicUser(row) {
     role: row.role,
     dept: row.dept || '',
     av: row.av || 'U',
-    avatarUrl: row.avatar_url || '',
+    avatarUrl: rawAvatarUrl && rawAvatarUrl.includes('.private.blob.vercel-storage.com') ? `/api/users/${encodeURIComponent(row.id)}/avatar` : rawAvatarUrl,
     active: row.active !== false
   };
 }
@@ -147,6 +149,42 @@ async function uploadAvatarDataUrl(dataUrl, userId) {
   return blob.url;
 }
 
+function normalizedUser(row) {
+  if (!row) return null;
+  return {
+    name: row.name || '',
+    username: row.username || '',
+    email: row.email || '',
+    role: row.role || '',
+    dept: row.dept || '',
+    av: row.av || '',
+    active: row.active !== false,
+    avatarUrl: row.avatar_url || ''
+  };
+}
+
+function auditDiff(before = {}, after = {}, fields = []) {
+  const beforeDiff = {};
+  const afterDiff = {};
+  for (const field of fields) {
+    const oldValue = before?.[field] ?? null;
+    const newValue = after?.[field] ?? null;
+    if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+      beforeDiff[field] = oldValue;
+      afterDiff[field] = newValue;
+    }
+  }
+  return { before: beforeDiff, after: afterDiff };
+}
+
+function hasDiff(diff) {
+  return Boolean(Object.keys(diff.before || {}).length || Object.keys(diff.after || {}).length);
+}
+
+function safeDownloadName(filename) {
+  return String(filename || 'download').replace(/[\r\n"]/g, '_');
+}
+
 async function ensureSchema() {
   if (schemaReady) return;
   const sql = db();
@@ -155,7 +193,8 @@ async function ensureSchema() {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url text NOT NULL DEFAULT ''`;
   await sql`CREATE TABLE IF NOT EXISTS sessions (token text PRIMARY KEY, user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at bigint NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TABLE IF NOT EXISTS app_state (id integer PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`;
-  await sql`CREATE TABLE IF NOT EXISTS documents (id text PRIMARY KEY, filename text NOT NULL, content_type text NOT NULL, blob_url text NOT NULL, size integer NOT NULL, uploaded_by text, uploaded_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`CREATE TABLE IF NOT EXISTS documents (id text PRIMARY KEY, filename text NOT NULL, content_type text NOT NULL, blob_url text NOT NULL, blob_access text NOT NULL DEFAULT 'public', size integer NOT NULL, uploaded_by text, uploaded_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS blob_access text NOT NULL DEFAULT 'public'`;
   await sql`CREATE TABLE IF NOT EXISTS audit_log (id bigserial PRIMARY KEY, actor_id text, actor_name text, action text NOT NULL, entity_type text NOT NULL, entity_id text, details jsonb, created_at timestamptz NOT NULL DEFAULT now())`;
   for (const table of Object.values(MODULE_TABLES)) {
     await sql.query(`CREATE TABLE IF NOT EXISTS ${table} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
@@ -309,6 +348,36 @@ async function handle(req, res) {
     return send(res, 200, { user });
   }
 
+  const avatarMatch = path.match(/^\/users\/([^/]+)\/avatar$/);
+  if (avatarMatch && method === 'GET') {
+    const requester = await requireUser(req, res);
+    if (!requester) return;
+    const id = decodeURIComponent(avatarMatch[1]);
+    const rows = await sql`SELECT avatar_url FROM users WHERE id=${id} AND active=true`;
+    const avatarUrl = rows[0]?.avatar_url || '';
+    if (!avatarUrl) return send(res, 404, { error: 'Foto profil tidak ditemukan' });
+    if (avatarUrl.startsWith('data:image/')) {
+      const match = avatarUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) return send(res, 404, { error: 'Foto profil tidak valid' });
+      const buffer = Buffer.from(match[2], 'base64');
+      res.statusCode = 200;
+      res.setHeader('Content-Type', match[1]);
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      return res.end(buffer);
+    }
+    if (!avatarUrl.includes('.private.blob.vercel-storage.com')) {
+      res.statusCode = 302;
+      res.setHeader('Location', avatarUrl);
+      return res.end();
+    }
+    const blob = await get(avatarUrl, { access: 'private' });
+    if (!blob || blob.statusCode !== 200 || !blob.stream) return send(res, 404, { error: 'Foto profil tidak ditemukan' });
+    res.statusCode = 200;
+    res.setHeader('Content-Type', blob.contentType || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    return Readable.fromWeb(blob.stream).pipe(res);
+  }
+
   if (path === '/profile' && method === 'PUT') {
     const user = await requireUser(req, res);
     if (!user) return;
@@ -320,14 +389,15 @@ async function handle(req, res) {
     let avatarUrl = String(body.avatarUrl || user.avatarUrl || '').trim();
     if (!name || !email) return send(res, 400, { error: 'Nama dan email wajib diisi' });
     try {
-      const current = await sql`SELECT password_hash, avatar_url FROM users WHERE id = ${user.id}`;
+      const current = await sql`SELECT name, username, email, role, dept, av, avatar_url, active, password_hash FROM users WHERE id = ${user.id}`;
       if (!current[0]) return send(res, 404, { error: 'User tidak ditemukan' });
       if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, user.id);
       if (!avatarUrl) avatarUrl = current[0].avatar_url || '';
       const av = initials(name);
       await sql`UPDATE users SET name=${name}, email=${email}, password_hash=${password ? hashPassword(password) : current[0].password_hash}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${user.id}`;
-      await audit(user, 'update', 'profile', user.id, { avatarUpdated: Boolean(avatarDataUrl) });
       const rows = await sql`SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=${user.id}`;
+      const diff = auditDiff(normalizedUser(current[0]), normalizedUser(rows[0]), ['name', 'email', 'av', 'avatarUrl']);
+      await audit(user, 'update', 'profile', user.id, { ...diff, changed: Object.keys(diff.after), passwordChanged: Boolean(password), avatarUpdated: Boolean(avatarDataUrl) });
       return send(res, 200, { ok: true, user: publicUser(rows[0]) });
     } catch (err) {
       if (err.message) return send(res, 409, { error: err.message });
@@ -376,20 +446,28 @@ async function handle(req, res) {
     if (!updateId && password.length < 6) return send(res, 400, { error: 'Password minimal 6 karakter' });
     try {
       let id = updateId;
+      let beforeUserRecord = null;
       if (updateId) {
-        const current = await sql`SELECT password_hash, avatar_url FROM users WHERE id = ${updateId}`;
+        const current = await sql`SELECT name, username, email, role, dept, av, avatar_url, active, password_hash FROM users WHERE id = ${updateId}`;
         if (!current[0]) return send(res, 404, { error: 'User tidak ditemukan' });
+        beforeUserRecord = current[0];
         if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, updateId);
         if (!avatarUrl) avatarUrl = current[0].avatar_url || '';
         await sql`UPDATE users SET name=${name}, username=${username}, email=${email}, password_hash=${password ? hashPassword(password) : current[0].password_hash}, role=${role}, dept=${dept}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${updateId}`;
-        await audit(actor, 'update', 'user', updateId, { username, role, avatarUpdated: Boolean(avatarDataUrl) });
       } else {
         id = crypto.randomBytes(8).toString('base64url');
         if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, id);
         await sql`INSERT INTO users (id, name, username, email, password_hash, role, dept, av, avatar_url) VALUES (${id}, ${name}, ${username}, ${email}, ${hashPassword(password)}, ${role}, ${dept}, ${av}, ${avatarUrl})`;
-        await audit(actor, 'create', 'user', id, { username, role, avatarUpdated: Boolean(avatarDataUrl) });
       }
       const rows = await sql`SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=${id}`;
+      const afterUser = normalizedUser(rows[0]);
+      if (updateId) {
+        const beforeUser = normalizedUser(beforeUserRecord);
+        const diff = auditDiff(beforeUser, afterUser, ['name', 'username', 'email', 'role', 'dept', 'av', 'avatarUrl', 'active']);
+        await audit(actor, 'update', 'user', id, { ...diff, changed: Object.keys(diff.after), passwordChanged: Boolean(password), avatarUpdated: Boolean(avatarDataUrl) });
+      } else {
+        await audit(actor, 'create', 'user', id, { after: afterUser, passwordSet: true, avatarUpdated: Boolean(avatarDataUrl) });
+      }
       return send(res, 200, { ok: true, user: publicUser(rows[0]) });
     } catch (err) {
       return send(res, 409, { error: 'Username/email mungkin sudah digunakan atau role tidak valid' });
@@ -401,9 +479,10 @@ async function handle(req, res) {
     if (!actor) return;
     const id = decodeURIComponent(path.split('/').pop());
     if (id === actor.id) return send(res, 400, { error: 'Tidak bisa menghapus akun sendiri' });
+    const beforeRows = await sql`SELECT name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=${id}`;
     await sql`UPDATE users SET active=false, updated_at=now() WHERE id=${id}`;
     await sql`DELETE FROM sessions WHERE user_id=${id}`;
-    await audit(actor, 'delete', 'user', id);
+    await audit(actor, 'delete', 'user', id, { before: normalizedUser(beforeRows[0]) });
     return send(res, 200, { ok: true });
   }
 
@@ -423,11 +502,17 @@ async function handle(req, res) {
     if (!name) return send(res, 400, { error: 'Nama role wajib diisi' });
     if (oldName && oldName !== name) {
       if (SUPER_ADMIN_ROLES.has(oldName)) return send(res, 400, { error: 'Role Super Admin tidak boleh diganti nama' });
+      const beforeRows = await sql`SELECT name, permissions, color FROM roles WHERE name=${oldName}`;
       await sql`UPDATE roles SET name=${name}, permissions=${JSON.stringify(permissions)}, color=${color}, updated_at=now() WHERE name=${oldName}`;
-      await audit(actor, 'rename', 'role', name, { oldName, permissions });
+      await audit(actor, 'rename', 'role', name, { before: beforeRows[0] || { name: oldName }, after: { name, permissions, color }, oldName });
     } else {
+      const beforeRows = await sql`SELECT name, permissions, color FROM roles WHERE name=${name}`;
       await sql`INSERT INTO roles (name, permissions, color, updated_at) VALUES (${name}, ${JSON.stringify(permissions)}, ${color}, now()) ON CONFLICT (name) DO UPDATE SET permissions=EXCLUDED.permissions, color=EXCLUDED.color, updated_at=now()`;
-      await audit(actor, 'update', 'role', name, { permissions });
+      const beforeRole = beforeRows[0] || null;
+      const afterRole = { name, permissions, color };
+      const action = beforeRole ? 'update' : 'create';
+      const diff = beforeRole ? auditDiff(beforeRole, afterRole, ['name', 'permissions', 'color']) : { after: afterRole };
+      await audit(actor, action, 'role', name, { ...diff, changed: beforeRole ? Object.keys(diff.after) : Object.keys(afterRole) });
     }
     return send(res, 200, { ok: true });
   }
@@ -439,8 +524,9 @@ async function handle(req, res) {
     if (SUPER_ADMIN_ROLES.has(name)) return send(res, 400, { error: 'Role Super Admin tidak boleh dihapus' });
     const used = await sql`SELECT id FROM users WHERE role=${name} AND active=true LIMIT 1`;
     if (used[0]) return send(res, 400, { error: 'Role masih dipakai user' });
+    const beforeRows = await sql`SELECT name, permissions, color FROM roles WHERE name=${name}`;
     await sql`DELETE FROM roles WHERE name=${name}`;
-    await audit(actor, 'delete', 'role', name);
+    await audit(actor, 'delete', 'role', name, { before: beforeRows[0] || { name } });
     return send(res, 200, { ok: true });
   }
 
@@ -455,24 +541,44 @@ async function handle(req, res) {
     const dataUrl = String(body.dataUrl || '');
     if (!id || !filename || !dataUrl.includes(',')) return send(res, 400, { error: 'id, filename, dan dataUrl wajib diisi' });
     const buffer = Buffer.from(dataUrl.split(',', 2)[1], 'base64');
+    const blobAccess = process.env.DOCUMENT_BLOB_ACCESS || process.env.BLOB_ACCESS || 'public';
     const blob = await put(`grcc/${id}_${filename.replace(/[^A-Za-z0-9._-]+/g, '_')}`, buffer, {
-      access: process.env.BLOB_ACCESS === 'private' ? 'private' : 'public',
+      access: blobAccess === 'private' ? 'private' : 'public',
       contentType
     });
-    await sql`INSERT INTO documents (id, filename, content_type, blob_url, size, uploaded_by, uploaded_at) VALUES (${id}, ${filename}, ${contentType}, ${blob.url}, ${buffer.length}, ${user.id}, now()) ON CONFLICT (id) DO UPDATE SET filename=EXCLUDED.filename, content_type=EXCLUDED.content_type, blob_url=EXCLUDED.blob_url, size=EXCLUDED.size, uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`;
-    await audit(user, 'upload', 'document', id, { filename, size: buffer.length });
+    const previous = await sql`SELECT filename, content_type, blob_url, blob_access, size, uploaded_by FROM documents WHERE id=${id}`;
+    await sql`INSERT INTO documents (id, filename, content_type, blob_url, blob_access, size, uploaded_by, uploaded_at) VALUES (${id}, ${filename}, ${contentType}, ${blob.url}, ${blobAccess === 'private' ? 'private' : 'public'}, ${buffer.length}, ${user.id}, now()) ON CONFLICT (id) DO UPDATE SET filename=EXCLUDED.filename, content_type=EXCLUDED.content_type, blob_url=EXCLUDED.blob_url, blob_access=EXCLUDED.blob_access, size=EXCLUDED.size, uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`;
+    await audit(user, previous[0] ? 'replace' : 'upload', 'document', id, { before: previous[0] || null, after: { filename, contentType, size: buffer.length, blobAccess: blobAccess === 'private' ? 'private' : 'public' } });
     return send(res, 200, { ok: true, downloadUrl: `/api/documents/${encodeURIComponent(id)}/download`, size: buffer.length });
   }
 
   const docMatch = path.match(/^\/documents\/([^/]+)\/download$/);
   if (docMatch && method === 'GET') {
-    if (!await requireUser(req, res)) return;
+    const user = await requireUser(req, res);
+    if (!user) return;
     const id = decodeURIComponent(docMatch[1]);
-    const rows = await sql`SELECT blob_url FROM documents WHERE id=${id}`;
+    const rows = await sql`SELECT filename, content_type, blob_url, blob_access, size FROM documents WHERE id=${id}`;
     if (!rows[0]) return send(res, 404, { error: 'Dokumen tidak ditemukan' });
-    res.statusCode = 302;
-    res.setHeader('Location', rows[0].blob_url);
-    return res.end();
+    const doc = rows[0];
+    const access = doc.blob_access === 'private' || doc.blob_url.includes('.private.blob.vercel-storage.com') ? 'private' : 'public';
+    try {
+      const blob = await get(doc.blob_url, { access });
+      if (!blob || blob.statusCode !== 200 || !blob.stream) return send(res, 404, { error: 'Dokumen tidak ditemukan' });
+      await audit(user, 'download', 'document', id, { filename: doc.filename, size: doc.size, accessChecked: true });
+      res.statusCode = 200;
+      res.setHeader('Content-Type', blob.contentType || doc.content_type || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${safeDownloadName(doc.filename)}"`);
+      res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+      return Readable.fromWeb(blob.stream).pipe(res);
+    } catch (err) {
+      if (access === 'public') {
+        await audit(user, 'download', 'document', id, { filename: doc.filename, size: doc.size, accessChecked: true, fallback: 'redirect' });
+        res.statusCode = 302;
+        res.setHeader('Location', doc.blob_url);
+        return res.end();
+      }
+      throw err;
+    }
   }
 
   if (path === '/audit' && method === 'GET') {

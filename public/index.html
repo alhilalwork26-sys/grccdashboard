@@ -1288,6 +1288,59 @@ function setAvatar(el, user, sz=36, bg='var(--navy)'){
 function btn(label,cls,onclick,extra=''){
   return `<button class="btn ${cls}" onclick="${onclick}" ${extra}>${label}</button>`;
 }
+const AUDIT_ACTION_LABELS = {login:'Login',logout:'Logout',create:'Membuat',update:'Mengubah',rename:'Mengganti nama',delete:'Menghapus',upload:'Upload',replace:'Mengganti file',download:'Download'};
+const AUDIT_ENTITY_LABELS = {session:'Sesi',profile:'Profil',user:'Akun',role:'Role',document:'Dokumen',app_state:'Data Website'};
+const AUDIT_FIELD_LABELS = {name:'Nama',username:'Username',email:'Email',role:'Role',dept:'Departemen',av:'Inisial',avatarUrl:'Foto profil',active:'Status aktif',permissions:'Akses modul',color:'Warna',filename:'Nama file',contentType:'Tipe file',size:'Ukuran',blobAccess:'Akses file'};
+function auditLabel(map, value){ return map[value] || String(value || '-').replace(/_/g, ' '); }
+function auditValue(value){
+  if(value === null || value === undefined || value === '') return '-';
+  if(typeof value === 'boolean') return value ? 'Ya' : 'Tidak';
+  if(Array.isArray(value)) return value.join(', ');
+  if(typeof value === 'object') return JSON.stringify(value);
+  if(typeof value === 'number' && value > 1024) return `${(value / 1024).toFixed(value > 1024 * 1024 ? 1 : 0)} KB`;
+  if(String(value).includes('blob.vercel-storage.com') || String(value).startsWith('/api/users/')) return 'Foto/file tersimpan';
+  return String(value);
+}
+function auditObjectRows(obj){
+  const entries = Object.entries(obj || {});
+  if(!entries.length) return '<div style="font-size:11px;color:var(--muted)">Tidak ada perubahan field.</div>';
+  return entries.map(([key,value]) => `
+    <div style="display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px;font-size:11px;padding:5px 0;border-bottom:1px solid rgba(148,163,184,.14)">
+      <div style="color:var(--muted);font-weight:800">${escHtml(AUDIT_FIELD_LABELS[key] || key)}</div>
+      <div style="word-break:break-word">${escHtml(auditValue(value))}</div>
+    </div>
+  `).join('');
+}
+function renderAuditDetails(details){
+  details = details || {};
+  const parts = [];
+  if(details.before || details.after){
+    parts.push(`
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+        <div style="border:1px solid var(--border);border-radius:10px;padding:10px;background:rgba(248,113,113,.04)">
+          <div style="font-size:10px;font-weight:900;color:#B91C1C;margin-bottom:5px">SEBELUM</div>
+          ${auditObjectRows(details.before)}
+        </div>
+        <div style="border:1px solid var(--border);border-radius:10px;padding:10px;background:rgba(34,197,94,.04)">
+          <div style="font-size:10px;font-weight:900;color:#15803D;margin-bottom:5px">SESUDAH</div>
+          ${auditObjectRows(details.after)}
+        </div>
+      </div>
+    `);
+  }
+  const notes = [];
+  if(details.changed?.length) notes.push(`Field berubah: ${details.changed.map(k => AUDIT_FIELD_LABELS[k] || k).join(', ')}`);
+  if(details.passwordChanged) notes.push('Password ikut diganti');
+  if(details.passwordSet) notes.push('Password awal dibuat');
+  if(details.avatarUpdated) notes.push('Foto profil diperbarui');
+  if(details.accessChecked) notes.push('Akses file dicek lewat login');
+  if(details.filename) notes.push(`File: ${details.filename}`);
+  if(details.size) notes.push(`Ukuran: ${auditValue(details.size)}`);
+  if(details.modules?.length) notes.push(`Modul disinkronkan: ${details.modules.length}`);
+  if(notes.length) parts.push(`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${notes.map(n => `<span class="badge" style="background:rgba(37,99,235,.08);color:#1D4ED8;border-color:rgba(37,99,235,.18)">${escHtml(n)}</span>`).join('')}</div>`);
+  if(!parts.length) parts.push(`<div style="font-size:11px;color:var(--muted);margin-top:8px">${escHtml(JSON.stringify(details))}</div>`);
+  return parts.join('');
+}
 
 /* ===== TOAST ===== */
 function toast(msg, type='success'){
@@ -4838,13 +4891,15 @@ if(state.user){
       const html = `
         <div style="display:flex;flex-direction:column;gap:8px;max-height:520px;overflow:auto">
           ${rows.length ? rows.map(item => `
-            <div style="padding:10px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,0.025)">
+            <div style="padding:12px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,0.025)">
               <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
-                <div style="font-size:12px;font-weight:800">${escHtml(item.action)} · ${escHtml(item.entity_type)}</div>
+                <div>
+                  <div style="font-size:12px;font-weight:900">${escHtml(auditLabel(AUDIT_ACTION_LABELS, item.action))} ${escHtml(auditLabel(AUDIT_ENTITY_LABELS, item.entity_type))}</div>
+                  <div style="font-size:11px;color:var(--muted);margin-top:3px">${escHtml(item.actor_name || 'System')} ${item.entity_id ? '· ID: ' + escHtml(item.entity_id) : ''}</div>
+                </div>
                 <div style="font-size:10px;color:var(--muted);white-space:nowrap">${escHtml(new Date(item.created_at).toLocaleString('id-ID'))}</div>
               </div>
-              <div style="font-size:11px;color:var(--muted);margin-top:4px">${escHtml(item.actor_name || 'System')} ${item.entity_id ? '· ' + escHtml(item.entity_id) : ''}</div>
-              <div style="font-size:10px;color:var(--muted);margin-top:4px;word-break:break-word">${escHtml(JSON.stringify(item.details || {}))}</div>
+              ${renderAuditDetails(item.details || {})}
             </div>
           `).join('') : '<div style="font-size:12px;color:var(--muted)">Belum ada audit log.</div>'}
         </div>
