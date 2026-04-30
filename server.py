@@ -238,6 +238,9 @@ def ensure_documents_table(conn):
             uploaded_by TEXT,
             visibility TEXT NOT NULL DEFAULT 'public',
             pin_hash TEXT NOT NULL DEFAULT '',
+            ai_summary TEXT NOT NULL DEFAULT '',
+            ai_summary_at TEXT,
+            ai_summary_model TEXT NOT NULL DEFAULT '',
             uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -247,6 +250,12 @@ def ensure_documents_table(conn):
         conn.execute("ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'")
     if "pin_hash" not in cols:
         conn.execute("ALTER TABLE documents ADD COLUMN pin_hash TEXT NOT NULL DEFAULT ''")
+    if "ai_summary" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN ai_summary TEXT NOT NULL DEFAULT ''")
+    if "ai_summary_at" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN ai_summary_at TEXT")
+    if "ai_summary_model" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN ai_summary_model TEXT NOT NULL DEFAULT ''")
 
 
 def migrate_legacy_documents(conn):
@@ -263,6 +272,9 @@ def migrate_legacy_documents(conn):
             uploaded_by TEXT,
             visibility TEXT NOT NULL DEFAULT 'public',
             pin_hash TEXT NOT NULL DEFAULT '',
+            ai_summary TEXT NOT NULL DEFAULT '',
+            ai_summary_at TEXT,
+            ai_summary_model TEXT NOT NULL DEFAULT '',
             uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -516,6 +528,31 @@ def can_manage_important_documents(user):
     return (user or {}).get("role") in IMPORTANT_DOC_ROLES
 
 
+def readable_document_text(content, filename, content_type):
+    name = str(filename or "").lower()
+    ctype = str(content_type or "").lower()
+    try:
+        text = content.decode("utf-8", errors="ignore")
+    except Exception:
+        text = ""
+    if not (ctype.startswith("text/") or re.search(r"\.(txt|md|csv|json|html|xml)$", name)):
+        text = re.sub(r"[^\t\n\r -~\u00A0-\uFFFF]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:18000]
+
+
+def fallback_summary(filename, text):
+    sentences = [s.strip() for s in re.findall(r"[^.!?\n]+[.!?]*", text) if len(s.strip()) > 35][:5]
+    if not sentences:
+        sentences = [text[:450]]
+    points = "\n".join(f"{idx + 1}. {sentence[:280]}" for idx, sentence in enumerate(sentences))
+    return (
+        f'CUK AI membaca dokumen "{filename}" dan membuat ringkasan cepat otomatis.\n\n'
+        f"Poin utama:\n{points}\n\n"
+        "Catatan: ringkasan ini dibuat dengan mode lokal. Untuk AI penuh, pasang OPENAI_API_KEY di Vercel."
+    )
+
+
 def safe_filename(filename):
     name = Path(filename or "file").name
     return re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "file"
@@ -638,6 +675,10 @@ class GRCCHandler(SimpleHTTPRequestHandler):
             if not self.require_user():
                 return
             return self.post_document()
+        if parsed.path.startswith("/api/documents/") and parsed.path.endswith("/summary"):
+            if not self.require_user():
+                return
+            return self.summarize_document(parsed.path)
         if parsed.path == "/api/users":
             if not self.require_admin():
                 return
@@ -1079,6 +1120,46 @@ class GRCCHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         with file_path.open("rb") as f:
             shutil.copyfileobj(f, self.wfile)
+
+    def summarize_document(self, path):
+        doc_id = unquote(path.removeprefix("/api/documents/").removesuffix("/summary"))
+        payload = self.read_json_body()
+        if payload is None:
+            return
+        refresh = bool(payload.get("refresh"))
+        pin = str(payload.get("pin") or self.headers.get("X-Document-Pin") or "")
+        with connect_db() as conn:
+            row = conn.execute(
+                "SELECT filename, content_type, storage_path, size, visibility, pin_hash, ai_summary, ai_summary_at, ai_summary_model FROM documents WHERE id = ?",
+                (doc_id,),
+            ).fetchone()
+            if not row:
+                return json_response(self, HTTPStatus.NOT_FOUND, {"error": "Dokumen tidak ditemukan"})
+            if row["visibility"] == "important":
+                if not can_manage_important_documents(self.user):
+                    audit(conn, self.user, "denied", "document_ai_summary", doc_id, {"filename": row["filename"], "reason": "role_not_allowed", "visibility": row["visibility"]})
+                    conn.commit()
+                    return json_response(self, HTTPStatus.FORBIDDEN, {"error": "Dokumen penting hanya bisa diringkas Super Admin/Admin"})
+                if not row["pin_hash"] or not verify_password(pin, row["pin_hash"]):
+                    audit(conn, self.user, "denied", "document_ai_summary", doc_id, {"filename": row["filename"], "reason": "pin_invalid", "visibility": row["visibility"]})
+                    conn.commit()
+                    return json_response(self, HTTPStatus.FORBIDDEN, {"error": "PIN dokumen penting salah"})
+            if row["ai_summary"] and not refresh:
+                return json_response(self, HTTPStatus.OK, {"ok": True, "summary": row["ai_summary"], "model": row["ai_summary_model"] or "cached", "cached": True, "summarizedAt": row["ai_summary_at"]})
+            file_path = ROOT / row["storage_path"]
+            if not file_path.exists():
+                return json_response(self, HTTPStatus.NOT_FOUND, {"error": "File dokumen tidak ditemukan di storage"})
+            text = readable_document_text(file_path.read_bytes(), row["filename"], row["content_type"])
+            if len(text) < 80:
+                return json_response(self, HTTPStatus.UNPROCESSABLE_ENTITY, {"error": "CUK AI belum bisa membaca cukup teks dari dokumen ini."})
+            summary = fallback_summary(row["filename"], text)
+            conn.execute(
+                "UPDATE documents SET ai_summary=?, ai_summary_at=CURRENT_TIMESTAMP, ai_summary_model=? WHERE id=?",
+                (summary, "cuk-ai-local", doc_id),
+            )
+            audit(conn, self.user, "ai_summary", "document", doc_id, {"filename": row["filename"], "model": "cuk-ai-local", "visibility": row["visibility"], "textLength": len(text)})
+            conn.commit()
+        return json_response(self, HTTPStatus.OK, {"ok": True, "summary": summary, "model": "cuk-ai-local", "cached": False, "summarizedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
 
     def read_json_body(self):
         try:

@@ -106,11 +106,32 @@ a { text-decoration: none; }
   0%,100% { transform:scale(1); box-shadow:0 0 0 0 rgba(251,191,36,.26); }
   50% { transform:scale(1.03); box-shadow:0 0 0 10px rgba(251,191,36,0); }
 }
+@keyframes cukSparkle {
+  0%,100% { transform:rotate(0deg) scale(1); filter:drop-shadow(0 0 0 rgba(167,139,250,0)); }
+  45% { transform:rotate(12deg) scale(1.18); filter:drop-shadow(0 0 8px rgba(167,139,250,.7)); }
+}
+@keyframes cukGlow {
+  0%,100% { background-position:0% 50%; }
+  50% { background-position:100% 50%; }
+}
 .important-warning-icon {
   width:54px;height:54px;border-radius:16px;background:rgba(251,191,36,.14);color:var(--amber);
   display:flex;align-items:center;justify-content:center;margin:0 auto 12px;
   border:1px solid rgba(251,191,36,.28);animation:warningPulse 1.35s ease-in-out infinite;
 }
+.cuk-ai-btn {
+  display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border-radius:8px;
+  color:#DDD6FE;background:linear-gradient(120deg,rgba(91,141,246,.14),rgba(167,139,250,.18),rgba(52,211,153,.1));
+  background-size:220% 220%;border:1px solid rgba(167,139,250,.28);animation:cukGlow 4s ease infinite;
+  transition:transform .15s, border-color .15s;
+}
+.cuk-ai-btn:hover { transform:translateY(-1px); border-color:rgba(221,214,254,.55); }
+.cuk-ai-btn svg { animation:cukSparkle 2.1s ease-in-out infinite; }
+.cuk-summary-box {
+  border:1px solid rgba(167,139,250,.22);border-radius:12px;padding:14px;
+  background:linear-gradient(135deg,rgba(91,141,246,.08),rgba(167,139,250,.08),rgba(52,211,153,.045));
+}
+.cuk-summary-text { white-space:pre-wrap;font-size:12px;color:var(--text);line-height:1.7; }
 .doc-access-pill { display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:7px;font-size:10px;font-weight:900;border:1px solid transparent; }
 .doc-access-public { background:rgba(91,141,246,.1);color:#7AAAF7;border-color:rgba(91,141,246,.2); }
 .doc-access-important { background:rgba(251,191,36,.12);color:#FBBF24;border-color:rgba(251,191,36,.25); }
@@ -1302,8 +1323,8 @@ function setAvatar(el, user, sz=36, bg='var(--navy)'){
 function btn(label,cls,onclick,extra=''){
   return `<button class="btn ${cls}" onclick="${onclick}" ${extra}>${label}</button>`;
 }
-const AUDIT_ACTION_LABELS = {login:'Login',logout:'Logout',create:'Membuat',update:'Mengubah',rename:'Mengganti nama',delete:'Menghapus',upload:'Upload',replace:'Mengganti file',download:'Download',denied:'Akses ditolak'};
-const AUDIT_ENTITY_LABELS = {session:'Sesi',profile:'Profil',user:'Akun',role:'Role',document:'Dokumen',app_state:'Data Website'};
+const AUDIT_ACTION_LABELS = {login:'Login',logout:'Logout',create:'Membuat',update:'Mengubah',rename:'Mengganti nama',delete:'Menghapus',upload:'Upload',replace:'Mengganti file',download:'Download',denied:'Akses ditolak',ai_summary:'Ringkasan AI'};
+const AUDIT_ENTITY_LABELS = {session:'Sesi',profile:'Profil',user:'Akun',role:'Role',document:'Dokumen',document_ai_summary:'CUK AI',app_state:'Data Website'};
 const AUDIT_FIELD_LABELS = {name:'Nama',username:'Username',email:'Email',role:'Role',dept:'Departemen',av:'Inisial',avatarUrl:'Foto profil',active:'Status aktif',permissions:'Akses modul',color:'Warna',filename:'Nama file',contentType:'Tipe file',size:'Ukuran',blobAccess:'Akses file',visibility:'Level dokumen',pinProtected:'PIN aktif'};
 function auditLabel(map, value){ return map[value] || String(value || '-').replace(/_/g, ' '); }
 function auditValue(value){
@@ -2979,9 +3000,9 @@ function renderDocuments(){
   </div>
   <div class="table-wrap"><div class="table-scroll">
     <table>
-      <thead><tr>${['Dokumen','Folder','Akses','Ukuran','Diupload Oleh','Tanggal','Aksi'].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+      <thead><tr>${['Dokumen','Folder','Akses','Ukuran','CUK AI','Diupload Oleh','Tanggal','Aksi'].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
       <tbody>
-        ${filtered.length===0?`<tr><td colspan="7" style="padding:32px;text-align:center;color:var(--muted)">Tidak ada dokumen ditemukan</td></tr>`:
+        ${filtered.length===0?`<tr><td colspan="8" style="padding:32px;text-align:center;color:var(--muted)">Tidak ada dokumen ditemukan</td></tr>`:
           filtered.map(d=>{const ec=EXT_M[d.ext]||{bg:'var(--bg)',c:'var(--sub)',l:(d.ext||'').toUpperCase()};return `
           <tr>
             <td>
@@ -2993,6 +3014,12 @@ function renderDocuments(){
             <td><span style="background:var(--bg);color:var(--sub);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600">${escHtml(d.folder)}</span></td>
             <td>${d.visibility === 'important' ? '<span class="doc-access-pill doc-access-important">Penting</span>' : '<span class="doc-access-pill doc-access-public">Public</span>'}</td>
             <td style="font-size:12px;color:var(--muted)">${escHtml(d.size)}</td>
+            <td>
+              <button class="cuk-ai-btn" onclick="openCukAiSummary('${d.id}')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6L12 3z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16z"/></svg>
+                ${d.aiSummary ? 'Lihat' : 'Ringkas'}
+              </button>
+            </td>
             <td style="font-size:12px;color:var(--sub)">${escHtml(d.by)}</td>
             <td style="font-size:12px;color:var(--muted)">${fmtD(d.date)}</td>
             <td>
@@ -3646,6 +3673,99 @@ function openImportantDocPinModal(doc){
     </div>`;
   showModal('Akses Dokumen Penting', html, 430);
   setTimeout(()=>document.getElementById('doc-pin-input')?.focus(), 80);
+}
+function cukAiHero(summary=''){
+  return `
+    <div style="text-align:center;margin-bottom:14px">
+      <div class="important-warning-icon" style="background:rgba(167,139,250,.14);border-color:rgba(167,139,250,.3);color:#DDD6FE;animation:cukSparkle 2.2s ease-in-out infinite">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.4L19 10l-5.2 1.6L12 17l-1.8-5.4L5 10l5.2-1.6L12 3z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16z"/></svg>
+      </div>
+      <div style="font-size:16px;font-weight:950">CUK AI</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">Cepat Urus Kerjaan AI</div>
+    </div>
+    ${summary ? `<div class="cuk-summary-box"><div class="cuk-summary-text">${escHtml(summary)}</div></div>` : ''}
+  `;
+}
+function openCukAiPinModal(doc){
+  const html = `
+    ${cukAiHero()}
+    <div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.22);border-radius:10px;padding:12px;margin-bottom:12px;font-size:12px;color:var(--sub)">
+      Dokumen ini penting. CUK AI perlu PIN sebelum membaca dan merangkumnya.
+    </div>
+    <div class="form-group"><label class="form-label">PIN Akses <span>*</span></label>
+      <input id="cuk-ai-pin" class="form-control" type="password" inputmode="numeric" autocomplete="off" placeholder="Masukkan PIN" onkeydown="if(event.key==='Enter')runCukAiSummary('${doc.id}')">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Batal</button>
+      <button class="btn btn-pri" onclick="runCukAiSummary('${doc.id}')">Ringkas</button>
+    </div>`;
+  showModal('Ringkas dengan CUK AI', html, 500);
+  setTimeout(()=>document.getElementById('cuk-ai-pin')?.focus(), 80);
+}
+function openCukAiSummary(id){
+  const doc = state.docs.find(x => x.id === id);
+  if(!doc) return;
+  if(doc.aiSummary){
+    const html = `
+      ${cukAiHero(doc.aiSummary)}
+      <div class="modal-footer">
+        <button class="btn btn-sec" onclick="closeModal()">Tutup</button>
+        <button class="btn btn-pri" onclick="runCukAiSummary('${doc.id}', true)">Ringkas Ulang</button>
+      </div>`;
+    showModal(`CUK AI · ${doc.name}`, html, 620);
+    return;
+  }
+  if(doc.visibility === 'important'){
+    if(!canManageImportantDocs(state.user)){toast('Dokumen penting hanya untuk Super Admin/Admin','error');return;}
+    openCukAiPinModal(doc);
+    return;
+  }
+  runCukAiSummary(id);
+}
+async function runCukAiSummary(id, refresh=false){
+  const doc = state.docs.find(x => x.id === id);
+  if(!doc) return;
+  const pin = document.getElementById('cuk-ai-pin')?.value || '';
+  if(doc.visibility === 'important' && !pin && !refresh){toast('PIN wajib diisi','error');return;}
+  if(location.protocol === 'file:'){
+    const localSummary = `Ringkasan lokal CUK AI\n\nDokumen: ${doc.name}\nFolder: ${doc.folder}\nAkses: ${doc.visibility === 'important' ? 'Penting' : 'Public'}\n\nUntuk ringkasan isi dokumen yang sebenarnya, buka website production dan pastikan file sudah tersimpan di server.`;
+    state.docs = state.docs.map(d => d.id === id ? {...d, aiSummary:localSummary, aiSummaryModel:'cuk-ai-local-preview', aiSummaryAt:new Date().toISOString()} : d);
+    persistPatched();
+    showModal(`CUK AI · ${doc.name}`, `${cukAiHero(localSummary)}<div class="modal-footer"><button class="btn btn-pri" onclick="closeModal();renderPage()">Tutup</button></div>`, 620);
+    return;
+  }
+  showModal('Ringkas dengan CUK AI', `
+    ${cukAiHero()}
+    <div style="font-size:12px;color:var(--muted);text-align:center">CUK AI sedang membaca dokumen dan menyusun poin penting...</div>
+    <div style="height:6px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:14px">
+      <div style="height:100%;width:45%;background:linear-gradient(90deg,#5B8DF6,#A78BFA,#34D399);border-radius:999px;animation:shimmer 1.15s linear infinite;background-size:200% 100%"></div>
+    </div>`, 500);
+  try {
+    const res = await fetch(`/api/documents/${encodeURIComponent(id)}/summary`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({pin, refresh})
+    });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || `CUK AI gagal (${res.status})`);
+    state.docs = state.docs.map(d => d.id === id ? {...d, aiSummary:data.summary, aiSummaryModel:data.model, aiSummaryAt:data.summarizedAt || new Date().toISOString()} : d);
+    persistPatched();
+    showModal(`CUK AI · ${doc.name}`, `
+      ${cukAiHero(data.summary)}
+      <div style="font-size:10px;color:var(--muted);margin-top:10px">Model: ${escHtml(data.model || '-')} ${data.cached ? '· dari cache' : ''}</div>
+      <div class="modal-footer">
+        <button class="btn btn-sec" onclick="closeModal();renderPage()">Tutup</button>
+        <button class="btn btn-pri" onclick="runCukAiSummary('${doc.id}', true)">Ringkas Ulang</button>
+      </div>`, 620);
+    toast('CUK AI selesai merangkum dokumen');
+  } catch(err) {
+    showModal('CUK AI belum berhasil', `
+      ${cukAiHero()}
+      <div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.22);border-radius:10px;padding:12px;font-size:12px;color:var(--sub)">${escHtml(err.message || 'Ringkasan gagal dibuat')}</div>
+      <div class="modal-footer"><button class="btn btn-pri" onclick="closeModal();renderPage()">Tutup</button></div>`, 500);
+    toast(err.message || 'CUK AI gagal merangkum', 'error');
+  }
 }
 async function confirmImportantDocDownload(id){
   const doc = state.docs.find(x => x.id === id);

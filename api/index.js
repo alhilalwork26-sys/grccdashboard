@@ -190,6 +190,75 @@ function canManageImportantDocuments(user) {
   return IMPORTANT_DOC_ROLES.has(user?.role);
 }
 
+async function streamToBuffer(stream) {
+  const chunks = [];
+  for await (const chunk of Readable.fromWeb(stream)) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+function readableDocumentText(buffer, filename, contentType) {
+  const name = String(filename || '').toLowerCase();
+  const type = String(contentType || '').toLowerCase();
+  const textLike = type.startsWith('text/') || /(\.txt|\.md|\.csv|\.json|\.html|\.xml)$/i.test(name);
+  let text = buffer.toString('utf8');
+  if (!textLike) {
+    text = text
+      .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\uFFFF]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  text = text.replace(/\s+/g, ' ').trim().slice(0, 18000);
+  return text;
+}
+
+function fallbackSummary(filename, text) {
+  const sentences = text.match(/[^.!?\n]+[.!?]*/g) || [];
+  const clean = sentences.map(s => s.trim()).filter(s => s.length > 35).slice(0, 5);
+  const short = clean.length ? clean : [text.slice(0, 450)];
+  return [
+    `CUK AI membaca dokumen "${filename}" dan membuat ringkasan cepat otomatis.`,
+    '',
+    'Poin utama:',
+    ...short.map((s, i) => `${i + 1}. ${s.slice(0, 280)}`),
+    '',
+    'Catatan: ringkasan ini dibuat dengan mode lokal karena OPENAI_API_KEY belum aktif di server.'
+  ].join('\n');
+}
+
+function outputTextFromOpenAI(data) {
+  if (data.output_text) return data.output_text;
+  const parts = [];
+  for (const item of data.output || []) {
+    for (const content of item.content || []) {
+      if (content.text) parts.push(content.text);
+    }
+  }
+  return parts.join('\n').trim();
+}
+
+async function summarizeWithCukAI(filename, text) {
+  if (!process.env.OPENAI_API_KEY) {
+    return { summary: fallbackSummary(filename, text), model: 'cuk-ai-local' };
+  }
+  const model = process.env.OPENAI_SUMMARY_MODEL || 'gpt-4.1-mini';
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model,
+      instructions: 'Kamu adalah CUK AI, singkatan dari Cepat Urus Kerjaan AI. Ringkas dokumen perusahaan dalam bahasa Indonesia yang jelas, rapi, profesional, dan langsung bisa dipakai manajemen. Jangan mengarang di luar isi dokumen.',
+      input: `Nama dokumen: ${filename}\n\nBuat ringkasan dengan format:\n1. Ringkasan singkat\n2. Poin penting\n3. Action item / tindak lanjut jika ada\n4. Risiko atau angka penting jika ada\n\nIsi dokumen:\n${text}`,
+      max_output_tokens: 900
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error?.message || `OpenAI gagal (${response.status})`);
+  return { summary: outputTextFromOpenAI(data) || fallbackSummary(filename, text), model };
+}
+
 async function ensureSchema() {
   if (schemaReady) return;
   const sql = db();
@@ -202,6 +271,9 @@ async function ensureSchema() {
   await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS blob_access text NOT NULL DEFAULT 'public'`;
   await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS visibility text NOT NULL DEFAULT 'public'`;
   await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS pin_hash text NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary text NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary_at timestamptz`;
+  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary_model text NOT NULL DEFAULT ''`;
   await sql`CREATE TABLE IF NOT EXISTS audit_log (id bigserial PRIMARY KEY, actor_id text, actor_name text, action text NOT NULL, entity_type text NOT NULL, entity_id text, details jsonb, created_at timestamptz NOT NULL DEFAULT now())`;
   for (const table of Object.values(MODULE_TABLES)) {
     await sql.query(`CREATE TABLE IF NOT EXISTS ${table} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
@@ -602,6 +674,41 @@ async function handle(req, res) {
       }
       throw err;
     }
+  }
+
+  const summaryMatch = path.match(/^\/documents\/([^/]+)\/summary$/);
+  if (summaryMatch && method === 'POST') {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const id = decodeURIComponent(summaryMatch[1]);
+    const body = await readBody(req);
+    const suppliedPin = String(body.pin || req.headers['x-document-pin'] || '');
+    const rows = await sql`SELECT filename, content_type, blob_url, blob_access, visibility, pin_hash, size, ai_summary, ai_summary_at, ai_summary_model FROM documents WHERE id=${id}`;
+    if (!rows[0]) return send(res, 404, { error: 'Dokumen tidak ditemukan' });
+    const doc = rows[0];
+    if (doc.visibility === 'important') {
+      if (!canManageImportantDocuments(user)) {
+        await audit(user, 'denied', 'document_ai_summary', id, { filename: doc.filename, reason: 'role_not_allowed', visibility: doc.visibility });
+        return send(res, 403, { error: 'Dokumen penting hanya bisa diringkas Super Admin/Admin' });
+      }
+      if (!doc.pin_hash || !verifyPassword(suppliedPin, doc.pin_hash)) {
+        await audit(user, 'denied', 'document_ai_summary', id, { filename: doc.filename, reason: 'pin_invalid', visibility: doc.visibility });
+        return send(res, 403, { error: 'PIN dokumen penting salah' });
+      }
+    }
+    if (doc.ai_summary && !body.refresh) {
+      return send(res, 200, { ok: true, summary: doc.ai_summary, model: doc.ai_summary_model || 'cached', cached: true, summarizedAt: doc.ai_summary_at });
+    }
+    const access = doc.blob_access === 'private' || doc.blob_url.includes('.private.blob.vercel-storage.com') ? 'private' : 'public';
+    const blob = await get(doc.blob_url, { access });
+    if (!blob || blob.statusCode !== 200 || !blob.stream) return send(res, 404, { error: 'Dokumen tidak ditemukan' });
+    const buffer = await streamToBuffer(blob.stream);
+    const text = readableDocumentText(buffer, doc.filename, blob.contentType || doc.content_type);
+    if (text.length < 80) return send(res, 422, { error: 'CUK AI belum bisa membaca cukup teks dari dokumen ini. Coba file PDF teks, DOCX teks, TXT, CSV, atau dokumen yang tidak berupa scan gambar.' });
+    const result = await summarizeWithCukAI(doc.filename, text);
+    await sql`UPDATE documents SET ai_summary=${result.summary}, ai_summary_at=now(), ai_summary_model=${result.model} WHERE id=${id}`;
+    await audit(user, 'ai_summary', 'document', id, { filename: doc.filename, model: result.model, visibility: doc.visibility || 'public', textLength: text.length });
+    return send(res, 200, { ok: true, summary: result.summary, model: result.model, cached: false, summarizedAt: new Date().toISOString() });
   }
 
   if (path === '/audit' && method === 'GET') {
