@@ -3700,6 +3700,23 @@ function cukAiHero(summary=''){
   `;
 }
 function localCukAiSummary(doc, reason=''){
+  if(location.protocol === 'file:'){
+    return `CUK AI belum membaca isi dokumen
+
+Kamu sedang membuka dashboard dari file lokal:
+file:///Users/macbook/Documents/New project 3/public/index.html
+
+Di mode file lokal, upload hanya masuk ke browser lokal. File tidak masuk ke database/server, jadi CUK AI tidak bisa mengambil isi PDF asli.
+
+Yang harus dilakukan:
+1. Buka https://grcc-dashboard.vercel.app
+2. Login
+3. Upload dokumen dari website production
+4. Klik CUK AI lagi
+
+Dokumen yang tampil sekarang:
+${doc.name || '-'} (${doc.size || '-'})`;
+  }
   return `Ringkasan preview CUK AI
 
 Dokumen: ${doc.name || '-'}
@@ -3715,12 +3732,13 @@ Dokumen ini belum bisa dibaca langsung dari server${reason ? ` (${reason})` : ''
 Supaya CUK AI bisa merangkum isi dokumen asli, upload ulang dokumen melalui website production sampai statusnya tersimpan ke server.`;
 }
 function showCukAiSummaryResult(doc, summary, model='cuk-ai-preview', cached=false){
+  const fileModeAction = location.protocol === 'file:' ? '<a class="btn btn-pri" href="https://grcc-dashboard.vercel.app" target="_blank">Buka Website Production</a>' : `<button class="btn btn-pri" onclick="runCukAiSummary('${doc.id}', true)">Ringkas Ulang</button>`;
   showModal(`CUK AI · ${doc.name}`, `
     ${cukAiHero(summary)}
     <div style="font-size:10px;color:var(--muted);margin-top:10px">Model: ${escHtml(model || '-')} ${cached ? '· dari cache' : ''}</div>
     <div class="modal-footer">
       <button class="btn btn-sec" onclick="closeModal();renderPage()">Tutup</button>
-      <button class="btn btn-pri" onclick="runCukAiSummary('${doc.id}', true)">Ringkas Ulang</button>
+      ${fileModeAction}
     </div>`, 620);
 }
 function isCukAiPreview(doc){
@@ -3750,6 +3768,10 @@ function openCukAiPinModal(doc){
 function openCukAiSummary(id){
   const doc = state.docs.find(x => x.id === id);
   if(!doc) return;
+  if(location.protocol === 'file:'){
+    runCukAiSummary(id, true);
+    return;
+  }
   if(doc.aiSummary && !(isCukAiPreview(doc) && isDocServerReady(doc))){
     const html = `
       ${cukAiHero(doc.aiSummary)}
