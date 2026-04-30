@@ -102,6 +102,18 @@ a { text-decoration: none; }
   0%,100% { box-shadow:0 0 0 0 rgba(91,141,246,0); }
   50%     { box-shadow:0 0 20px 4px rgba(91,141,246,0.25); }
 }
+@keyframes warningPulse {
+  0%,100% { transform:scale(1); box-shadow:0 0 0 0 rgba(251,191,36,.26); }
+  50% { transform:scale(1.03); box-shadow:0 0 0 10px rgba(251,191,36,0); }
+}
+.important-warning-icon {
+  width:54px;height:54px;border-radius:16px;background:rgba(251,191,36,.14);color:var(--amber);
+  display:flex;align-items:center;justify-content:center;margin:0 auto 12px;
+  border:1px solid rgba(251,191,36,.28);animation:warningPulse 1.35s ease-in-out infinite;
+}
+.doc-access-pill { display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:7px;font-size:10px;font-weight:900;border:1px solid transparent; }
+.doc-access-public { background:rgba(91,141,246,.1);color:#7AAAF7;border-color:rgba(91,141,246,.2); }
+.doc-access-important { background:rgba(251,191,36,.12);color:#FBBF24;border-color:rgba(251,191,36,.25); }
 
 /* ═══════════════════════════════════════════════
    LAYOUT
@@ -1207,6 +1219,7 @@ function isManagerRole(userOrRole){ return isSuperAdminRole(userOrRole) || isPro
 function isFinanceRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.finance); }
 function isTrainerRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.trainer); }
 function isStaffRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.staff); }
+function canManageImportantDocs(userOrRole){ return isManagerRole(userOrRole); }
 const NAV = [
   {id:'dashboard',label:'Dashboard',  icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>`},
   {id:'tasks',    label:'Task Management', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`},
@@ -1288,9 +1301,9 @@ function setAvatar(el, user, sz=36, bg='var(--navy)'){
 function btn(label,cls,onclick,extra=''){
   return `<button class="btn ${cls}" onclick="${onclick}" ${extra}>${label}</button>`;
 }
-const AUDIT_ACTION_LABELS = {login:'Login',logout:'Logout',create:'Membuat',update:'Mengubah',rename:'Mengganti nama',delete:'Menghapus',upload:'Upload',replace:'Mengganti file',download:'Download'};
+const AUDIT_ACTION_LABELS = {login:'Login',logout:'Logout',create:'Membuat',update:'Mengubah',rename:'Mengganti nama',delete:'Menghapus',upload:'Upload',replace:'Mengganti file',download:'Download',denied:'Akses ditolak'};
 const AUDIT_ENTITY_LABELS = {session:'Sesi',profile:'Profil',user:'Akun',role:'Role',document:'Dokumen',app_state:'Data Website'};
-const AUDIT_FIELD_LABELS = {name:'Nama',username:'Username',email:'Email',role:'Role',dept:'Departemen',av:'Inisial',avatarUrl:'Foto profil',active:'Status aktif',permissions:'Akses modul',color:'Warna',filename:'Nama file',contentType:'Tipe file',size:'Ukuran',blobAccess:'Akses file'};
+const AUDIT_FIELD_LABELS = {name:'Nama',username:'Username',email:'Email',role:'Role',dept:'Departemen',av:'Inisial',avatarUrl:'Foto profil',active:'Status aktif',permissions:'Akses modul',color:'Warna',filename:'Nama file',contentType:'Tipe file',size:'Ukuran',blobAccess:'Akses file',visibility:'Level dokumen',pinProtected:'PIN aktif'};
 function auditLabel(map, value){ return map[value] || String(value || '-').replace(/_/g, ' '); }
 function auditValue(value){
   if(value === null || value === undefined || value === '') return '-';
@@ -2937,9 +2950,11 @@ function saveProg(){
 function renderDocuments(){
   const u=state.user;
   const canUpload=isManagerRole(u) || isFinanceRole(u) || isTrainerRole(u);
+  const canImportant=canManageImportantDocs(u);
   const sf=state.searchDoc, ff=state.folderDoc;
   const folders=['Semua',...new Set(state.docs.map(d=>d.folder))];
   const filtered=state.docs.filter(d=>{
+    if(d.visibility === 'important' && !canImportant) return false;
     if(ff!=='Semua'&&d.folder!==ff) return false;
     if(sf&&!d.name.toLowerCase().includes(sf.toLowerCase())) return false;
     return true;
@@ -2963,9 +2978,9 @@ function renderDocuments(){
   </div>
   <div class="table-wrap"><div class="table-scroll">
     <table>
-      <thead><tr>${['Dokumen','Folder','Ukuran','Diupload Oleh','Tanggal','Aksi'].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+      <thead><tr>${['Dokumen','Folder','Akses','Ukuran','Diupload Oleh','Tanggal','Aksi'].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
       <tbody>
-        ${filtered.length===0?`<tr><td colspan="6" style="padding:32px;text-align:center;color:var(--muted)">Tidak ada dokumen ditemukan</td></tr>`:
+        ${filtered.length===0?`<tr><td colspan="7" style="padding:32px;text-align:center;color:var(--muted)">Tidak ada dokumen ditemukan</td></tr>`:
           filtered.map(d=>{const ec=EXT_M[d.ext]||{bg:'var(--bg)',c:'var(--sub)',l:(d.ext||'').toUpperCase()};return `
           <tr>
             <td>
@@ -2975,6 +2990,7 @@ function renderDocuments(){
               </div>
             </td>
             <td><span style="background:var(--bg);color:var(--sub);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600">${escHtml(d.folder)}</span></td>
+            <td>${d.visibility === 'important' ? '<span class="doc-access-pill doc-access-important">Penting</span>' : '<span class="doc-access-pill doc-access-public">Public</span>'}</td>
             <td style="font-size:12px;color:var(--muted)">${escHtml(d.size)}</td>
             <td style="font-size:12px;color:var(--sub)">${escHtml(d.by)}</td>
             <td style="font-size:12px;color:var(--muted)">${fmtD(d.date)}</td>
@@ -2995,11 +3011,15 @@ function renderDocuments(){
 }
 function deleteDoc(id){ state.docs=state.docs.filter(d=>d.id!==id); toast('Dokumen dihapus','info'); renderPage(); }
 function openDocModal(){
+  const importantAllowed = canManageImportantDocs(state.user);
   const html=`
-    <div class="upload-zone">
+    <div class="upload-zone" style="margin-bottom:14px">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:8px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      <div style="font-size:13px;font-weight:600;margin-bottom:4px">Drag &amp; drop file di sini</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">Pilih file dokumen</div>
       <div style="font-size:11px;color:var(--muted)">PDF, DOCX, PPTX, XLSX (Maks. 25 MB)</div>
+    </div>
+    <div class="form-group"><label class="form-label">File <span>*</span></label>
+      <input id="df-file" class="form-control" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx" onchange="document.getElementById('df-name').value=this.files?.[0]?.name||document.getElementById('df-name').value">
     </div>
     <div class="form-group"><label class="form-label">Nama File <span>*</span></label>
       <input id="df-name" class="form-control" placeholder="nama-dokumen.pdf">
@@ -3007,18 +3027,51 @@ function openDocModal(){
     <div class="form-group"><label class="form-label">Folder</label>
       <select id="df-folder" class="form-control">${['Training','Finance','Program','Dokumen Resmi','Rapat'].map(f=>`<option>${f}</option>`).join('')}</select>
     </div>
+    <div class="form-group"><label class="form-label">Akses Dokumen</label>
+      <select id="df-visibility" class="form-control" onchange="toggleDocAccessFields()">
+        <option value="public">Public - terlihat oleh role yang punya menu Dokumen</option>
+        <option value="important" ${importantAllowed?'':'disabled'}>Penting - hanya Super Admin/Admin + PIN</option>
+      </select>
+      ${importantAllowed ? '<div class="inline-help" style="margin-top:6px">Dokumen penting akan meminta PIN setiap kali dibuka/download.</div>' : '<div class="inline-help" style="margin-top:6px">Role kamu hanya bisa membuat dokumen Public.</div>'}
+    </div>
+    <div id="df-pin-wrap" style="display:none;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.22);border-radius:10px;padding:12px;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:900;color:var(--amber);margin-bottom:8px">Proteksi Dokumen Penting</div>
+      <div class="form-group" style="margin-bottom:0"><label class="form-label">PIN Akses <span>*</span></label>
+        <input id="df-pin" class="form-control" type="password" inputmode="numeric" autocomplete="new-password" placeholder="Minimal 4 digit/karakter">
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-sec" onclick="closeModal()">Batal</button>
       <button class="btn btn-pri" onclick="saveDoc()">Upload</button>
     </div>`;
   showModal('Upload Dokumen', html, 480);
 }
+function toggleDocAccessFields(){
+  const visibility = document.getElementById('df-visibility')?.value || 'public';
+  const pinWrap = document.getElementById('df-pin-wrap');
+  if(pinWrap) pinWrap.style.display = visibility === 'important' ? '' : 'none';
+}
 function saveDoc(){
-  const name=document.getElementById('df-name').value.trim();
+  const file=document.getElementById('df-file')?.files?.[0];
+  const name=document.getElementById('df-name').value.trim() || file?.name || '';
   if(!name){toast('Nama file wajib diisi','error');return;}
+  if(!file){toast('File wajib dipilih','error');return;}
+  const visibility=document.getElementById('df-visibility')?.value || 'public';
+  const pin=document.getElementById('df-pin')?.value || '';
+  if(visibility === 'important' && !canManageImportantDocs(state.user)){toast('Hanya Super Admin/Admin yang boleh membuat dokumen penting','error');return;}
+  if(visibility === 'important' && pin.length < 4){toast('PIN dokumen penting minimal 4 digit/karakter','error');return;}
   const ext=name.split('.').pop().toLowerCase();
-  state.docs=[...state.docs,{id:uid(),name,folder:document.getElementById('df-folder').value,size:'—',by:state.user.name,date:today(),ext}];
-  toast('Dokumen berhasil diupload'); closeModal(); renderPage();
+  const doc={id:uid(),name,folder:document.getElementById('df-folder').value,size:fmtFileSizePatch(file.size),by:state.user.name,date:today(),ext,visibility,pinProtected:visibility==='important',isLocal:true};
+  if(location.protocol === 'file:') doc.downloadUrl = URL.createObjectURL(file);
+  state.docs=[...state.docs,doc];
+  closeModal(); renderPage();
+  if(location.protocol === 'file:'){
+    persistPatched();
+    toast(visibility === 'important' ? 'Dokumen penting tersimpan lokal' : 'Dokumen tersimpan lokal');
+  } else {
+    toast(visibility === 'important' ? 'Dokumen penting sedang diupload' : 'Dokumen sedang diupload','info');
+    uploadDocumentFile(file, doc, {visibility, pin});
+  }
 }
 
 /* ===== SETTINGS ===== */
@@ -3550,20 +3603,83 @@ function exportFinanceCsv(){
   toast('Export CSV berhasil diunduh', 'success');
 }
 function triggerDocUpload(){
-  const input = document.getElementById('doc-file-input');
-  if(input) input.click();
+  openDocModal();
 }
-function downloadDoc(id){
+async function fetchDocumentDownload(doc, pin=''){
+  const res = await fetch(doc.downloadUrl, {
+    credentials: 'same-origin',
+    headers: pin ? {'X-Document-Pin': pin} : {}
+  });
+  if(!res.ok){
+    const data = await res.json().catch(()=>({}));
+    throw new Error(data.error || `Download gagal (${res.status})`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = doc.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1500);
+}
+function openImportantDocPinModal(doc){
+  const html = `
+    <div style="text-align:center;margin-bottom:14px">
+      <div class="important-warning-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </div>
+      <div style="font-size:15px;font-weight:900">Dokumen Penting</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">${escHtml(doc.name)}</div>
+    </div>
+    <div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.22);border-radius:10px;padding:12px;margin-bottom:12px;font-size:12px;color:var(--sub)">
+      Akses hanya untuk Super Admin/Admin. Masukkan PIN untuk membuka dokumen. Percobaan akses akan tercatat di audit log.
+    </div>
+    <div class="form-group"><label class="form-label">PIN Akses <span>*</span></label>
+      <input id="doc-pin-input" class="form-control" type="password" inputmode="numeric" autocomplete="off" placeholder="Masukkan PIN" onkeydown="if(event.key==='Enter')confirmImportantDocDownload('${doc.id}')">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Batal</button>
+      <button class="btn btn-pri" onclick="confirmImportantDocDownload('${doc.id}')">Buka Dokumen</button>
+    </div>`;
+  showModal('Akses Dokumen Penting', html, 430);
+  setTimeout(()=>document.getElementById('doc-pin-input')?.focus(), 80);
+}
+async function confirmImportantDocDownload(id){
+  const doc = state.docs.find(x => x.id === id);
+  const pin = document.getElementById('doc-pin-input')?.value || '';
+  if(!doc) return;
+  if(pin.length < 1){toast('PIN wajib diisi','error');return;}
+  try {
+    await fetchDocumentDownload(doc, pin);
+    closeModal();
+    toast(`Mengunduh: ${doc.name}`, 'info');
+  } catch(err) {
+    toast(err.message || 'PIN salah atau akses ditolak', 'error');
+  }
+}
+async function downloadDoc(id){
   const d = state.docs.find(x => x.id === id);
   if(!d) return;
+  if(d.visibility === 'important'){
+    if(!canManageImportantDocs(state.user)){toast('Dokumen penting hanya untuk Super Admin/Admin','error');return;}
+    openImportantDocPinModal(d);
+    return;
+  }
   if(d.downloadUrl){
-    const a = document.createElement('a');
-    a.href = d.downloadUrl;
-    a.download = d.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    toast(`Mengunduh: ${d.name}`, 'info');
+    try {
+      await fetchDocumentDownload(d);
+      toast(`Mengunduh: ${d.name}`, 'info');
+    } catch(err) {
+      const a = document.createElement('a');
+      a.href = d.downloadUrl;
+      a.download = d.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast(`Mengunduh: ${d.name}`, 'info');
+    }
     return;
   }
   const fallback = `Dokumen: ${d.name}\nFolder: ${d.folder}\nDiupload oleh: ${d.by}\nTanggal: ${d.date}`;
@@ -4660,29 +4776,36 @@ if(state.user){
     });
   }
 
-  async function uploadDocumentFile(file){
+  async function uploadDocumentFile(file, docRecord=null, options={}){
     if(location.protocol === 'file:') return;
     try {
-      const before = new Set(state.docs.map(d => d.id));
-      setTimeout(async () => {
-        const doc = state.docs.find(d => !before.has(d.id) && d.name === file.name && d.isLocal);
-        if(!doc) return;
-        const dataUrl = await readFileAsDataUrl(file);
-        const res = await fetch(API.documents, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({id: doc.id, filename: file.name, contentType: file.type || 'application/octet-stream', dataUrl})
-        });
-        if(!res.ok) throw new Error('HTTP ' + res.status);
-        const saved = await res.json();
-        doc.downloadUrl = saved.downloadUrl;
-        doc.isLocal = false;
-        persistPatched();
+      let doc = docRecord;
+      if(!doc){
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        doc = {id: uid(), name: file.name, folder: state.folderDoc !== 'Semua' ? state.folderDoc : 'Dokumen Resmi', size: fmtFileSizePatch(file.size), by: state.user?.name || '', date: today(), ext, visibility:'public', isLocal:true};
+        state.docs = [...state.docs, doc];
         renderPage();
-        setSyncStatus('Dokumen tersimpan ke server', 'success');
-      }, 0);
+      }
+      const dataUrl = await readFileAsDataUrl(file);
+      const res = await fetch(API.documents, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: doc.id, filename: doc.name || file.name, contentType: file.type || 'application/octet-stream', dataUrl, visibility: options.visibility || doc.visibility || 'public', pin: options.pin || ''})
+      });
+      const saved = await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(saved.error || 'HTTP ' + res.status);
+      state.docs = state.docs.map(item => item.id === doc.id ? {...item, downloadUrl: saved.downloadUrl, size: saved.size ? fmtFileSizePatch(saved.size) : item.size, isLocal: false, visibility: options.visibility || item.visibility || 'public', pinProtected: (options.visibility || item.visibility) === 'important'} : item);
+      persistPatched();
+      renderPage();
+      setSyncStatus('Dokumen tersimpan ke server', 'success');
     } catch(err) {
       console.warn('upload dokumen gagal', err);
+      if(docRecord){
+        state.docs = state.docs.filter(d => d.id !== docRecord.id);
+        persistPatched();
+        renderPage();
+      }
+      toast(err.message || 'Upload dokumen gagal', 'error');
       setSyncStatus('Upload dokumen gagal', 'error');
     }
   }
@@ -4690,8 +4813,10 @@ if(state.user){
   const docInputBackend = document.getElementById('doc-file-input');
   if(docInputBackend){
     docInputBackend.addEventListener('change', e => {
+      e.stopImmediatePropagation();
       const file = e.target.files?.[0];
       if(file) uploadDocumentFile(file);
+      e.target.value = '';
     }, true);
   }
 

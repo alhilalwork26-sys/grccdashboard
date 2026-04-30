@@ -31,6 +31,7 @@ const DEFAULT_ROLE_COLORS = {
   'Kepala Trainer': '#7C3AED'
 };
 const SUPER_ADMIN_ROLES = new Set(['Super Admin', 'Super Admin + Manager']);
+const IMPORTANT_DOC_ROLES = new Set(['Super Admin', 'Super Admin + Manager', 'Program Admin', 'Program Admin + Kepala Marketing/Kreatif']);
 const LEGACY_ROLE_MIGRATIONS = {
   'Super Admin': 'Super Admin + Manager',
   'Program Admin': 'Program Admin + Kepala Marketing/Kreatif',
@@ -185,6 +186,10 @@ function safeDownloadName(filename) {
   return String(filename || 'download').replace(/[\r\n"]/g, '_');
 }
 
+function canManageImportantDocuments(user) {
+  return IMPORTANT_DOC_ROLES.has(user?.role);
+}
+
 async function ensureSchema() {
   if (schemaReady) return;
   const sql = db();
@@ -195,6 +200,8 @@ async function ensureSchema() {
   await sql`CREATE TABLE IF NOT EXISTS app_state (id integer PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TABLE IF NOT EXISTS documents (id text PRIMARY KEY, filename text NOT NULL, content_type text NOT NULL, blob_url text NOT NULL, blob_access text NOT NULL DEFAULT 'public', size integer NOT NULL, uploaded_by text, uploaded_at timestamptz NOT NULL DEFAULT now())`;
   await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS blob_access text NOT NULL DEFAULT 'public'`;
+  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS visibility text NOT NULL DEFAULT 'public'`;
+  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS pin_hash text NOT NULL DEFAULT ''`;
   await sql`CREATE TABLE IF NOT EXISTS audit_log (id bigserial PRIMARY KEY, actor_id text, actor_name text, action text NOT NULL, entity_type text NOT NULL, entity_id text, details jsonb, created_at timestamptz NOT NULL DEFAULT now())`;
   for (const table of Object.values(MODULE_TABLES)) {
     await sql.query(`CREATE TABLE IF NOT EXISTS ${table} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
@@ -539,16 +546,21 @@ async function handle(req, res) {
     const filename = String(body.filename || '').trim();
     const contentType = String(body.contentType || 'application/octet-stream');
     const dataUrl = String(body.dataUrl || '');
+    const visibility = String(body.visibility || 'public').trim() === 'important' ? 'important' : 'public';
+    const pin = String(body.pin || '');
     if (!id || !filename || !dataUrl.includes(',')) return send(res, 400, { error: 'id, filename, dan dataUrl wajib diisi' });
+    if (visibility === 'important' && !canManageImportantDocuments(user)) return send(res, 403, { error: 'Hanya Super Admin/Admin yang boleh membuat dokumen penting' });
+    if (visibility === 'important' && pin.length < 4) return send(res, 400, { error: 'PIN dokumen penting minimal 4 digit/karakter' });
     const buffer = Buffer.from(dataUrl.split(',', 2)[1], 'base64');
     const blobAccess = process.env.DOCUMENT_BLOB_ACCESS || process.env.BLOB_ACCESS || 'public';
     const blob = await put(`grcc/${id}_${filename.replace(/[^A-Za-z0-9._-]+/g, '_')}`, buffer, {
       access: blobAccess === 'private' ? 'private' : 'public',
       contentType
     });
-    const previous = await sql`SELECT filename, content_type, blob_url, blob_access, size, uploaded_by FROM documents WHERE id=${id}`;
-    await sql`INSERT INTO documents (id, filename, content_type, blob_url, blob_access, size, uploaded_by, uploaded_at) VALUES (${id}, ${filename}, ${contentType}, ${blob.url}, ${blobAccess === 'private' ? 'private' : 'public'}, ${buffer.length}, ${user.id}, now()) ON CONFLICT (id) DO UPDATE SET filename=EXCLUDED.filename, content_type=EXCLUDED.content_type, blob_url=EXCLUDED.blob_url, blob_access=EXCLUDED.blob_access, size=EXCLUDED.size, uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`;
-    await audit(user, previous[0] ? 'replace' : 'upload', 'document', id, { before: previous[0] || null, after: { filename, contentType, size: buffer.length, blobAccess: blobAccess === 'private' ? 'private' : 'public' } });
+    const previous = await sql`SELECT filename, content_type, blob_url, blob_access, visibility, size, uploaded_by FROM documents WHERE id=${id}`;
+    const pinHash = visibility === 'important' ? hashPassword(pin) : '';
+    await sql`INSERT INTO documents (id, filename, content_type, blob_url, blob_access, visibility, pin_hash, size, uploaded_by, uploaded_at) VALUES (${id}, ${filename}, ${contentType}, ${blob.url}, ${blobAccess === 'private' ? 'private' : 'public'}, ${visibility}, ${pinHash}, ${buffer.length}, ${user.id}, now()) ON CONFLICT (id) DO UPDATE SET filename=EXCLUDED.filename, content_type=EXCLUDED.content_type, blob_url=EXCLUDED.blob_url, blob_access=EXCLUDED.blob_access, visibility=EXCLUDED.visibility, pin_hash=EXCLUDED.pin_hash, size=EXCLUDED.size, uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`;
+    await audit(user, previous[0] ? 'replace' : 'upload', 'document', id, { before: previous[0] || null, after: { filename, contentType, size: buffer.length, visibility, blobAccess: blobAccess === 'private' ? 'private' : 'public', pinProtected: visibility === 'important' } });
     return send(res, 200, { ok: true, downloadUrl: `/api/documents/${encodeURIComponent(id)}/download`, size: buffer.length });
   }
 
@@ -557,14 +569,25 @@ async function handle(req, res) {
     const user = await requireUser(req, res);
     if (!user) return;
     const id = decodeURIComponent(docMatch[1]);
-    const rows = await sql`SELECT filename, content_type, blob_url, blob_access, size FROM documents WHERE id=${id}`;
+    const rows = await sql`SELECT filename, content_type, blob_url, blob_access, visibility, pin_hash, size FROM documents WHERE id=${id}`;
     if (!rows[0]) return send(res, 404, { error: 'Dokumen tidak ditemukan' });
     const doc = rows[0];
+    if (doc.visibility === 'important') {
+      const suppliedPin = String(req.headers['x-document-pin'] || url.searchParams.get('pin') || '');
+      if (!canManageImportantDocuments(user)) {
+        await audit(user, 'denied', 'document', id, { filename: doc.filename, reason: 'role_not_allowed', visibility: doc.visibility });
+        return send(res, 403, { error: 'Dokumen penting hanya bisa diakses Super Admin/Admin' });
+      }
+      if (!doc.pin_hash || !verifyPassword(suppliedPin, doc.pin_hash)) {
+        await audit(user, 'denied', 'document', id, { filename: doc.filename, reason: 'pin_invalid', visibility: doc.visibility });
+        return send(res, 403, { error: 'PIN dokumen penting salah' });
+      }
+    }
     const access = doc.blob_access === 'private' || doc.blob_url.includes('.private.blob.vercel-storage.com') ? 'private' : 'public';
     try {
       const blob = await get(doc.blob_url, { access });
       if (!blob || blob.statusCode !== 200 || !blob.stream) return send(res, 404, { error: 'Dokumen tidak ditemukan' });
-      await audit(user, 'download', 'document', id, { filename: doc.filename, size: doc.size, accessChecked: true });
+      await audit(user, 'download', 'document', id, { filename: doc.filename, size: doc.size, visibility: doc.visibility || 'public', accessChecked: true });
       res.statusCode = 200;
       res.setHeader('Content-Type', blob.contentType || doc.content_type || 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${safeDownloadName(doc.filename)}"`);
@@ -572,7 +595,7 @@ async function handle(req, res) {
       return Readable.fromWeb(blob.stream).pipe(res);
     } catch (err) {
       if (access === 'public') {
-        await audit(user, 'download', 'document', id, { filename: doc.filename, size: doc.size, accessChecked: true, fallback: 'redirect' });
+        await audit(user, 'download', 'document', id, { filename: doc.filename, size: doc.size, visibility: doc.visibility || 'public', accessChecked: true, fallback: 'redirect' });
         res.statusCode = 302;
         res.setHeader('Location', doc.blob_url);
         return res.end();

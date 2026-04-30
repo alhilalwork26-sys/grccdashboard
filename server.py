@@ -15,7 +15,7 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent
 PUBLIC_DIR = ROOT / "public"
@@ -53,6 +53,7 @@ DEFAULT_ROLE_COLORS = {
     "Finance": "#34D399",
 }
 SUPER_ADMIN_ROLES = {"Super Admin", "Super Admin + Manager"}
+IMPORTANT_DOC_ROLES = {"Super Admin", "Super Admin + Manager", "Program Admin", "Program Admin + Kepala Marketing/Kreatif"}
 LEGACY_ROLE_MIGRATIONS = {
     "Super Admin": "Super Admin + Manager",
     "Program Admin": "Program Admin + Kepala Marketing/Kreatif",
@@ -235,10 +236,17 @@ def ensure_documents_table(conn):
             storage_path TEXT NOT NULL,
             size INTEGER NOT NULL,
             uploaded_by TEXT,
+            visibility TEXT NOT NULL DEFAULT 'public',
+            pin_hash TEXT NOT NULL DEFAULT '',
             uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
+    cols = [row["name"] for row in conn.execute("PRAGMA table_info(documents)").fetchall()]
+    if "visibility" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'")
+    if "pin_hash" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN pin_hash TEXT NOT NULL DEFAULT ''")
 
 
 def migrate_legacy_documents(conn):
@@ -253,6 +261,8 @@ def migrate_legacy_documents(conn):
             storage_path TEXT NOT NULL,
             size INTEGER NOT NULL,
             uploaded_by TEXT,
+            visibility TEXT NOT NULL DEFAULT 'public',
+            pin_hash TEXT NOT NULL DEFAULT '',
             uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -262,8 +272,8 @@ def migrate_legacy_documents(conn):
         path.write_bytes(row["content"])
         conn.execute(
             """
-            INSERT INTO documents (id, filename, content_type, storage_path, size, uploaded_by, uploaded_at)
-            VALUES (?, ?, ?, ?, ?, NULL, ?)
+            INSERT INTO documents (id, filename, content_type, storage_path, size, uploaded_by, visibility, pin_hash, uploaded_at)
+            VALUES (?, ?, ?, ?, ?, NULL, 'public', '', ?)
             """,
             (row["id"], row["filename"], row["content_type"], str(path.relative_to(ROOT)), row["size"], row["uploaded_at"]),
         )
@@ -500,6 +510,10 @@ def role_snapshot(row):
         except json.JSONDecodeError:
             permissions = []
     return {"name": row["name"], "permissions": permissions, "color": row["color"]}
+
+
+def can_manage_important_documents(user):
+    return (user or {}).get("role") in IMPORTANT_DOC_ROLES
 
 
 def safe_filename(filename):
@@ -996,8 +1010,14 @@ class GRCCHandler(SimpleHTTPRequestHandler):
         filename = str(payload.get("filename") or "").strip()
         content_type = str(payload.get("contentType") or "application/octet-stream").strip()
         data_url = str(payload.get("dataUrl") or "")
+        visibility = "important" if str(payload.get("visibility") or "public").strip() == "important" else "public"
+        pin = str(payload.get("pin") or "")
         if not doc_id or not filename or "," not in data_url:
             return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "id, filename, dan dataUrl wajib diisi"})
+        if visibility == "important" and not can_manage_important_documents(self.user):
+            return json_response(self, HTTPStatus.FORBIDDEN, {"error": "Hanya Super Admin/Admin yang boleh membuat dokumen penting"})
+        if visibility == "important" and len(pin) < 4:
+            return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "PIN dokumen penting minimal 4 digit/karakter"})
         try:
             content = base64.b64decode(data_url.split(",", 1)[1], validate=True)
         except Exception:
@@ -1005,38 +1025,52 @@ class GRCCHandler(SimpleHTTPRequestHandler):
         storage_path = document_storage_path(doc_id, filename)
         storage_path.write_bytes(content)
         with connect_db() as conn:
-            previous = conn.execute("SELECT filename, content_type AS contentType, storage_path, size, uploaded_by FROM documents WHERE id = ?", (doc_id,)).fetchone()
+            previous = conn.execute("SELECT filename, content_type AS contentType, storage_path, size, uploaded_by, visibility FROM documents WHERE id = ?", (doc_id,)).fetchone()
             conn.execute(
                 """
-                INSERT INTO documents (id, filename, content_type, storage_path, size, uploaded_by, uploaded_at)
-                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO documents (id, filename, content_type, storage_path, size, uploaded_by, visibility, pin_hash, uploaded_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(id) DO UPDATE SET
                     filename = excluded.filename,
                     content_type = excluded.content_type,
                     storage_path = excluded.storage_path,
                     size = excluded.size,
                     uploaded_by = excluded.uploaded_by,
+                    visibility = excluded.visibility,
+                    pin_hash = excluded.pin_hash,
                     uploaded_at = CURRENT_TIMESTAMP
                 """,
-                (doc_id, filename, content_type, str(storage_path.relative_to(ROOT)), len(content), self.user["id"]),
+                (doc_id, filename, content_type, str(storage_path.relative_to(ROOT)), len(content), self.user["id"], visibility, hash_password(pin) if visibility == "important" else ""),
             )
             before_doc = dict(previous) if previous else None
-            audit(conn, self.user, "replace" if previous else "upload", "document", doc_id, {"before": before_doc, "after": {"filename": filename, "contentType": content_type, "size": len(content), "blobAccess": "local-private"}})
+            audit(conn, self.user, "replace" if previous else "upload", "document", doc_id, {"before": before_doc, "after": {"filename": filename, "contentType": content_type, "size": len(content), "visibility": visibility, "blobAccess": "local-private", "pinProtected": visibility == "important"}})
             conn.commit()
         return json_response(self, HTTPStatus.OK, {"ok": True, "downloadUrl": f"/api/documents/{doc_id}/download", "size": len(content)})
 
     def download_document(self, path):
         doc_id = unquote(path.removeprefix("/api/documents/").removesuffix("/download"))
         with connect_db() as conn:
-            row = conn.execute("SELECT filename, content_type, storage_path, size FROM documents WHERE id = ?", (doc_id,)).fetchone()
+            row = conn.execute("SELECT filename, content_type, storage_path, size, visibility, pin_hash FROM documents WHERE id = ?", (doc_id,)).fetchone()
         if not row:
             return json_response(self, HTTPStatus.NOT_FOUND, {"error": "Dokumen tidak ditemukan"})
+        if row["visibility"] == "important":
+            pin = self.headers.get("X-Document-Pin") or parse_qs(urlparse(self.path).query).get("pin", [""])[0]
+            if not can_manage_important_documents(self.user):
+                with connect_db() as conn:
+                    audit(conn, self.user, "denied", "document", doc_id, {"filename": row["filename"], "reason": "role_not_allowed", "visibility": row["visibility"]})
+                    conn.commit()
+                return json_response(self, HTTPStatus.FORBIDDEN, {"error": "Dokumen penting hanya bisa diakses Super Admin/Admin"})
+            if not row["pin_hash"] or not verify_password(pin, row["pin_hash"]):
+                with connect_db() as conn:
+                    audit(conn, self.user, "denied", "document", doc_id, {"filename": row["filename"], "reason": "pin_invalid", "visibility": row["visibility"]})
+                    conn.commit()
+                return json_response(self, HTTPStatus.FORBIDDEN, {"error": "PIN dokumen penting salah"})
         file_path = ROOT / row["storage_path"]
         if not file_path.exists():
             return json_response(self, HTTPStatus.NOT_FOUND, {"error": "File dokumen tidak ditemukan di storage"})
         content_type = row["content_type"] or mimetypes.guess_type(row["filename"])[0] or "application/octet-stream"
         with connect_db() as conn:
-            audit(conn, self.user, "download", "document", doc_id, {"filename": row["filename"], "size": row["size"], "accessChecked": True})
+            audit(conn, self.user, "download", "document", doc_id, {"filename": row["filename"], "size": row["size"], "visibility": row["visibility"], "accessChecked": True})
             conn.commit()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
