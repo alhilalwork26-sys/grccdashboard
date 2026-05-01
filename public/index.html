@@ -655,24 +655,13 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
   position:absolute; right:0; bottom:0; width:min(70vw, 1120px); height:min(86vh, 780px);
   z-index:5; pointer-events:none; overflow:visible;
 }
-.opening-shapes,
-.opening-building {
+.opening-shapes {
   position:absolute; display:block; user-select:none; -webkit-user-drag:none;
 }
 .opening-shapes {
-  width:58%; right:23%; bottom:13%; z-index:1;
-  filter:drop-shadow(0 28px 70px rgba(0,69,129,.12));
+  width:72%; right:4%; bottom:7%; z-index:1;
+  filter:drop-shadow(0 30px 80px rgba(0,69,129,.16));
   animation:openingShapes 11s ease-in-out infinite alternate;
-}
-.opening-building-left {
-  width:80%; left:-9%; bottom:-4%; z-index:3;
-  filter:drop-shadow(0 26px 56px rgba(22,35,55,.14));
-  animation:openingLayerLeft 12s ease-in-out infinite alternate;
-}
-.opening-building-right {
-  width:56%; right:-4%; bottom:-1%; z-index:4;
-  filter:drop-shadow(0 28px 64px rgba(22,35,55,.16));
-  animation:openingLayerRight 10s ease-in-out infinite alternate;
 }
 .opening-float {
   position:absolute; border:2px solid rgba(91,166,255,.5); border-radius:50%;
@@ -692,14 +681,6 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
 @keyframes openingShapes {
   from { transform:translate3d(0,0,0) rotate(-1deg) scale(1); }
   to { transform:translate3d(-10px,-12px,0) rotate(1.4deg) scale(1.025); }
-}
-@keyframes openingLayerLeft {
-  from { transform:translate3d(0,0,0) scale(1.005); }
-  to { transform:translate3d(8px,-7px,0) scale(1.022); }
-}
-@keyframes openingLayerRight {
-  from { transform:translate3d(0,0,0) scale(1); }
-  to { transform:translate3d(-9px,-10px,0) scale(1.018); }
 }
 @keyframes openingOrbit {
   0%,100% { transform:translate3d(0,0,0) scale(1); opacity:.7; }
@@ -891,10 +872,8 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
   .opening-screen::before {
     background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(255,255,255,.9) 46%, rgba(255,255,255,.18) 100%);
   }
-  .opening-visual { width:132vw; height:55vh; right:-42vw; bottom:0; }
-  .opening-shapes { width:62%; right:28%; bottom:14%; }
-  .opening-building-left { width:86%; left:-16%; bottom:-4%; }
-  .opening-building-right { width:58%; right:-2%; bottom:0; }
+  .opening-visual { width:104vw; height:48vh; right:-26vw; bottom:0; }
+  .opening-shapes { width:82%; right:5%; bottom:8%; }
   .opening-float-one { width:132px; height:132px; right:30%; top:10%; }
   .opening-float-two { width:58px; height:58px; right:21%; top:38%; }
   .kanban { grid-template-columns:repeat(2,1fr); }
@@ -1218,8 +1197,6 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
     </div>
     <div class="opening-visual" aria-hidden="true">
       <img src="assets/opening-shapes.svg" alt="" class="opening-shapes">
-      <img src="assets/opening-building-left.svg" alt="" class="opening-building opening-building-left">
-      <img src="assets/opening-building-right.svg" alt="" class="opening-building opening-building-right">
       <div class="opening-float opening-float-one"></div>
       <div class="opening-float opening-float-two"></div>
     </div>
