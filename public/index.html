@@ -586,7 +586,7 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
 ═══════════════════════════════════════════════ */
 #login-page {
   min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px;
-  background:var(--bg); overflow:hidden; position:relative;
+  background:#fff; overflow:hidden; position:relative;
 }
 /* Animated gradient orbs */
 #login-page::before {
@@ -607,6 +607,46 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
   bottom:20%; left:30%; animation:orb3 10s ease-in-out infinite;
   pointer-events:none; z-index:0;
 }
+.opening-screen {
+  position:absolute; inset:0; z-index:3; overflow:hidden; background:#fff;
+  transition:opacity .55s cubic-bezier(.16,1,.3,1), transform .55s cubic-bezier(.16,1,.3,1), filter .55s;
+}
+.opening-screen::after {
+  content:''; position:absolute; inset:-20%;
+  background:radial-gradient(circle at 72% 38%, rgba(6,84,142,.12), transparent 28%),
+             radial-gradient(circle at 56% 71%, rgba(245,178,65,.13), transparent 25%);
+  animation:orb2 16s ease-in-out infinite; pointer-events:none;
+}
+.opening-art {
+  width:100%; height:100%; object-fit:cover; object-position:center; display:block;
+  animation:openingDrift 9s ease-in-out infinite alternate;
+}
+.opening-start-btn {
+  position:absolute; left:5.35%; top:41.2%; z-index:5; min-width:128px; height:45px;
+  border-radius:999px; border:1px solid #D6C900; background:#FFFBA6; color:#111827;
+  font-size:20px; font-weight:800; box-shadow:0 12px 28px rgba(0,83,142,.12);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease;
+}
+.opening-start-btn:hover {
+  transform:translateY(-3px) scale(1.04); background:#FFF66D; border-color:#B7A900;
+  box-shadow:0 18px 38px rgba(0,83,142,.22), 0 0 0 7px rgba(255,246,109,.28);
+}
+.opening-start-btn:active { transform:translateY(-1px) scale(.99); }
+.opening-float {
+  position:absolute; width:190px; height:190px; border:2px solid rgba(91,166,255,.45);
+  border-radius:50%; right:19%; top:23%; z-index:4; animation:openingOrbit 8s ease-in-out infinite;
+}
+#login-page.login-active .opening-screen {
+  opacity:0; pointer-events:none; transform:scale(1.02); filter:blur(8px);
+}
+@keyframes openingDrift {
+  from { transform:scale(1.01) translate3d(0,0,0); }
+  to { transform:scale(1.035) translate3d(-8px,-6px,0); }
+}
+@keyframes openingOrbit {
+  0%,100% { transform:translate3d(0,0,0) scale(1); opacity:.7; }
+  50% { transform:translate3d(18px,-14px,0) scale(1.08); opacity:.95; }
+}
 .login-box {
   width:100%; max-width:880px; display:grid; grid-template-columns:1fr 1fr;
   border-radius:24px; overflow:hidden;
@@ -616,6 +656,8 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
   position:relative; z-index:1;
   backdrop-filter:blur(40px);
 }
+#login-page:not(.login-active) .login-box { opacity:0; pointer-events:none; transform:translateY(18px) scale(.98); }
+#login-page.login-active .login-box { opacity:1; pointer-events:auto; transform:none; transition:opacity .4s .14s, transform .4s .14s; }
 .login-left {
   background:linear-gradient(160deg, #10103A 0%, #0C0C20 60%, #080818 100%);
   padding:48px 40px; display:flex; flex-direction:column; justify-content:space-between;
@@ -783,6 +825,9 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
   #sidebar.open { transform:none; }
   .login-box { grid-template-columns:1fr; }
   .login-left { display:none; }
+  .opening-art { object-position:center; }
+  .opening-start-btn { left:7%; top:42%; min-width:112px; height:42px; font-size:17px; }
+  .opening-float { width:130px; height:130px; right:8%; top:22%; }
   .kanban { grid-template-columns:repeat(2,1fr); }
   .detail-grid, .settings-grid { grid-template-columns:1fr; }
   .form-row { grid-template-columns:1fr; }
@@ -1095,6 +1140,11 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
 
 <!-- LOGIN PAGE -->
 <div id="login-page">
+  <div class="opening-screen" id="opening-screen">
+    <img src="assets/opening-dashboard.png" alt="Selamat Datang di Portal Kerja GRCC" class="opening-art">
+    <div class="opening-float"></div>
+    <button class="opening-start-btn" onclick="startLogin()">Mulai</button>
+  </div>
   <div class="login-orb3"></div>
   <div class="login-box">
     <div class="login-left">
@@ -1440,10 +1490,16 @@ function doLogin(){
     }
   }, 800);
 }
+function startLogin(){
+  const page = document.getElementById('login-page');
+  if(page) page.classList.add('login-active');
+  setTimeout(()=>document.getElementById('login-email')?.focus(), 260);
+}
 function doLogout(){
   state.user=null; state.page='dashboard'; state.taskDetail=null; state.progDetail=null;
   document.getElementById('app').style.display='none';
   document.getElementById('login-page').style.display='flex';
+  document.getElementById('login-page')?.classList.remove('login-active');
   document.getElementById('login-email').value='';
   document.getElementById('login-pw').value='';
   document.getElementById('login-btn').disabled=false;
@@ -5154,6 +5210,7 @@ if(state.user){
     localStorage.removeItem(STORAGE_KEYS_PATCH.session);
     document.getElementById('app').style.display='none';
     document.getElementById('login-page').style.display='flex';
+    document.getElementById('login-page')?.classList.remove('login-active');
     document.getElementById('login-email').value='';
     document.getElementById('login-pw').value='';
     document.getElementById('login-btn').disabled=false;
