@@ -1633,6 +1633,7 @@ function runAutomaticReminders(){
   if(typeof createAppNotification !== 'function') return;
   if(!state.user || !state.notifDeadline) return;
   if(!state.reminderLog) state.reminderLog = {};
+  let changed = false;
   const todayKey = today();
   const now = new Date();
   const admins = ACCOUNTS.filter(a => isManagerRole(a)).map(a => a.id);
@@ -1643,7 +1644,10 @@ function runAutomaticReminders(){
     const fullKey = `${todayKey}_${key}`;
     if(state.reminderLog[fullKey]) return;
     const notif = createAppNotification({...payload, dedupeKey: `auto_${fullKey}`});
-    if(notif) state.reminderLog[fullKey] = new Date().toISOString();
+    if(notif) {
+      state.reminderLog[fullKey] = new Date().toISOString();
+      changed = true;
+    }
   }
 
   state.tasks.filter(t => t.status !== 'Done' && t.deadline).forEach(t => {
@@ -1682,8 +1686,13 @@ function runAutomaticReminders(){
   });
 
   const keepFrom = new Date(now.getTime() - 14 * 86400000).toISOString().slice(0,10);
-  Object.keys(state.reminderLog).forEach(key => { if(key.slice(0,10) < keepFrom) delete state.reminderLog[key]; });
-  persistPatched();
+  Object.keys(state.reminderLog).forEach(key => {
+    if(key.slice(0,10) < keepFrom) {
+      delete state.reminderLog[key];
+      changed = true;
+    }
+  });
+  if(changed) persistPatched();
 }
 
 /* ===== DASHBOARD ===== */
@@ -4453,6 +4462,7 @@ if(state.user){
     ensureNotifState();
     const now = new Date();
     const admins = ACCOUNTS.filter(a => isManagerRole(a)).map(a => a.id);
+    let changed = false;
     state.tasks.filter(t => t.status !== 'Done' && t.deadline).forEach(t => {
       const due = new Date(t.deadline + 'T23:59:59');
       const days = Math.ceil((due - now) / 86400000);
@@ -4471,8 +4481,9 @@ if(state.user){
         dedupeKey: `deadline_${key}`
       });
       state.deadlineReminderLog[key] = nowIso();
+      changed = true;
     });
-    persistPatched();
+    if(changed) persistPatched();
   }
 
   function scanAllRoleReminders(){
@@ -5442,6 +5453,37 @@ if(state.user){
     Object.assign(target, source || {});
   }
 
+  function pageSyncSignature(){
+    const page = state?.page || 'dashboard';
+    const keysByPage = {
+      dashboard: ['tasks','schedules','expenses','programs','dailyProgresses','docs'],
+      tasks: ['tasks'],
+      daily_progress: ['dailyProgresses'],
+      schedule: ['schedules'],
+      programs: ['programs'],
+      finance: ['expenses'],
+      documents: ['docs'],
+      settings: []
+    };
+    const keys = keysByPage[page] || [];
+    const payload = {
+      page,
+      detail: state?.taskDetail || state?.progDetail || '',
+      accounts: ACCOUNTS.map(a => ({id:a.id,name:a.name,role:a.role,dept:a.dept,av:a.av,avatarUrl:a.avatarUrl,active:a.active})),
+      permissions: PERMS,
+      roleColors: ROLE_COLORS
+    };
+    keys.forEach(key => { payload[key] = state?.[key] || []; });
+    if(page === 'tasks') {
+      payload.filters = {
+        status: state.filterTaskStatus,
+        user: state.filterTaskUser,
+        search: state.searchTask
+      };
+    }
+    return JSON.stringify(payload);
+  }
+
   function applyAutoSyncPayload(payload, reason){
     const serverState = payload?.state || payload;
     if(!serverState || typeof serverState !== 'object') return false;
@@ -5455,6 +5497,7 @@ if(state.user){
     }
 
     const currentUserId = state.user?.id || localStorage.getItem(STORAGE_KEYS_PATCH.session) || '';
+    const beforeSignature = pageSyncSignature();
 
     if(Array.isArray(serverState.accounts) && serverState.accounts.length){
       ACCOUNTS.splice(0, ACCOUNTS.length, ...serverState.accounts);
@@ -5472,7 +5515,9 @@ if(state.user){
 
     lastSyncMarker = marker || new Date().toISOString();
     window.__grccLastServerMarker = lastSyncMarker;
-    const canRenderNow = typeof renderPage === 'function' && !modalIsOpen() && !userIsTyping();
+    const afterSignature = pageSyncSignature();
+    const pageDataChanged = beforeSignature !== afterSignature;
+    const canRenderNow = pageDataChanged && typeof renderPage === 'function' && !modalIsOpen() && !userIsTyping();
     if(canRenderNow) renderPage();
     if(typeof safeRefreshNotifications === 'function') safeRefreshNotifications();
 
