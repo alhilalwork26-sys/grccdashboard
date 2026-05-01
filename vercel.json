@@ -1,5 +1,9 @@
 {
   "version": 2,
+  "crons": [
+    { "path": "/api/cron/progress-morning", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/progress-evening", "schedule": "0 9 * * *" }
+  ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.js" },
     { "source": "/(.*)", "destination": "/index.html" }

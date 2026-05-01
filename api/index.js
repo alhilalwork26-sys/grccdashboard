@@ -64,6 +64,7 @@ const EMPTY_STATE = {
 };
 
 let schemaReady = false;
+const JAKARTA_TIMEZONE = 'Asia/Jakarta';
 
 function db() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL belum diset');
@@ -125,6 +126,7 @@ function publicUser(row) {
     email: row.email,
     role: row.role,
     dept: row.dept || '',
+    whatsapp: row.whatsapp || '',
     av: row.av || 'U',
     avatarUrl: rawAvatarUrl && rawAvatarUrl.includes('.private.blob.vercel-storage.com') ? `/api/users/${encodeURIComponent(row.id)}/avatar` : rawAvatarUrl,
     active: row.active !== false
@@ -133,6 +135,14 @@ function publicUser(row) {
 
 function initials(name) {
   return String(name || 'User').split(/\s+/).filter(Boolean).map(x => x[0]).join('').slice(0, 2).toUpperCase() || 'U';
+}
+
+function normalizeWhatsapp(value) {
+  const digits = String(value || '').replace(/[^\d]/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0')) return `62${digits.slice(1)}`;
+  if (digits.startsWith('8')) return `62${digits}`;
+  return digits;
 }
 
 async function uploadAvatarDataUrl(dataUrl, userId) {
@@ -159,6 +169,7 @@ function normalizedUser(row) {
     email: row.email || '',
     role: row.role || '',
     dept: row.dept || '',
+    whatsapp: row.whatsapp || '',
     av: row.av || '',
     active: row.active !== false,
     avatarUrl: row.avatar_url || ''
@@ -266,6 +277,7 @@ async function ensureSchema() {
   await sql`CREATE TABLE IF NOT EXISTS roles (name text PRIMARY KEY, permissions jsonb NOT NULL, color text NOT NULL DEFAULT '#6B7280', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY, name text NOT NULL, username text NOT NULL UNIQUE, email text NOT NULL UNIQUE, password_hash text NOT NULL, role text NOT NULL REFERENCES roles(name) ON UPDATE CASCADE, dept text NOT NULL DEFAULT '', av text NOT NULL DEFAULT 'U', avatar_url text NOT NULL DEFAULT '', active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url text NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp text NOT NULL DEFAULT ''`;
   await sql`CREATE TABLE IF NOT EXISTS sessions (token text PRIMARY KEY, user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at bigint NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TABLE IF NOT EXISTS app_state (id integer PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TABLE IF NOT EXISTS documents (id text PRIMARY KEY, filename text NOT NULL, content_type text NOT NULL, blob_url text NOT NULL, blob_access text NOT NULL DEFAULT 'public', size integer NOT NULL, uploaded_by text, uploaded_at timestamptz NOT NULL DEFAULT now())`;
@@ -304,7 +316,7 @@ async function currentUser(req) {
   if (!token) return null;
   const sql = db();
   await sql`DELETE FROM sessions WHERE expires_at < ${Math.floor(Date.now() / 1000)}`;
-  const rows = await sql`SELECT u.id, u.name, u.username, u.email, u.role, u.dept, u.av, u.avatar_url, u.active FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ${token} AND s.expires_at >= ${Math.floor(Date.now() / 1000)} AND u.active = true`;
+  const rows = await sql`SELECT u.id, u.name, u.username, u.email, u.role, u.dept, u.whatsapp, u.av, u.avatar_url, u.active FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ${token} AND s.expires_at >= ${Math.floor(Date.now() / 1000)} AND u.active = true`;
   return rows[0] ? publicUser(rows[0]) : null;
 }
 
@@ -326,7 +338,7 @@ async function requireAdmin(req, res) {
 
 async function listUsers() {
   const sql = db();
-  const rows = await sql`SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE active = true ORDER BY name`;
+  const rows = await sql`SELECT id, name, username, email, role, dept, whatsapp, av, avatar_url, active FROM users WHERE active = true ORDER BY name`;
   return rows.map(publicUser);
 }
 
@@ -378,6 +390,119 @@ async function loadState() {
   return { state, updatedAt: appRows[0]?.updated_at || null };
 }
 
+function jakartaDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: JAKARTA_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date).reduce((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function jakartaTimeLabel(date = new Date()) {
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: JAKARTA_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date);
+}
+
+function userCanUseDailyProgress(user, permissions = {}) {
+  if (!user || user.active === false || SUPER_ADMIN_ROLES.has(user.role)) return false;
+  return (permissions[user.role] || []).includes('daily_progress');
+}
+
+function progressReminderMessage(phase, user, dateKey) {
+  if (phase === 'morning') {
+    return `Halo ${user.name}, jangan lupa isi progres pagi hari ini (${dateKey}) sebelum mulai kerja. Buka GRCC Dashboard > Progres Harian.`;
+  }
+  return `Halo ${user.name}, jangan lupa isi update progres sore hari ini (${dateKey}) sebelum selesai kerja. Buka GRCC Dashboard > Progres Harian.`;
+}
+
+async function sendWhatsappMessage(to, message, meta = {}) {
+  const target = normalizeWhatsapp(to);
+  if (!target) return { ok: false, skipped: true, reason: 'missing_whatsapp' };
+
+  const customUrl = process.env.WHATSAPP_WEBHOOK_URL || '';
+  const token = process.env.WHATSAPP_TOKEN || process.env.FONNTE_TOKEN || '';
+  if (customUrl) {
+    const response = await fetch(customUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ to: target, message, ...meta })
+    });
+    const body = await response.text().catch(() => '');
+    return { ok: response.ok, status: response.status, provider: 'custom', body: body.slice(0, 500) };
+  }
+
+  if (!token) return { ok: false, skipped: true, reason: 'whatsapp_not_configured' };
+  const response = await fetch(process.env.FONNTE_API_URL || 'https://api.fonnte.com/send', {
+    method: 'POST',
+    headers: {
+      Authorization: token,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: new URLSearchParams({ target, message, countryCode: '62' })
+  });
+  const body = await response.text().catch(() => '');
+  return { ok: response.ok, status: response.status, provider: 'fonnte', body: body.slice(0, 500) };
+}
+
+async function runWhatsappProgressReminder(phase) {
+  const loaded = await loadState();
+  const state = loaded.state;
+  const dateKey = jakartaDateKey();
+  const progressItems = Array.isArray(state.dailyProgresses) ? state.dailyProgresses : [];
+  const users = (Array.isArray(state.accounts) ? state.accounts : [])
+    .filter(user => userCanUseDailyProgress(user, state.permissions || {}));
+  const results = [];
+  for (const user of users) {
+    const progress = progressItems.find(item => item.userId === user.id && item.date === dateKey);
+    const shouldSend = phase === 'morning'
+      ? !progress?.morningPlan
+      : !progress?.eveningUpdate;
+    if (!shouldSend) {
+      results.push({ userId: user.id, name: user.name, status: 'complete' });
+      continue;
+    }
+    const message = progressReminderMessage(phase, user, dateKey);
+    let result;
+    try {
+      result = await sendWhatsappMessage(user.whatsapp, message, { phase, userId: user.id, date: dateKey });
+    } catch (err) {
+      result = { ok: false, reason: err.message || 'send_failed' };
+    }
+    const status = result.ok ? 'sent' : result.skipped ? 'skipped' : 'failed';
+    results.push({ userId: user.id, name: user.name, whatsapp: user.whatsapp ? 'set' : 'missing', status, reason: result.reason || null });
+    await audit(
+      { id: 'system', name: 'GRCC Reminder' },
+      status === 'sent' ? 'whatsapp_reminder_sent' : `whatsapp_reminder_${status}`,
+      'daily_progress',
+      `${dateKey}_${phase}_${user.id}`,
+      { phase, date: dateKey, userId: user.id, userName: user.name, result }
+    );
+  }
+  return {
+    ok: true,
+    phase,
+    date: dateKey,
+    timeWib: jakartaTimeLabel(),
+    total: users.length,
+    sent: results.filter(item => item.status === 'sent').length,
+    skipped: results.filter(item => item.status === 'skipped').length,
+    failed: results.filter(item => item.status === 'failed').length,
+    complete: results.filter(item => item.status === 'complete').length,
+    results
+  };
+}
+
 function cleanState(state) {
   const cleaned = { ...state, serverSavedAt: new Date().toISOString() };
   delete cleaned.accounts;
@@ -397,11 +522,18 @@ async function handle(req, res) {
 
   if (path === '/health') return send(res, 200, { ok: true, db: 'postgres' });
 
+  const cronMatch = path.match(/^\/cron\/progress-(morning|evening)$/);
+  if (cronMatch && method === 'GET') {
+    const expected = process.env.CRON_SECRET ? `Bearer ${process.env.CRON_SECRET}` : '';
+    if (!expected || req.headers.authorization !== expected) return send(res, 401, { error: 'Unauthorized cron request' });
+    return send(res, 200, await runWhatsappProgressReminder(cronMatch[1]));
+  }
+
   if (path === '/auth/login' && method === 'POST') {
     const body = await readBody(req);
     const identifier = String(body.identifier || '').trim().toLowerCase();
     const password = String(body.password || '');
-    const rows = await sql`SELECT id, name, username, email, password_hash, role, dept, av, active FROM users WHERE active = true AND (lower(username) = ${identifier} OR lower(email) = ${identifier})`;
+    const rows = await sql`SELECT id, name, username, email, password_hash, role, dept, whatsapp, av, active FROM users WHERE active = true AND (lower(username) = ${identifier} OR lower(email) = ${identifier})`;
     if (!rows[0] || !verifyPassword(password, rows[0].password_hash)) return send(res, 401, { error: 'Username/email atau password salah' });
     const token = crypto.randomBytes(32).toString('base64url');
     await sql`INSERT INTO sessions (token, user_id, expires_at) VALUES (${token}, ${rows[0].id}, ${Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400})`;
@@ -464,19 +596,20 @@ async function handle(req, res) {
     const body = await readBody(req);
     const name = String(body.name || '').trim();
     const email = String(body.email || '').trim().toLowerCase();
+    const whatsapp = normalizeWhatsapp(body.whatsapp || '');
     const password = String(body.password || '');
     const avatarDataUrl = String(body.avatarDataUrl || '');
     let avatarUrl = String(body.avatarUrl || user.avatarUrl || '').trim();
     if (!name || !email) return send(res, 400, { error: 'Nama dan email wajib diisi' });
     try {
-      const current = await sql`SELECT name, username, email, role, dept, av, avatar_url, active, password_hash FROM users WHERE id = ${user.id}`;
+      const current = await sql`SELECT name, username, email, role, dept, whatsapp, av, avatar_url, active, password_hash FROM users WHERE id = ${user.id}`;
       if (!current[0]) return send(res, 404, { error: 'User tidak ditemukan' });
       if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, user.id);
       if (!avatarUrl) avatarUrl = current[0].avatar_url || '';
       const av = initials(name);
-      await sql`UPDATE users SET name=${name}, email=${email}, password_hash=${password ? hashPassword(password) : current[0].password_hash}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${user.id}`;
-      const rows = await sql`SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=${user.id}`;
-      const diff = auditDiff(normalizedUser(current[0]), normalizedUser(rows[0]), ['name', 'email', 'av', 'avatarUrl']);
+      await sql`UPDATE users SET name=${name}, email=${email}, whatsapp=${whatsapp}, password_hash=${password ? hashPassword(password) : current[0].password_hash}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${user.id}`;
+      const rows = await sql`SELECT id, name, username, email, role, dept, whatsapp, av, avatar_url, active FROM users WHERE id=${user.id}`;
+      const diff = auditDiff(normalizedUser(current[0]), normalizedUser(rows[0]), ['name', 'email', 'whatsapp', 'av', 'avatarUrl']);
       await audit(user, 'update', 'profile', user.id, { ...diff, changed: Object.keys(diff.after), passwordChanged: Boolean(password), avatarUpdated: Boolean(avatarDataUrl) });
       return send(res, 200, { ok: true, user: publicUser(rows[0]) });
     } catch (err) {
@@ -516,6 +649,7 @@ async function handle(req, res) {
     const name = String(body.name || '').trim();
     const username = String(body.username || '').trim().toLowerCase();
     const email = String(body.email || '').trim().toLowerCase();
+    const whatsapp = normalizeWhatsapp(body.whatsapp || '');
     const password = String(body.password || '');
     const role = String(body.role || 'Staff Marketing').trim();
     const dept = String(body.dept || '').trim();
@@ -528,22 +662,22 @@ async function handle(req, res) {
       let id = updateId;
       let beforeUserRecord = null;
       if (updateId) {
-        const current = await sql`SELECT name, username, email, role, dept, av, avatar_url, active, password_hash FROM users WHERE id = ${updateId}`;
+        const current = await sql`SELECT name, username, email, role, dept, whatsapp, av, avatar_url, active, password_hash FROM users WHERE id = ${updateId}`;
         if (!current[0]) return send(res, 404, { error: 'User tidak ditemukan' });
         beforeUserRecord = current[0];
         if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, updateId);
         if (!avatarUrl) avatarUrl = current[0].avatar_url || '';
-        await sql`UPDATE users SET name=${name}, username=${username}, email=${email}, password_hash=${password ? hashPassword(password) : current[0].password_hash}, role=${role}, dept=${dept}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${updateId}`;
+        await sql`UPDATE users SET name=${name}, username=${username}, email=${email}, whatsapp=${whatsapp}, password_hash=${password ? hashPassword(password) : current[0].password_hash}, role=${role}, dept=${dept}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${updateId}`;
       } else {
         id = crypto.randomBytes(8).toString('base64url');
         if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, id);
-        await sql`INSERT INTO users (id, name, username, email, password_hash, role, dept, av, avatar_url) VALUES (${id}, ${name}, ${username}, ${email}, ${hashPassword(password)}, ${role}, ${dept}, ${av}, ${avatarUrl})`;
+        await sql`INSERT INTO users (id, name, username, email, whatsapp, password_hash, role, dept, av, avatar_url) VALUES (${id}, ${name}, ${username}, ${email}, ${whatsapp}, ${hashPassword(password)}, ${role}, ${dept}, ${av}, ${avatarUrl})`;
       }
-      const rows = await sql`SELECT id, name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=${id}`;
+      const rows = await sql`SELECT id, name, username, email, role, dept, whatsapp, av, avatar_url, active FROM users WHERE id=${id}`;
       const afterUser = normalizedUser(rows[0]);
       if (updateId) {
         const beforeUser = normalizedUser(beforeUserRecord);
-        const diff = auditDiff(beforeUser, afterUser, ['name', 'username', 'email', 'role', 'dept', 'av', 'avatarUrl', 'active']);
+        const diff = auditDiff(beforeUser, afterUser, ['name', 'username', 'email', 'whatsapp', 'role', 'dept', 'av', 'avatarUrl', 'active']);
         await audit(actor, 'update', 'user', id, { ...diff, changed: Object.keys(diff.after), passwordChanged: Boolean(password), avatarUpdated: Boolean(avatarDataUrl) });
       } else {
         await audit(actor, 'create', 'user', id, { after: afterUser, passwordSet: true, avatarUpdated: Boolean(avatarDataUrl) });
@@ -559,7 +693,7 @@ async function handle(req, res) {
     if (!actor) return;
     const id = decodeURIComponent(path.split('/').pop());
     if (id === actor.id) return send(res, 400, { error: 'Tidak bisa menghapus akun sendiri' });
-    const beforeRows = await sql`SELECT name, username, email, role, dept, av, avatar_url, active FROM users WHERE id=${id}`;
+    const beforeRows = await sql`SELECT name, username, email, role, dept, whatsapp, av, avatar_url, active FROM users WHERE id=${id}`;
     await sql`UPDATE users SET active=false, updated_at=now() WHERE id=${id}`;
     await sql`DELETE FROM sessions WHERE user_id=${id}`;
     await audit(actor, 'delete', 'user', id, { before: normalizedUser(beforeRows[0]) });

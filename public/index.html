@@ -3250,6 +3250,10 @@ function renderSettings(){
         <div class="form-group"><label class="form-label">Email</label>
           <input id="set-email" class="form-control" type="email" value="${escHtml(u.email)}">
         </div>
+        <div class="form-group"><label class="form-label">Nomor WhatsApp</label>
+          <input id="set-whatsapp" class="form-control" type="tel" value="${escHtml(u.whatsapp || '')}" placeholder="Contoh: 6281234567890">
+          <div class="inline-help" style="margin-top:6px">Dipakai untuk reminder progres harian. Gunakan format 08... atau 62...</div>
+        </div>
         <div class="form-group"><label class="form-label">Password Baru</label>
           <input id="set-password" class="form-control" type="password" placeholder="Kosongkan jika tidak berubah">
         </div>
@@ -4005,6 +4009,7 @@ function previewProfileAvatar(input){
 async function saveProfile(){
   const name = document.getElementById('set-name')?.value.trim();
   const email = document.getElementById('set-email')?.value.trim();
+  const whatsapp = document.getElementById('set-whatsapp')?.value.trim() || '';
   const password = document.getElementById('set-password')?.value || '';
   if(!name || !email){ toast('Nama dan email wajib diisi', 'error'); return; }
   if(!/^\S+@\S+\.\S+$/.test(email)){ toast('Format email tidak valid', 'error'); return; }
@@ -4016,7 +4021,7 @@ async function saveProfile(){
         method: 'PUT',
         credentials: 'same-origin',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({name, email, password, avatarUrl: state.user.avatarUrl || '', avatarDataUrl: window.pendingProfileAvatarDataUrl || ''})
+        body: JSON.stringify({name, email, whatsapp, password, avatarUrl: state.user.avatarUrl || '', avatarDataUrl: window.pendingProfileAvatarDataUrl || ''})
       }).then(async res => {
         const payload = await res.json().catch(() => ({}));
         if(!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
@@ -4044,6 +4049,7 @@ async function saveProfile(){
   if(acc){
     acc.name = name;
     acc.email = email;
+    acc.whatsapp = whatsapp;
     acc.av = initials || acc.av;
     acc.avatarUrl = window.pendingProfileAvatarDataUrl || acc.avatarUrl || '';
     if(password) acc.pw = password;
@@ -4712,7 +4718,7 @@ if(state.user){
               ${av(a.av || initialsFromName(a.name),32,ROLE_COLORS[a.role]||'var(--navy)',a.avatarUrl)}
               <div style="flex:1;min-width:0">
                 <div style="font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.name)}</div>
-                <div style="font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@${escHtml(a.username)} · ${escHtml(a.email)} · ${escHtml(a.role)}</div>
+                <div style="font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@${escHtml(a.username)} · ${escHtml(a.email)} · WA ${escHtml(a.whatsapp || 'belum diisi')} · ${escHtml(a.role)}</div>
               </div>
               <button class="btn btn-sec btn-sm" onclick="openUserModal('${a.id}')">Edit</button>
               ${a.id !== state.user.id ? `<button class="btn btn-dan btn-sm" onclick="deleteUserAccount('${a.id}')">Hapus</button>` : ''}
@@ -4779,6 +4785,7 @@ if(state.user){
         <div class="form-group"><label class="form-label">Nama Lengkap <span>*</span></label><input id="um-name" class="form-control" value="${escHtml(user?.name || '')}" placeholder="Nama staf"></div>
         <div class="form-group"><label class="form-label">Username <span>*</span></label><input id="um-username" class="form-control" value="${escHtml(user?.username || '')}" placeholder="contoh: rini atau finance01"></div>
         <div class="form-group"><label class="form-label">Email <span>*</span></label><input id="um-email" class="form-control" type="email" value="${escHtml(user?.email || '')}" placeholder="nama@grcc.id"></div>
+        <div class="form-group"><label class="form-label">Nomor WhatsApp</label><input id="um-whatsapp" class="form-control" type="tel" value="${escHtml(user?.whatsapp || '')}" placeholder="Contoh: 6281234567890"><div class="inline-help" style="margin-top:6px">Dipakai untuk reminder otomatis jam 10.00 dan 16.00 WIB.</div></div>
         <div class="form-group"><label class="form-label">${user ? 'Password Baru' : 'Password'} ${user ? '' : '<span>*</span>'}</label><input id="um-password" class="form-control" type="password" placeholder="${user ? 'Kosongkan jika tidak diubah' : 'Minimal 6 karakter'}"></div>
         <div class="form-grid">
           <div class="form-group"><label class="form-label">Role</label><select id="um-role" class="form-control">${roleOptions().map(r => `<option value="${escHtml(r)}" ${user?.role===r?'selected':''}>${escHtml(r)}</option>`).join('')}</select></div>
@@ -4811,6 +4818,7 @@ if(state.user){
     const name = document.getElementById('um-name')?.value.trim();
     const username = document.getElementById('um-username')?.value.trim().toLowerCase();
     const email = document.getElementById('um-email')?.value.trim();
+    const whatsapp = document.getElementById('um-whatsapp')?.value.trim() || '';
     const password = document.getElementById('um-password')?.value || '';
     const role = document.getElementById('um-role')?.value || 'Staff Marketing';
     const dept = document.getElementById('um-dept')?.value.trim();
@@ -4826,6 +4834,7 @@ if(state.user){
       name,
       username,
       email,
+      whatsapp,
       pw: password || existing?.pw || '',
       role,
       dept,
@@ -5278,6 +5287,7 @@ if(state.user){
     const name = document.getElementById('um-name')?.value.trim();
     const username = document.getElementById('um-username')?.value.trim().toLowerCase();
     const email = document.getElementById('um-email')?.value.trim();
+    const whatsapp = document.getElementById('um-whatsapp')?.value.trim() || '';
     const password = document.getElementById('um-password')?.value || '';
     const role = document.getElementById('um-role')?.value || 'Staff Marketing';
     const dept = document.getElementById('um-dept')?.value.trim();
@@ -5291,6 +5301,7 @@ if(state.user){
           name,
           username,
           email,
+          whatsapp,
           password,
           role,
           dept,
