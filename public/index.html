@@ -5017,6 +5017,7 @@ if(state.user){
     }
     if(saving && !immediate) return;
     saving = true;
+    window.__grccSavingToBackend = true;
     try {
       const res = await fetch(API.state, {
         method: 'PUT',
@@ -5028,12 +5029,15 @@ if(state.user){
         return;
       }
       if(!res.ok) throw new Error('HTTP ' + res.status);
+      const saved = await res.json().catch(() => ({}));
+      if(saved.savedAt) window.__grccLastServerMarker = saved.savedAt;
       setSyncStatus('Data dashboard tersimpan', 'success');
     } catch(err) {
       console.warn('sinkronisasi backend gagal', err);
       setSyncStatus('Mode lokal: server tidak tersambung', 'error');
     } finally {
       saving = false;
+      window.__grccSavingToBackend = false;
     }
   }
 
@@ -5067,18 +5071,24 @@ if(state.user){
         setSyncStatus('Database server disiapkan', 'success');
         return;
       }
+      if(payload.state.serverSavedAt || payload.updatedAt) window.__grccLastServerMarker = String(payload.state.serverSavedAt || payload.updatedAt);
       if(Array.isArray(payload.state.accounts) && payload.state.accounts.length){
         ACCOUNTS.splice(0, ACCOUNTS.length, ...payload.state.accounts);
       }
       if(payload.state.permissions && typeof payload.state.permissions === 'object') Object.assign(PERMS, payload.state.permissions);
       if(payload.state.roleColors && typeof payload.state.roleColors === 'object') Object.assign(ROLE_COLORS, payload.state.roleColors);
-      const sessionId = localStorage.getItem(STORAGE_KEYS_PATCH.session) || payload.state.userId;
+      let sessionUser = state.user || null;
+      try {
+        const meRes = await fetch('/api/auth/me', {headers: {'Accept': 'application/json'}, credentials: 'same-origin'});
+        if(meRes.ok) sessionUser = (await meRes.json()).user || sessionUser;
+      } catch(e) {}
+      const sessionId = sessionUser?.id || localStorage.getItem(STORAGE_KEYS_PATCH.session) || '';
       Object.assign(state, payload.state);
       delete state.accounts;
       delete state.permissions;
       delete state.roleColors;
       if(payload.state.calMonth) state.calMonth = new Date(payload.state.calMonth);
-      state.user = sessionId ? ACCOUNTS.find(a => a.id === sessionId) || null : null;
+      state.user = sessionId ? (ACCOUNTS.find(a => a.id === sessionId) || sessionUser || null) : null;
       if(state.user){
         document.getElementById('login-page').style.display='none';
         document.getElementById('app').style.display='flex';
@@ -5411,11 +5421,11 @@ if(state.user){
   const AUTO_SYNC_INTERVAL_MS = 15000;
   let syncTimer = null;
   let syncInFlight = false;
-  let lastSyncMarker = '';
+  let lastSyncMarker = window.__grccLastServerMarker || '';
   let bootstrapped = false;
 
   function canAutoSync(){
-    return location.protocol !== 'file:' && typeof state === 'object' && Boolean(state?.user) && !syncInFlight;
+    return location.protocol !== 'file:' && typeof state === 'object' && Boolean(state?.user) && !syncInFlight && !window.__grccSavingToBackend;
   }
 
   function modalIsOpen(){
@@ -5436,10 +5446,15 @@ if(state.user){
     const serverState = payload?.state || payload;
     if(!serverState || typeof serverState !== 'object') return false;
 
-    const marker = String(payload.updatedAt || serverState.serverSavedAt || '');
+    const marker = String(serverState.serverSavedAt || payload.updatedAt || '');
     if(marker && marker === lastSyncMarker) return false;
+    if(window.__grccLastServerMarker && marker && marker === window.__grccLastServerMarker){
+      lastSyncMarker = marker;
+      bootstrapped = true;
+      return false;
+    }
 
-    const currentUserId = state.user?.id || localStorage.getItem(STORAGE_KEYS_PATCH.session) || serverState.userId;
+    const currentUserId = state.user?.id || localStorage.getItem(STORAGE_KEYS_PATCH.session) || '';
 
     if(Array.isArray(serverState.accounts) && serverState.accounts.length){
       ACCOUNTS.splice(0, ACCOUNTS.length, ...serverState.accounts);
@@ -5456,6 +5471,7 @@ if(state.user){
     if(state.user && typeof hasAccessPatched === 'function' && !hasAccessPatched(state.page)) state.page = 'dashboard';
 
     lastSyncMarker = marker || new Date().toISOString();
+    window.__grccLastServerMarker = lastSyncMarker;
     const canRenderNow = typeof renderPage === 'function' && !modalIsOpen() && !userIsTyping();
     if(canRenderNow) renderPage();
     if(typeof safeRefreshNotifications === 'function') safeRefreshNotifications();

@@ -509,6 +509,7 @@ function cleanState(state) {
   delete cleaned.permissions;
   delete cleaned.roleColors;
   delete cleaned.user;
+  delete cleaned.userId;
   Object.keys(MODULE_TABLES).forEach(key => delete cleaned[key]);
   return cleaned;
 }
