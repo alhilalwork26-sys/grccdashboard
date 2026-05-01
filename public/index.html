@@ -5405,5 +5405,109 @@ if(state.user){
   };
 })();
 </script>
+<script>
+/* ===== CROSS DEVICE AUTO SYNC ===== */
+(function(){
+  const AUTO_SYNC_INTERVAL_MS = 15000;
+  let syncTimer = null;
+  let syncInFlight = false;
+  let lastSyncMarker = '';
+  let bootstrapped = false;
+
+  function canAutoSync(){
+    return location.protocol !== 'file:' && typeof state === 'object' && Boolean(state?.user) && !syncInFlight;
+  }
+
+  function modalIsOpen(){
+    return Boolean(document.querySelector('.modal-overlay,.modal-box,[role="dialog"]'));
+  }
+
+  function userIsTyping(){
+    const el = document.activeElement;
+    return Boolean(el && (['INPUT','TEXTAREA','SELECT'].includes(el.tagName) || el.isContentEditable));
+  }
+
+  function replaceObject(target, source){
+    Object.keys(target).forEach(key => delete target[key]);
+    Object.assign(target, source || {});
+  }
+
+  function applyAutoSyncPayload(payload, reason){
+    const serverState = payload?.state || payload;
+    if(!serverState || typeof serverState !== 'object') return false;
+
+    const marker = String(payload.updatedAt || serverState.serverSavedAt || '');
+    if(marker && marker === lastSyncMarker) return false;
+
+    const currentUserId = state.user?.id || localStorage.getItem(STORAGE_KEYS_PATCH.session) || serverState.userId;
+
+    if(Array.isArray(serverState.accounts) && serverState.accounts.length){
+      ACCOUNTS.splice(0, ACCOUNTS.length, ...serverState.accounts);
+    }
+    if(serverState.permissions && typeof serverState.permissions === 'object') replaceObject(PERMS, serverState.permissions);
+    if(serverState.roleColors && typeof serverState.roleColors === 'object') replaceObject(ROLE_COLORS, serverState.roleColors);
+
+    Object.assign(state, serverState);
+    delete state.accounts;
+    delete state.permissions;
+    delete state.roleColors;
+    if(serverState.calMonth) state.calMonth = new Date(serverState.calMonth);
+    state.user = currentUserId ? (ACCOUNTS.find(a => a.id === currentUserId) || state.user) : state.user;
+    if(state.user && typeof hasAccessPatched === 'function' && !hasAccessPatched(state.page)) state.page = 'dashboard';
+
+    lastSyncMarker = marker || new Date().toISOString();
+    const canRenderNow = typeof renderPage === 'function' && !modalIsOpen() && !userIsTyping();
+    if(canRenderNow) renderPage();
+    if(typeof safeRefreshNotifications === 'function') safeRefreshNotifications();
+
+    if(bootstrapped && canRenderNow && !['silent','after-save'].includes(reason) && typeof toast === 'function'){
+      toast('Data terbaru diterima dari server', 'info');
+    }
+    bootstrapped = true;
+    return true;
+  }
+
+  async function autoSyncFromServer(reason='timer'){
+    if(!canAutoSync()) return false;
+    if(document.hidden && reason === 'timer') return false;
+    if((modalIsOpen() || userIsTyping()) && reason === 'timer') return false;
+
+    syncInFlight = true;
+    try {
+      const res = await fetch('/api/state', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {'Accept':'application/json', 'X-GRCC-Auto-Sync': reason}
+      });
+      if(res.status === 401) return false;
+      const payload = await res.json().catch(() => ({}));
+      if(!res.ok || !payload.state) return false;
+      return applyAutoSyncPayload(payload, reason);
+    } catch(err) {
+      console.warn('auto sync gagal', err);
+      return false;
+    } finally {
+      syncInFlight = false;
+    }
+  }
+
+  function startCrossDeviceAutoSync(){
+    if(syncTimer) clearInterval(syncTimer);
+    setTimeout(() => autoSyncFromServer('silent'), 2500);
+    syncTimer = setInterval(() => autoSyncFromServer('timer'), AUTO_SYNC_INTERVAL_MS);
+  }
+
+  window.autoSyncFromServer = autoSyncFromServer;
+  window.startCrossDeviceAutoSync = startCrossDeviceAutoSync;
+
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible') autoSyncFromServer('tab-active');
+  });
+  window.addEventListener('focus', () => autoSyncFromServer('focus'));
+  window.addEventListener('online', () => autoSyncFromServer('online'));
+  window.addEventListener('load', startCrossDeviceAutoSync);
+  if(document.readyState === 'complete') startCrossDeviceAutoSync();
+})();
+</script>
 </body>
 </html>
