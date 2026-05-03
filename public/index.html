@@ -638,6 +638,35 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   border-color:rgba(37,99,235,.55); box-shadow:0 10px 24px rgba(37,99,235,.16);
   transform:translateY(-1px);
 }
+.eq-board {
+  border:1px solid var(--border); border-radius:14px; overflow:hidden; background:var(--surface);
+  box-shadow:0 14px 36px rgba(15,23,42,.06);
+}
+.eq-table { width:100%; min-width:1120px; border-collapse:separate; border-spacing:0; }
+.eq-table th, .eq-table td { border-right:1px solid var(--border); border-top:1px solid var(--border); }
+.eq-table thead tr:first-child th { border-top:0; }
+.eq-side {
+  background:#A24F7B; color:#fff; padding:9px 12px; font-size:12px; font-weight:900;
+  text-align:center; white-space:nowrap;
+}
+.eq-side.activity { text-align:left; min-width:220px; }
+.eq-month {
+  background:#CFE0F1; color:#0F172A; padding:7px 0; font-size:13px; font-weight:900; text-align:center;
+}
+.eq-week {
+  background:#34206F; color:#fff; padding:8px 2px; font-size:12px; font-weight:900; text-align:center; min-width:70px;
+}
+.eq-no { text-align:center; font-size:13px; width:48px; color:var(--text); background:var(--surface); }
+.eq-activity { min-width:220px; padding:10px 12px; background:var(--surface); }
+.eq-cell { height:42px; min-width:70px; padding:0; background:var(--surface); }
+.eq-bar {
+  height:28px; margin:7px 0; display:flex; align-items:center; justify-content:center;
+  font-size:11px; font-weight:950; white-space:nowrap; overflow:hidden;
+}
+.eq-status { min-width:120px; text-align:center; background:var(--surface); }
+.eq-status span { display:inline-flex; padding:5px 12px; border-radius:999px; font-size:12px; font-weight:900; }
+.eq-actions { min-width:140px; text-align:center; background:var(--surface); }
+.eq-actions .btn { margin:0 3px; }
 @media (max-width: 900px) {
   .finance-toolbar { align-items:stretch; }
   .finance-filters { grid-template-columns:1fr; width:100%; }
@@ -1450,7 +1479,7 @@ const NAV = [
   {id:'finance',  label:'Finance Operasional', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`},
   {id:'documents',label:'Dokumen', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`},
   {id:'settings', label:'Pengaturan', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`},
-  {id:'timeline', label:'Timeline Riset', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="11" cy="18" r="2" fill="currentColor" stroke="none"/></svg>`},
+  {id:'timeline', label:'Timeline Equity', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="11" cy="18" r="2" fill="currentColor" stroke="none"/></svg>`},
 ];
 
 /* ===== APP STATE ===== */
@@ -1471,9 +1500,12 @@ let state = {
   notifEmail: true, notifDeadline: true,
   dailyProgresses: [],
   researchItems: [],
+  timelineEquity: [],
   filterProgressUser:'Semua',
   filterProgressStatus:'Semua',
   filterProgressDate:'',
+  filterEquityStatus:'Semua',
+  filterEquityOwner:'Semua',
 };
 
 /* ===== HELPERS ===== */
@@ -1665,7 +1697,7 @@ function initApp(){
 }
 function renderNav(){
   const perms = PERMS[state.user.role]||[];
-  const titles = {dashboard:'Dashboard',tasks:'Task Management',daily_progress:'Progres Harian',schedule:'Jadwal Kegiatan',programs:'Program & Training',finance:'Finance Operasional',documents:'Manajemen Dokumen',settings:'Pengaturan Akun'};
+  const titles = {dashboard:'Dashboard',tasks:'Task Management',daily_progress:'Progres Harian',schedule:'Jadwal Kegiatan',programs:'Program & Training',finance:'Finance Operasional',documents:'Manajemen Dokumen',timeline:'Timeline Equity',settings:'Pengaturan Akun'};
   document.getElementById('nav-items').innerHTML = NAV.filter(n=>perms.includes(n.id)).map(n=>`
     <button class="sb-item${state.page===n.id?' active':''}" onclick="navigate('${n.id}')">
       ${n.icon}${escHtml(n.label)}<span class="sb-dot"></span>
@@ -3733,6 +3765,206 @@ function tlSaveNew(newId){
   toast('Ditambahkan'); closeModal(); persistPatched(); renderPage();
 }
 
+const EQUITY_WEEKS = [
+  {month:'Februari', week:'W1'}, {month:'Februari', week:'W2'}, {month:'Februari', week:'W3'}, {month:'Februari', week:'W4'},
+  {month:'Maret', week:'W1'}, {month:'Maret', week:'W2'}, {month:'Maret', week:'W3'}, {month:'Maret', week:'W4'},
+  {month:'April', week:'W1'}, {month:'April', week:'W2'}, {month:'April', week:'W3'}, {month:'April', week:'W4'},
+  {month:'Mei', week:'W1'}, {month:'Mei', week:'W2'}, {month:'Mei', week:'W3'}, {month:'Mei', week:'W4'}
+];
+const EQUITY_STATUSES = ['Planned','In Progress','Review','Done','Hold'];
+function equityDefaultItems(){
+  return [
+    {id:'eq_intro', activity:'Introduction', owner:'Riset', status:'Done', startWeek:0, endWeek:3, marker:'', note:''},
+    {id:'eq_lit', activity:'Literature Review', owner:'Riset', status:'In Progress', startWeek:4, endWeek:5, marker:'', note:''},
+    {id:'eq_method', activity:'Methodology', owner:'Riset', status:'Planned', startWeek:7, endWeek:8, marker:'LEBARAN', note:'Blok libur/lebaran bisa diberi marker.'},
+    {id:'eq_data', activity:'Olah Data', owner:'Riset', status:'Planned', startWeek:8, endWeek:10, marker:'', note:''},
+    {id:'eq_result', activity:'Result', owner:'Riset', status:'Planned', startWeek:11, endWeek:12, marker:'', note:''}
+  ];
+}
+function normalizeTimelineEquity(){
+  if(!state.filterEquityStatus) state.filterEquityStatus = 'Semua';
+  if(!state.filterEquityOwner) state.filterEquityOwner = 'Semua';
+  if(!Array.isArray(state.timelineEquity) || !state.timelineEquity.length){
+    state.timelineEquity = equityDefaultItems();
+  }
+  state.timelineEquity = state.timelineEquity.map((item, idx) => ({
+    id: item.id || uid(),
+    activity: item.activity || item.aktivitas || `Aktivitas ${idx + 1}`,
+    owner: item.owner || item.pic || 'Riset',
+    status: EQUITY_STATUSES.includes(item.status) ? item.status : (item.done ? 'Done' : 'Planned'),
+    startWeek: Math.max(0, Math.min(EQUITY_WEEKS.length - 1, Number(item.startWeek || 0))),
+    endWeek: Math.max(0, Math.min(EQUITY_WEEKS.length - 1, Number(item.endWeek ?? item.startWeek ?? 0))),
+    marker: item.marker || '',
+    note: item.note || ''
+  })).map(item => item.endWeek < item.startWeek ? {...item, endWeek:item.startWeek} : item);
+}
+function equityStatusTone(status){
+  const map = {
+    'Planned': {bg:'#E5E7EB', c:'#475569'},
+    'In Progress': {bg:'#F59E0B', c:'#111827'},
+    'Review': {bg:'#DDD6FE', c:'#5B21B6'},
+    'Done': {bg:'#22C55E', c:'#052E16'},
+    'Hold': {bg:'#FCA5A5', c:'#7F1D1D'}
+  };
+  return map[status] || map.Planned;
+}
+function equityWeekOptions(selected=0){
+  return EQUITY_WEEKS.map((w, idx) => `<option value="${idx}" ${idx===Number(selected)?'selected':''}>${escHtml(w.month)} ${escHtml(w.week)}</option>`).join('');
+}
+function visibleTimelineEquity(){
+  normalizeTimelineEquity();
+  return state.timelineEquity.filter(item => {
+    if(state.filterEquityStatus !== 'Semua' && item.status !== state.filterEquityStatus) return false;
+    if(state.filterEquityOwner !== 'Semua' && item.owner !== state.filterEquityOwner) return false;
+    return true;
+  });
+}
+function renderTimeline(){
+  normalizeTimelineEquity();
+  const canEdit = isSuperAdminRole(state.user) || isResearchRole(state.user);
+  const items = visibleTimelineEquity();
+  const owners = ['Semua', ...new Set(state.timelineEquity.map(item => item.owner).filter(Boolean))];
+  const done = state.timelineEquity.filter(item => item.status === 'Done').length;
+  const active = state.timelineEquity.filter(item => item.status === 'In Progress' || item.status === 'Review').length;
+  const hold = state.timelineEquity.filter(item => item.status === 'Hold').length;
+  const pct = state.timelineEquity.length ? Math.round(done / state.timelineEquity.length * 100) : 0;
+  const months = [...new Set(EQUITY_WEEKS.map(w => w.month))];
+  const monthHead = months.map(month => `<th colspan="${EQUITY_WEEKS.filter(w => w.month === month).length}" class="eq-month">${escHtml(month)}</th>`).join('');
+  const weekHead = EQUITY_WEEKS.map(w => `<th class="eq-week">${escHtml(w.week)}</th>`).join('');
+  const rows = items.map((item, idx) => {
+    const tone = equityStatusTone(item.status);
+    const cells = EQUITY_WEEKS.map((week, weekIdx) => {
+      const inRange = weekIdx >= item.startWeek && weekIdx <= item.endWeek;
+      const isStart = weekIdx === item.startWeek;
+      const isEnd = weekIdx === item.endWeek;
+      const hasMarker = item.marker && inRange && weekIdx === item.startWeek;
+      return `<td class="eq-cell">
+        ${inRange ? `<div class="eq-bar" style="background:${tone.bg};color:${tone.c};border-radius:${isStart?'8px':'0'} ${isEnd?'8px':'0'} ${isEnd?'8px':'0'} ${isStart?'8px':'0'}">${hasMarker ? escHtml(item.marker) : ''}</div>` : ''}
+      </td>`;
+    }).join('');
+    return `<tr>
+      <td class="eq-no">${idx + 1}</td>
+      <td class="eq-activity">
+        <div style="font-weight:800">${escHtml(item.activity)}</div>
+        <div style="font-size:11px;color:var(--muted)">${escHtml(item.owner)}${item.note ? ` · ${escHtml(item.note)}` : ''}</div>
+      </td>
+      ${cells}
+      <td class="eq-status"><span style="background:${tone.bg};color:${tone.c}">${escHtml(item.status)}</span></td>
+      ${canEdit ? `<td class="eq-actions"><button class="btn btn-sec btn-sm" onclick="openEquityModal('${item.id}')">Edit</button><button class="btn btn-dan btn-sm" onclick="deleteEquityItem('${item.id}')">Hapus</button></td>` : ''}
+    </tr>`;
+  }).join('');
+  return `
+  <div class="page-header">
+    <div>
+      <div class="page-title">Timeline Equity</div>
+      <div class="page-sub">Rencana kerja berbasis bulan dan minggu untuk memantau fase riset/equity dari awal sampai submit.</div>
+    </div>
+    ${canEdit ? `<button class="btn btn-pri" onclick="openEquityModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Tambah Aktivitas
+    </button>` : ''}
+  </div>
+  <div class="research-summary-grid" style="margin-bottom:16px">
+    <div class="research-summary-card"><span>Total</span><strong>${state.timelineEquity.length}</strong></div>
+    <div class="research-summary-card"><span>Aktif</span><strong>${active}</strong></div>
+    <div class="research-summary-card"><span>Selesai</span><strong>${done}</strong></div>
+    <div class="research-summary-card"><span>Hold</span><strong>${hold}</strong></div>
+    <div class="research-summary-card"><span>Progress</span><strong>${pct}%</strong></div>
+  </div>
+  <div class="finance-toolbar">
+    <div class="filter-bar">
+      <select class="form-control" style="width:auto;height:36px" onchange="state.filterEquityStatus=this.value;persistPatched();renderPage()">
+        ${['Semua', ...EQUITY_STATUSES].map(status => `<option ${state.filterEquityStatus===status?'selected':''}>${escHtml(status)}</option>`).join('')}
+      </select>
+      <select class="form-control" style="width:auto;height:36px" onchange="state.filterEquityOwner=this.value;persistPatched();renderPage()">
+        ${owners.map(owner => `<option ${state.filterEquityOwner===owner?'selected':''}>${escHtml(owner)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="finance-actions">
+      <button class="btn btn-sec btn-sm" onclick="exportEquityCsv()">Export CSV</button>
+      <button class="print-btn no-print" onclick="printPage('Timeline Equity')">Print</button>
+    </div>
+  </div>
+  <div class="eq-board">
+    <div style="overflow-x:auto">
+      <table class="eq-table">
+        <thead>
+          <tr><th class="eq-side" rowspan="2">No</th><th class="eq-side activity" rowspan="2">Aktivitas</th>${monthHead}<th class="eq-side" rowspan="2">Status</th>${canEdit?'<th class="eq-side" rowspan="2">Aksi</th>':''}</tr>
+          <tr>${weekHead}</tr>
+        </thead>
+        <tbody>${rows || `<tr><td colspan="${EQUITY_WEEKS.length + (canEdit ? 4 : 3)}"><div class="empty"><div class="empty-text">Belum ada aktivitas sesuai filter.</div></div></td></tr>`}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+function openEquityModal(editId=''){
+  normalizeTimelineEquity();
+  const item = editId ? state.timelineEquity.find(x => x.id === editId) : null;
+  const ownerOptions = ACCOUNTS.filter(a => isResearchRole(a) || isManagerRole(a)).map(a => a.name);
+  const ownerList = [...new Set([item?.owner, state.user?.name, ...ownerOptions].filter(Boolean))];
+  const html = `
+    <div class="form-group"><label class="form-label">Aktivitas <span>*</span></label><input id="eq-activity" class="form-control" value="${escHtml(item?.activity || '')}" placeholder="Contoh: Literature Review"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Owner</label><select id="eq-owner" class="form-control">${ownerList.map(owner => `<option ${item?.owner===owner?'selected':''}>${escHtml(owner)}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="form-label">Status</label><select id="eq-status" class="form-control">${EQUITY_STATUSES.map(status => `<option ${item?.status===status?'selected':''}>${escHtml(status)}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Mulai</label><select id="eq-start" class="form-control">${equityWeekOptions(item?.startWeek || 0)}</select></div>
+      <div class="form-group"><label class="form-label">Selesai</label><select id="eq-end" class="form-control">${equityWeekOptions(item?.endWeek || 1)}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Marker</label><input id="eq-marker" class="form-control" value="${escHtml(item?.marker || '')}" placeholder="Contoh: LEBARAN / SUBMIT"></div>
+      <div class="form-group"><label class="form-label">Catatan</label><input id="eq-note" class="form-control" value="${escHtml(item?.note || '')}" placeholder="Opsional"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Batal</button>
+      <button class="btn btn-pri" onclick="saveEquityItem('${editId}')">Simpan</button>
+    </div>`;
+  showModal(editId ? 'Edit Timeline Equity' : 'Tambah Timeline Equity', html, 620);
+}
+function saveEquityItem(editId=''){
+  const activity = document.getElementById('eq-activity')?.value.trim();
+  const owner = document.getElementById('eq-owner')?.value || state.user?.name || 'Riset';
+  const status = document.getElementById('eq-status')?.value || 'Planned';
+  const startWeek = Number(document.getElementById('eq-start')?.value || 0);
+  const endWeek = Number(document.getElementById('eq-end')?.value || startWeek);
+  const marker = document.getElementById('eq-marker')?.value.trim().toUpperCase();
+  const note = document.getElementById('eq-note')?.value.trim();
+  if(!activity){ toast('Aktivitas wajib diisi', 'error'); return; }
+  if(endWeek < startWeek){ toast('Minggu selesai tidak boleh sebelum minggu mulai', 'error'); return; }
+  const data = {activity, owner, status, startWeek, endWeek, marker, note};
+  if(editId) state.timelineEquity = state.timelineEquity.map(item => item.id === editId ? {...item, ...data} : item);
+  else state.timelineEquity = [...state.timelineEquity, {id:uid(), ...data}];
+  persistPatched();
+  closeModal();
+  renderPage();
+  toast(editId ? 'Timeline diperbarui' : 'Aktivitas timeline ditambahkan');
+}
+function deleteEquityItem(id){
+  const item = (state.timelineEquity || []).find(x => x.id === id);
+  if(!item) return;
+  if(!confirm(`Hapus aktivitas "${item.activity}"?`)) return;
+  state.timelineEquity = state.timelineEquity.filter(x => x.id !== id);
+  persistPatched();
+  renderPage();
+  toast('Aktivitas timeline dihapus', 'info');
+}
+function exportEquityCsv(){
+  normalizeTimelineEquity();
+  const rows = [['No','Aktivitas','Owner','Status','Mulai','Selesai','Marker','Catatan'], ...visibleTimelineEquity().map((item, idx) => [
+    idx + 1,
+    item.activity,
+    item.owner,
+    item.status,
+    `${EQUITY_WEEKS[item.startWeek]?.month || ''} ${EQUITY_WEEKS[item.startWeek]?.week || ''}`,
+    `${EQUITY_WEEKS[item.endWeek]?.month || ''} ${EQUITY_WEEKS[item.endWeek]?.week || ''}`,
+    item.marker,
+    item.note
+  ])];
+  const csv = rows.map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  downloadTextFilePatch(`timeline-equity-${today()}.csv`, csv, 'text/csv;charset=utf-8;');
+}
+
 function renderSettings(){
   const u=state.user;
   return `
@@ -5179,6 +5411,7 @@ if(state.user){
     programs:'Program & Training',
     finance:'Finance Operasional',
     documents:'Dokumen',
+    timeline:'Timeline Equity',
     settings:'Pengaturan'
   };
 
@@ -5998,13 +6231,14 @@ if(state.user){
   function pageSyncSignature(){
     const page = state?.page || 'dashboard';
     const keysByPage = {
-      dashboard: ['tasks','schedules','expenses','programs','dailyProgresses','docs','researchItems'],
+      dashboard: ['tasks','schedules','expenses','programs','dailyProgresses','docs','researchItems','timelineEquity'],
       tasks: ['tasks'],
       daily_progress: ['dailyProgresses'],
       schedule: ['schedules'],
       programs: ['programs'],
       finance: ['expenses'],
       documents: ['docs'],
+      timeline: ['timelineEquity'],
       settings: []
     };
     const keys = keysByPage[page] || [];

@@ -11,17 +11,18 @@ const MODULE_TABLES = {
   expenses: 'expenses',
   programs: 'programs',
   dailyProgresses: 'daily_progresses',
+  timelineEquity: 'timeline_equity',
   notifications: 'notifications'
 };
 const DEFAULT_PERMS = {
-  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','settings'],
+  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','timeline','settings'],
   'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','documents'],
   'Staff Kreatif': ['dashboard','tasks','daily_progress','documents'],
   'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','documents'],
   Finance: ['dashboard','daily_progress','finance'],
   'Staff Finance + Dokumen': ['dashboard','daily_progress','finance','documents'],
   'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','documents'],
-  Riset: ['dashboard','tasks','daily_progress','documents']
+  Riset: ['dashboard','tasks','daily_progress','documents','timeline']
 };
 const DEFAULT_ROLE_COLORS = {
   'Super Admin + Manager': '#F97316',
@@ -61,6 +62,9 @@ const EMPTY_STATE = {
   filterProgressStatus: 'Semua',
   filterProgressDate: '',
   researchItems: [],
+  timelineEquity: [],
+  filterEquityStatus: 'Semua',
+  filterEquityOwner: 'Semua',
   deadlineReminderLog: {},
   reminderLog: {},
   emailIntegration: { enabled:false, provider:'emailjs', serviceId:'', templateId:'', publicKey:'', fallbackTo:'', fromName:'GRCC Dashboard' }
