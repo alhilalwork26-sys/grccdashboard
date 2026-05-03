@@ -1441,6 +1441,18 @@ const PERMS = {
   'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','documents'],
   'Riset': ['dashboard','tasks','daily_progress','documents','timeline'],
 };
+const REQUIRED_ROLE_PERMS = {
+  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','timeline','settings'],
+  'Super Admin': ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','timeline','settings'],
+  'Riset': ['dashboard','tasks','daily_progress','documents','timeline']
+};
+function ensureRequiredRolePerms(){
+  Object.entries(REQUIRED_ROLE_PERMS).forEach(([role, required]) => {
+    if(!Array.isArray(PERMS[role])) return;
+    PERMS[role] = [...new Set([...PERMS[role], ...required])];
+  });
+}
+ensureRequiredRolePerms();
 const ROLE_COLORS = {
   'Super Admin + Manager':'#F97316',
   'Program Admin + Kepala Marketing/Kreatif':'#22C55E',
@@ -1696,6 +1708,7 @@ function initApp(){
   renderPage();
 }
 function renderNav(){
+  ensureRequiredRolePerms();
   const perms = PERMS[state.user.role]||[];
   const titles = {dashboard:'Dashboard',tasks:'Task Management',daily_progress:'Progres Harian',schedule:'Jadwal Kegiatan',programs:'Program & Training',finance:'Finance Operasional',documents:'Manajemen Dokumen',timeline:'Timeline Equity',settings:'Pengaturan Akun'};
   document.getElementById('nav-items').innerHTML = NAV.filter(n=>perms.includes(n.id)).map(n=>`
@@ -4451,6 +4464,7 @@ function restorePatched(){
     if(raw){
       const parsed = JSON.parse(raw);
       if(parsed.permissions && typeof parsed.permissions === 'object') Object.assign(PERMS, parsed.permissions);
+      ensureRequiredRolePerms();
       if(parsed.roleColors && typeof parsed.roleColors === 'object') Object.assign(ROLE_COLORS, parsed.roleColors);
       Object.assign(state, parsed);
       delete state.permissions;
@@ -4465,6 +4479,7 @@ function restorePatched(){
   }
 }
 function hasAccessPatched(page){
+  ensureRequiredRolePerms();
   return (PERMS[state.user?.role] || []).includes(page);
 }
 function wrapPersist(fnName){
@@ -5818,6 +5833,7 @@ if(state.user){
         ACCOUNTS.splice(0, ACCOUNTS.length, ...payload.state.accounts);
       }
       if(payload.state.permissions && typeof payload.state.permissions === 'object') Object.assign(PERMS, payload.state.permissions);
+      ensureRequiredRolePerms();
       if(payload.state.roleColors && typeof payload.state.roleColors === 'object') Object.assign(ROLE_COLORS, payload.state.roleColors);
       let sessionUser = state.user || null;
       try {
@@ -5972,6 +5988,7 @@ if(state.user){
     if(serverState.permissions && typeof serverState.permissions === 'object'){
       Object.keys(PERMS).forEach(k => delete PERMS[k]);
       Object.assign(PERMS, serverState.permissions);
+      ensureRequiredRolePerms();
     }
     if(serverState.roleColors && typeof serverState.roleColors === 'object'){
       Object.keys(ROLE_COLORS).forEach(k => delete ROLE_COLORS[k]);
@@ -6279,6 +6296,7 @@ if(state.user){
       ACCOUNTS.splice(0, ACCOUNTS.length, ...serverState.accounts);
     }
     if(serverState.permissions && typeof serverState.permissions === 'object') replaceObject(PERMS, serverState.permissions);
+    ensureRequiredRolePerms();
     if(serverState.roleColors && typeof serverState.roleColors === 'object') replaceObject(ROLE_COLORS, serverState.roleColors);
 
     Object.assign(state, serverState);
