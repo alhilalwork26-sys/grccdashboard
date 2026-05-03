@@ -365,7 +365,9 @@ async function listRoles() {
 async function syncModuleTables(state) {
   const sql = db();
   for (const [stateKey, table] of Object.entries(MODULE_TABLES)) {
-    const items = Array.isArray(state[stateKey]) ? state[stateKey] : [];
+    if (!Object.prototype.hasOwnProperty.call(state, stateKey)) continue;
+    if (!Array.isArray(state[stateKey])) continue;
+    const items = state[stateKey];
     const ids = [];
     for (const item of items) {
       const id = String(item.id || crypto.randomBytes(8).toString('hex'));

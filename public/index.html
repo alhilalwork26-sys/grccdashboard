@@ -1739,10 +1739,17 @@ function closeSidebar(){
 }
 
 /* ===== RENDER PAGE ===== */
+let lastRenderedPageKey = '';
 function renderPage(){
   const c = document.getElementById('content');
-  c.style.animation='none'; c.offsetHeight; c.style.animation='fadeUp .35s ease';
   const p = state.page;
+  const pageKey = `${p}:${state.taskDetail || ''}:${state.progDetail || ''}`;
+  if(pageKey !== lastRenderedPageKey){
+    c.style.animation='none';
+    c.offsetHeight;
+    c.style.animation='fadeUp .28s ease';
+    lastRenderedPageKey = pageKey;
+  }
   if(p==='dashboard') c.innerHTML=renderDashboard();
   else if(p==='tasks') c.innerHTML=renderTasks();
   else if(p==='daily_progress') c.innerHTML=renderDailyProgress();
@@ -4100,7 +4107,7 @@ initApp = function() {
 const _origRenderPage2 = renderPage;
 renderPage = function() {
   _origRenderPage2();
-  setTimeout(() => { refreshDeadlineBanner(); updateFabVisibility(); }, 50);
+  requestAnimationFrame(() => { refreshDeadlineBanner(); updateFabVisibility(); });
 };
 
 /* ══════════════════════════════════════
@@ -5544,6 +5551,7 @@ if(state.user){
   const syncBadgeId = 'backend-sync-status';
   let saveTimer = null;
   let saving = false;
+  let lastBackendPayload = '';
 
   function setSyncStatus(text, type='info'){
     let el = document.getElementById(syncBadgeId);
@@ -5600,10 +5608,12 @@ if(state.user){
     saving = true;
     window.__grccSavingToBackend = true;
     try {
+      const body = JSON.stringify({state: statePayload()});
+      if(!immediate && body === lastBackendPayload) return;
       const res = await fetch(API.state, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({state: statePayload()})
+        body
       });
       if(res.status === 401) {
         if(typeof window.forceSessionExpiredLogout === 'function') window.forceSessionExpiredLogout();
@@ -5613,6 +5623,7 @@ if(state.user){
       if(!res.ok) throw new Error('HTTP ' + res.status);
       const saved = await res.json().catch(() => ({}));
       if(saved.savedAt) window.__grccLastServerMarker = saved.savedAt;
+      lastBackendPayload = body;
       setSyncStatus('Data dashboard tersimpan', 'success');
     } catch(err) {
       console.warn('sinkronisasi backend gagal', err);
@@ -5625,7 +5636,7 @@ if(state.user){
 
   function scheduleBackendSave(){
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(()=>saveToBackend(false), 450);
+    saveTimer = setTimeout(()=>saveToBackend(false), 1200);
   }
 
   const localPersist = persistPatched;
@@ -6047,7 +6058,7 @@ if(state.user){
 <script>
 /* ===== CROSS DEVICE AUTO SYNC ===== */
 (function(){
-  const AUTO_SYNC_INTERVAL_MS = 15000;
+  const AUTO_SYNC_INTERVAL_MS = 30000;
   let syncTimer = null;
   let syncInFlight = false;
   let lastSyncMarker = window.__grccLastServerMarker || '';
