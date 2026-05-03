@@ -63,6 +63,7 @@ const EMPTY_STATE = {
   filterProgressDate: '',
   researchItems: [],
   timelineEquity: [],
+  timelineEquitySeeded: false,
   filterEquityStatus: 'Semua',
   filterEquityOwner: 'Semua',
   deadlineReminderLog: {},
