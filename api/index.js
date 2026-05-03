@@ -20,7 +20,8 @@ const DEFAULT_PERMS = {
   'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','documents'],
   Finance: ['dashboard','daily_progress','finance'],
   'Staff Finance + Dokumen': ['dashboard','daily_progress','finance','documents'],
-  'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','documents']
+  'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','documents'],
+  Riset: ['dashboard','tasks','daily_progress','documents']
 };
 const DEFAULT_ROLE_COLORS = {
   'Super Admin + Manager': '#F97316',
@@ -29,7 +30,8 @@ const DEFAULT_ROLE_COLORS = {
   'Staff Marketing': '#22C55E',
   Finance: '#34D399',
   'Staff Finance + Dokumen': '#7C3AED',
-  'Kepala Trainer': '#7C3AED'
+  'Kepala Trainer': '#7C3AED',
+  Riset: '#2563EB'
 };
 const SUPER_ADMIN_ROLES = new Set(['Super Admin', 'Super Admin + Manager']);
 const IMPORTANT_DOC_ROLES = new Set(['Super Admin', 'Super Admin + Manager', 'Program Admin', 'Program Admin + Kepala Marketing/Kreatif']);
@@ -58,6 +60,7 @@ const EMPTY_STATE = {
   filterProgressUser: 'Semua',
   filterProgressStatus: 'Semua',
   filterProgressDate: '',
+  researchItems: [],
   deadlineReminderLog: {},
   reminderLog: {},
   emailIntegration: { enabled:false, provider:'emailjs', serviceId:'', templateId:'', publicKey:'', fallbackTo:'', fromName:'GRCC Dashboard' }

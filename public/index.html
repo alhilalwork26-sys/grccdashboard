@@ -565,12 +565,50 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   display:flex; align-items:center; gap:8px; font-size:12px;
   padding:9px; border:1px solid var(--border); border-radius:9px; background:rgba(255,255,255,0.025);
 }
+.research-toolbar { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+.research-title-block { display:flex; flex-direction:column; gap:4px; min-width:220px; }
+.research-kicker { font-size:10px; font-weight:900; letter-spacing:1px; text-transform:uppercase; color:var(--blue); font-family:var(--mono); }
+.research-board {
+  border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--surface);
+  box-shadow:0 10px 30px rgba(15,23,42,.05);
+}
+.research-table { width:100%; border-collapse:separate; border-spacing:0; min-width:980px; }
+.research-table th {
+  background:#3F3F3C; color:#fff; font-size:12px; font-weight:900; padding:10px 12px;
+  text-align:left; border-right:1px solid rgba(255,255,255,.18); white-space:nowrap;
+}
+.research-table th:first-child, .research-table td:first-child { text-align:center; width:54px; }
+.research-table td {
+  padding:9px 12px; border-top:1px solid var(--border); border-right:1px solid var(--border);
+  font-size:13px; color:var(--text); vertical-align:middle; background:var(--surface);
+}
+.research-table tr:hover td { background:rgba(91,141,246,.055); }
+.research-pill {
+  display:inline-flex; align-items:center; min-height:23px; padding:3px 12px; border-radius:999px;
+  font-size:12px; font-weight:900; line-height:1; white-space:nowrap;
+}
+.research-pill.mandiri { background:#2F61AF; color:#fff; }
+.research-pill.hibah { background:#B92B20; color:#fff; }
+.research-pill.internal { background:#0F766E; color:#fff; }
+.research-pic { background:#CBE6F7; color:#1D4E89; }
+.research-pic.alt { background:#F8CBAF; color:#8B4B1F; }
+.research-code { background:#315F6C; color:#F8FAFC; }
+.research-status.published { background:#34774D; color:#fff; }
+.research-status.progress { background:#D97706; color:#fff; }
+.research-status.review { background:#7C3AED; color:#fff; }
+.research-status.draft { background:#64748B; color:#fff; }
+.research-actions { display:flex; gap:6px; justify-content:center; }
+.research-summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:14px; }
+.research-summary-card { border:1px solid var(--border); border-radius:10px; padding:12px; background:rgba(255,255,255,.03); }
+.research-summary-card strong { display:block; font-size:20px; color:var(--text); }
+.research-summary-card span { font-size:11px; color:var(--muted); font-weight:800; text-transform:uppercase; letter-spacing:.7px; }
 @media (max-width: 900px) {
   .finance-toolbar { align-items:stretch; }
   .finance-filters { grid-template-columns:1fr; width:100%; }
   .finance-actions { width:100%; }
   .finance-actions .btn, .finance-actions .print-btn { flex:1; justify-content:center; }
   .evidence-grid, .evidence-checklist { grid-template-columns:1fr; }
+  .research-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 
 /* ═══════════════════════════════════════════════
@@ -1334,6 +1372,7 @@ const PERMS = {
   'Finance': ['dashboard','daily_progress','finance'],
   'Staff Finance + Dokumen': ['dashboard','daily_progress','finance','documents'],
   'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','documents'],
+  'Riset': ['dashboard','tasks','daily_progress','documents'],
 };
 const ROLE_COLORS = {
   'Super Admin + Manager':'#F97316',
@@ -1342,14 +1381,16 @@ const ROLE_COLORS = {
   'Staff Marketing':'#22C55E',
   'Finance':'#34D399',
   'Staff Finance + Dokumen':'#7C3AED',
-  'Kepala Trainer':'#7C3AED'
+  'Kepala Trainer':'#7C3AED',
+  'Riset':'#2563EB'
 };
 const ROLE_GROUPS = {
   superAdmin: ['Super Admin','Super Admin + Manager'],
   programAdmin: ['Program Admin','Program Admin + Kepala Marketing/Kreatif'],
   finance: ['Finance','Staff Finance + Dokumen'],
   trainer: ['Trainer','Kepala Trainer'],
-  staff: ['Staff','Staff Kreatif','Staff Marketing']
+  staff: ['Staff','Staff Kreatif','Staff Marketing'],
+  research: ['Riset']
 };
 function roleNameOf(userOrRole){ return typeof userOrRole === 'string' ? userOrRole : (userOrRole?.role || ''); }
 function roleIn(userOrRole, roles){ return roles.includes(roleNameOf(userOrRole)); }
@@ -1359,6 +1400,7 @@ function isManagerRole(userOrRole){ return isSuperAdminRole(userOrRole) || isPro
 function isFinanceRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.finance); }
 function isTrainerRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.trainer); }
 function isStaffRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.staff); }
+function isResearchRole(userOrRole){ return roleIn(userOrRole, ROLE_GROUPS.research); }
 function canManageImportantDocs(userOrRole){ return isManagerRole(userOrRole); }
 function canUploadPublicDocs(userOrRole){ return (PERMS[roleNameOf(userOrRole)] || []).includes('documents'); }
 const NAV = [
@@ -1389,6 +1431,7 @@ let state = {
   searchDoc:'', folderDoc:'Semua',
   notifEmail: true, notifDeadline: true,
   dailyProgresses: [],
+  researchItems: [],
   filterProgressUser:'Semua',
   filterProgressStatus:'Semua',
   filterProgressDate:'',
@@ -1696,7 +1739,128 @@ function runAutomaticReminders(){
 }
 
 /* ===== DASHBOARD ===== */
+const RESEARCH_STATUSES = ['Draft','On Progress','Review','Published'];
+const RESEARCH_TYPES = ['Riset Mandiri','Riset Hibah','Riset Internal'];
+function normalizeResearchItems(){
+  if(!Array.isArray(state.researchItems)) state.researchItems = [];
+  state.researchItems = state.researchItems.map((item, idx) => ({
+    id: item.id || uid(),
+    type: item.type || 'Riset Mandiri',
+    pic: item.pic || '',
+    code: item.code || '',
+    owner: item.owner || '',
+    status: item.status || 'Draft',
+    title: item.title || '',
+    userId: item.userId || '',
+    createdAt: item.createdAt || new Date().toISOString(),
+    updatedAt: item.updatedAt || new Date().toISOString(),
+    no: idx + 1
+  }));
+}
+function researchTypeClass(type){
+  if(type === 'Riset Hibah') return 'hibah';
+  if(type === 'Riset Internal') return 'internal';
+  return 'mandiri';
+}
+function researchStatusClass(status){
+  if(status === 'On Progress') return 'progress';
+  return String(status || '').toLowerCase().replace(/\s+/g, '');
+}
+function visibleResearchItems(){
+  normalizeResearchItems();
+  const u = state.user;
+  if(isResearchRole(u)) return state.researchItems.filter(item => !item.userId || item.userId === u.id || item.pic === u.name || item.owner === u.name);
+  return state.researchItems;
+}
+function renderResearchTable(items, compact=false){
+  const canEdit = isManagerRole(state.user) || isResearchRole(state.user);
+  if(!items.length) {
+    return `<div class="empty"><div class="empty-icon">⌕</div><div class="empty-text">Belum ada data riset. Tambahkan riset pertama agar bisa dipantau.</div></div>`;
+  }
+  return `<div class="research-board" style="${compact?'margin-top:12px':''};overflow-x:auto">
+    <table class="research-table">
+      <thead>
+        <tr>
+          <th>No</th>
+          <th>Type of Research</th>
+          <th>PIC</th>
+          <th>CODE</th>
+          <th>Owner</th>
+          <th>Status</th>
+          <th>Title</th>
+          ${canEdit?'<th>Aksi</th>':''}
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((item, idx) => `
+          <tr>
+            <td>${idx + 1}</td>
+            <td><span class="research-pill ${researchTypeClass(item.type)}">${escHtml(item.type)}</span></td>
+            <td><span class="research-pill research-pic ${idx % 2 ? 'alt' : ''}">${escHtml(item.pic || '-')}</span></td>
+            <td><span class="research-pill research-code">${escHtml(item.code || '-')}</span></td>
+            <td>${escHtml(item.owner || '-')}</td>
+            <td><span class="research-pill research-status ${researchStatusClass(item.status)}">${escHtml(item.status)}</span></td>
+            <td style="min-width:360px">${escHtml(item.title || '-')}</td>
+            ${canEdit?`<td>
+              <div class="research-actions">
+                <button class="btn btn-sec btn-sm" onclick="openResearchModal('${item.id}')">Edit</button>
+                <button class="btn btn-dan btn-sm" onclick="deleteResearchItem('${item.id}')">Hapus</button>
+              </div>
+            </td>`:''}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+function renderResearchDashboard(){
+  const items = visibleResearchItems();
+  const published = items.filter(item => item.status === 'Published').length;
+  const progress = items.filter(item => item.status === 'On Progress').length;
+  const review = items.filter(item => item.status === 'Review').length;
+  const canEdit = isManagerRole(state.user) || isResearchRole(state.user);
+  return `
+  <div class="page-header">
+    <div class="research-title-block">
+      <div class="research-kicker">Dashboard Riset</div>
+      <div class="page-title">Monitoring Riset</div>
+      <div class="page-sub">Pantau judul, PIC, kode, owner, dan status publikasi riset.</div>
+    </div>
+    ${canEdit?`<button class="btn btn-pri" onclick="openResearchModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Tambah Riset
+    </button>`:''}
+  </div>
+  <div class="research-summary-grid">
+    <div class="research-summary-card"><span>Total Riset</span><strong>${items.length}</strong></div>
+    <div class="research-summary-card"><span>Published</span><strong>${published}</strong></div>
+    <div class="research-summary-card"><span>On Progress</span><strong>${progress}</strong></div>
+    <div class="research-summary-card"><span>Review</span><strong>${review}</strong></div>
+  </div>
+  ${renderResearchTable(items)}`;
+}
+function renderResearchMonitorCard(){
+  const items = visibleResearchItems().slice(0, 6);
+  const total = state.researchItems?.length || 0;
+  const published = (state.researchItems || []).filter(item => item.status === 'Published').length;
+  return `
+  <div class="card" style="padding:16px 20px;margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px">
+      <div>
+        <div style="font-size:14px;font-weight:800">Monitoring Riset</div>
+        <div style="font-size:11px;color:var(--muted)">Pantauan role Riset untuk Super Admin.</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${badge(`${total} riset`)}
+        ${badge(`${published} published`)}
+        <button class="btn btn-sec btn-sm" onclick="openResearchModal()">Tambah</button>
+      </div>
+    </div>
+    ${renderResearchTable(items, true)}
+  </div>`;
+}
 function renderDashboard(){
+  if(isResearchRole(state.user)) return renderResearchDashboard();
   const u = state.user;
   const now = new Date();
   const thisMonth = d=>{ const dt=new Date(d); return dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear(); };
@@ -1765,6 +1929,7 @@ function renderDashboard(){
       </div>
     </div>
   </div>
+  ${isSuperAdminRole(u) ? renderResearchMonitorCard() : ''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
     <div class="card">
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
@@ -1816,6 +1981,88 @@ function renderDashboard(){
   </div>`;
 }
 
+function openResearchModal(editId=''){
+  normalizeResearchItems();
+  const item = editId ? state.researchItems.find(x => x.id === editId) : null;
+  const researchUsers = ACCOUNTS.filter(a => isResearchRole(a) || isManagerRole(a));
+  const defaultOwner = item?.owner || state.user?.name || '';
+  const html = `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Type of Research</label>
+        <select id="rf-type" class="form-control">
+          ${RESEARCH_TYPES.map(type => `<option value="${escHtml(type)}" ${item?.type===type?'selected':''}>${escHtml(type)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Status</label>
+        <select id="rf-status" class="form-control">
+          ${RESEARCH_STATUSES.map(status => `<option value="${escHtml(status)}" ${item?.status===status?'selected':''}>${escHtml(status)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">PIC <span>*</span></label>
+        <input id="rf-pic" class="form-control" value="${escHtml(item?.pic || '')}" placeholder="Contoh: AAP / TSK">
+      </div>
+      <div class="form-group"><label class="form-label">CODE <span>*</span></label>
+        <input id="rf-code" class="form-control" value="${escHtml(item?.code || '')}" placeholder="Contoh: BTJ">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Owner <span>*</span></label>
+        <input id="rf-owner" class="form-control" value="${escHtml(defaultOwner)}" placeholder="Nama owner riset">
+      </div>
+      <div class="form-group"><label class="form-label">User Riset</label>
+        <select id="rf-user" class="form-control">
+          <option value="">Tidak dikaitkan</option>
+          ${researchUsers.map(user => `<option value="${user.id}" ${item?.userId===user.id?'selected':''}>${escHtml(user.name)} - ${escHtml(user.role)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Title <span>*</span></label>
+      <textarea id="rf-title" class="form-control" placeholder="Masukkan judul riset..." style="min-height:96px">${escHtml(item?.title || '')}</textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Batal</button>
+      <button class="btn btn-pri" onclick="saveResearchItem('${editId}')">Simpan Riset</button>
+    </div>`;
+  showModal(editId ? 'Edit Data Riset' : 'Tambah Data Riset', html, 640);
+}
+function saveResearchItem(editId=''){
+  const type = document.getElementById('rf-type')?.value || 'Riset Mandiri';
+  const pic = document.getElementById('rf-pic')?.value.trim().toUpperCase();
+  const code = document.getElementById('rf-code')?.value.trim().toUpperCase();
+  const owner = document.getElementById('rf-owner')?.value.trim();
+  const status = document.getElementById('rf-status')?.value || 'Draft';
+  const title = document.getElementById('rf-title')?.value.trim();
+  const userId = document.getElementById('rf-user')?.value || '';
+  if(!pic || !code || !owner || !title){
+    toast('PIC, CODE, Owner, dan Title wajib diisi', 'error');
+    return;
+  }
+  const now = new Date().toISOString();
+  const payload = {type, pic, code, owner, status, title, userId, updatedAt: now};
+  normalizeResearchItems();
+  if(editId){
+    state.researchItems = state.researchItems.map(item => item.id === editId ? {...item, ...payload} : item);
+    toast('Data riset diperbarui');
+  } else {
+    state.researchItems = [...state.researchItems, {id: uid(), ...payload, createdAt: now}];
+    toast('Data riset ditambahkan');
+  }
+  persistPatched();
+  closeModal();
+  renderPage();
+}
+function deleteResearchItem(id){
+  const item = (state.researchItems || []).find(x => x.id === id);
+  if(!item) return;
+  if(!confirm(`Hapus data riset "${item.title}"?`)) return;
+  state.researchItems = state.researchItems.filter(x => x.id !== id);
+  persistPatched();
+  renderPage();
+  toast('Data riset dihapus', 'info');
+}
+
 /* ===== TASKS ===== */
 const WORK_EVIDENCE_TYPES = [
   {id:'photo', label:'Foto', accept:'.jpg,.jpeg,.png,.heic,.webp', kind:'file'},
@@ -1851,7 +2098,7 @@ function renderTasks(){
     if(fs!=='Semua'&&t.status!==fs) return false;
     if(fu!=='Semua'&&t.assignee!==fu) return false;
     if(ss&&!t.title.toLowerCase().includes(ss.toLowerCase())) return false;
-    if(isStaffRole(u)&&t.aId!==u.id) return false;
+    if((isStaffRole(u) || isResearchRole(u)) && t.aId!==u.id) return false;
     return true;
   });
   const users=['Semua',...new Set(state.tasks.map(t=>t.assignee))];
@@ -1913,7 +2160,7 @@ function renderTaskDetail(){
   normalizeTaskEvidence(t);
   const u=state.user;
   const canEdit=isManagerRole(u);
-  const canAddEvidence = canEdit || t.aId === u.id || isFinanceRole(u) || isTrainerRole(u) || isStaffRole(u);
+  const canAddEvidence = canEdit || t.aId === u.id || isFinanceRole(u) || isTrainerRole(u) || isStaffRole(u) || isResearchRole(u);
   return `
   <button class="back-btn" onclick="state.taskDetail=null;renderPage()">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -5502,7 +5749,7 @@ if(state.user){
   function pageSyncSignature(){
     const page = state?.page || 'dashboard';
     const keysByPage = {
-      dashboard: ['tasks','schedules','expenses','programs','dailyProgresses','docs'],
+      dashboard: ['tasks','schedules','expenses','programs','dailyProgresses','docs','researchItems'],
       tasks: ['tasks'],
       daily_progress: ['dailyProgresses'],
       schedule: ['schedules'],
