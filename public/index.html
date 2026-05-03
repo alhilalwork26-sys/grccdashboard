@@ -1379,14 +1379,14 @@ const ACCOUNTS = [
   {id:'owner',name:'Administrator GRCC', username:'admin', email:'admin@grcc.id', pw:'admin12345', role:'Super Admin + Manager', dept:'Manajemen', av:'AG'},
 ];
 const PERMS = {
-  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','settings'],
+  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','settings','timeline'],
   'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','documents'],
   'Staff Kreatif': ['dashboard','tasks','daily_progress','documents'],
   'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','documents'],
   'Finance': ['dashboard','daily_progress','finance'],
   'Staff Finance + Dokumen': ['dashboard','daily_progress','finance','documents'],
   'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','documents'],
-  'Riset': ['dashboard','tasks','daily_progress','documents'],
+  'Riset': ['dashboard','tasks','daily_progress','documents','timeline'],
 };
 const ROLE_COLORS = {
   'Super Admin + Manager':'#F97316',
@@ -1426,6 +1426,7 @@ const NAV = [
   {id:'finance',  label:'Finance Operasional', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`},
   {id:'documents',label:'Dokumen', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`},
   {id:'settings', label:'Pengaturan', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`},
+  {id:'timeline', label:'Timeline Riset', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="11" cy="18" r="2" fill="currentColor" stroke="none"/></svg>`},
 ];
 
 /* ===== APP STATE ===== */
@@ -1680,6 +1681,7 @@ function renderPage(){
   else if(p==='programs') c.innerHTML=renderPrograms();
   else if(p==='documents') c.innerHTML=renderDocuments();
   else if(p==='settings') c.innerHTML=renderSettings();
+  else if(p==='timeline') c.innerHTML=renderTimeline();
   afterRender();
 }
 
@@ -3513,6 +3515,200 @@ function saveDoc(){
 }
 
 /* ===== SETTINGS ===== */
+/* ===== TIMELINE RISET ===== */
+function renderTimeline(){
+  if(!state.timelineItems) state.timelineItems = [
+    {id:'t1', aktivitas:'Introduction',      startWeek:0, endWeek:0,  done:false, note:''},
+    {id:'t2', aktivitas:'Literature Review', startWeek:1, endWeek:2,  done:false, note:''},
+    {id:'t3', aktivitas:'Methodology',       startWeek:3, endWeek:5,  done:false, note:'Libur Lebaran di W4 Maret'},
+    {id:'t4', aktivitas:'Olah Data',         startWeek:6, endWeek:9,  done:false, note:''},
+    {id:'t5', aktivitas:'Result',            startWeek:9, endWeek:11, done:false, note:''},
+    {id:'t6', aktivitas:'Discussion',        startWeek:10,endWeek:14, done:false, note:''},
+    {id:'t7', aktivitas:'Submit paper',      startWeek:14,endWeek:14, done:false, note:''},
+  ];
+  if(!state.timelineNotes) state.timelineNotes = '';
+
+  const weeks = [
+    {label:'W2',month:'Maret',idx:0},{label:'W3',month:'Maret',idx:1},{label:'W4',month:'Maret',idx:2},
+    {label:'W1',month:'April',idx:3},{label:'W2',month:'April',idx:4},{label:'W3',month:'April',idx:5},{label:'W4',month:'April',idx:6},
+    {label:'W1',month:'Mei',idx:7},{label:'W2',month:'Mei',idx:8},{label:'W3',month:'Mei',idx:9},{label:'W4',month:'Mei',idx:10},
+    {label:'W1',month:'Juni',idx:11},{label:'W2',month:'Juni',idx:12},{label:'W3',month:'Juni',idx:13},{label:'W4',month:'Juni',idx:14},
+  ];
+  const months = ['Maret','April','Mei','Juni'];
+  const lebaran = [2];
+  const items = state.timelineItems;
+  const canEdit = isSuperAdminRole(state.user) || isResearchRole(state.user);
+  const done = items.filter(i=>i.done).length;
+  const pct = items.length ? Math.round(done/items.length*100) : 0;
+
+  const monthSpans = months.map(m=>{
+    const cnt = weeks.filter(w=>w.month===m).length;
+    return `<th colspan="${cnt}" style="background:#312e81;color:#fff;font-weight:700;font-size:12px;letter-spacing:1px;text-align:center;padding:8px 0;border-right:2px solid rgba(255,255,255,0.2)">${m}</th>`;
+  }).join('');
+
+  const weekHeaders = weeks.map(w=>{
+    const isLeb = lebaran.includes(w.idx);
+    return `<th style="min-width:58px;text-align:center;padding:6px 2px;font-size:11px;font-weight:600;background:${isLeb?'#6b21a8':'#1e1b4b'};color:${isLeb?'#e9d5ff':'#c7d2fe'};border-right:1px solid rgba(255,255,255,0.08)">${w.label}${isLeb?'<div style="font-size:9px;opacity:.8">Lebaran</div>':''}</th>`;
+  }).join('');
+
+  const rows = items.map((item,ri)=>{
+    const cells = weeks.map(w=>{
+      const inRange = w.idx >= item.startWeek && w.idx <= item.endWeek;
+      const isStart = w.idx === item.startWeek;
+      const isEnd   = w.idx === item.endWeek;
+      const isLeb   = lebaran.includes(w.idx);
+      let cell = '';
+      if(inRange){
+        const r = `${isStart?'6px':'0'} ${isEnd?'6px':'0'} ${isEnd?'6px':'0'} ${isStart?'6px':'0'}`;
+        const bg = isLeb ? '#9333ea' : (item.done ? '#22c55e' : '#f97316');
+        cell = `<div style="background:${bg};border-radius:${r};height:24px;opacity:${isLeb?.75:1}"></div>`;
+      }
+      return `<td style="padding:3px 2px;border-right:1px solid var(--border);${isLeb?'background:rgba(147,51,234,.06)':''}">${cell}</td>`;
+    }).join('');
+
+    const badge = item.done
+      ? `<span style="background:#dcfce7;color:#15803d;font-size:10px;padding:1px 7px;border-radius:99px;font-weight:600">✓ Selesai</span>`
+      : `<span style="background:#fff7ed;color:#c2410c;font-size:10px;padding:1px 7px;border-radius:99px;font-weight:600">Berlangsung</span>`;
+
+    const editBtns = canEdit ? `
+      <div style="display:flex;gap:5px;margin-top:5px">
+        <button onclick="tlToggleDone('${item.id}')" style="font-size:10px;padding:2px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg);cursor:pointer;color:var(--text)">${item.done?'↩ Batal':'✓ Selesai'}</button>
+        <button onclick="tlEditItem('${item.id}')" style="font-size:10px;padding:2px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg);cursor:pointer;color:var(--text)">✎ Edit</button>
+      </div>` : '';
+
+    return `<tr style="background:${ri%2===0?'var(--card)':'rgba(0,0,0,0.025)'}">
+      <td style="padding:8px 10px;font-size:12px;font-weight:600;color:var(--muted);text-align:center;border-right:1px solid var(--border)">${ri+1}</td>
+      <td style="padding:6px 12px;border-right:1px solid var(--border);min-width:155px">
+        <div style="font-weight:600;font-size:13px;color:var(--text)">${escHtml(item.aktivitas)}</div>
+        ${badge}
+        ${item.note?`<div style="font-size:10px;color:var(--muted);margin-top:2px;font-style:italic">${escHtml(item.note)}</div>`:''}
+        ${editBtns}
+      </td>${cells}
+    </tr>`;
+  }).join('');
+
+  return `
+  <div class="page-header">
+    <div>
+      <div class="page-title">📅 Timeline Riset</div>
+      <div class="page-sub">Gantt Chart — progress aktivitas penelitian</div>
+    </div>
+    ${canEdit?`<button class="btn btn-pri" onclick="tlAddItem()" style="display:flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Tambah Aktivitas</button>`:''}
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">
+    <div class="card" style="padding:14px 18px"><div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Total</div><div style="font-size:26px;font-weight:800;color:var(--text);margin-top:2px">${items.length}</div></div>
+    <div class="card" style="padding:14px 18px"><div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Selesai</div><div style="font-size:26px;font-weight:800;color:#22c55e;margin-top:2px">${done}</div></div>
+    <div class="card" style="padding:14px 18px"><div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Progress</div><div style="font-size:26px;font-weight:800;color:#f97316;margin-top:2px">${pct}%</div><div style="background:var(--border);border-radius:99px;height:4px;margin-top:6px"><div style="background:#f97316;width:${pct}%;height:4px;border-radius:99px;transition:width .4s"></div></div></div>
+    <div class="card" style="padding:14px 18px"><div style="font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Sisa</div><div style="font-size:26px;font-weight:800;color:var(--text);margin-top:2px">${items.length-done}</div></div>
+  </div>
+  <div style="display:flex;gap:14px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:5px"><div style="width:22px;height:10px;border-radius:3px;background:#f97316"></div><span style="font-size:11px;color:var(--muted)">Berlangsung</span></div>
+    <div style="display:flex;align-items:center;gap:5px"><div style="width:22px;height:10px;border-radius:3px;background:#22c55e"></div><span style="font-size:11px;color:var(--muted)">Selesai</span></div>
+    <div style="display:flex;align-items:center;gap:5px"><div style="width:22px;height:10px;border-radius:3px;background:#9333ea"></div><span style="font-size:11px;color:var(--muted)">Lebaran</span></div>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <div style="overflow-x:auto">
+      <table style="border-collapse:collapse;width:100%;min-width:880px">
+        <thead>
+          <tr>
+            <th style="background:#1e1b4b;color:#c7d2fe;padding:7px 10px;font-size:11px;font-weight:700;text-align:center;border-right:1px solid rgba(255,255,255,0.1);min-width:32px">No</th>
+            <th style="background:#1e1b4b;color:#c7d2fe;padding:7px 14px;font-size:11px;font-weight:700;text-align:left;border-right:2px solid rgba(255,255,255,0.2);min-width:155px">Aktivitas</th>
+            ${monthSpans}
+          </tr>
+          <tr>
+            <th style="background:#0f0c29;border-right:1px solid rgba(255,255,255,0.08)"></th>
+            <th style="background:#0f0c29;border-right:2px solid rgba(255,255,255,0.2)"></th>
+            ${weekHeaders}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" style="padding:18px;margin-top:16px">
+    <div style="font-weight:700;margin-bottom:8px;font-size:13px">📝 Catatan</div>
+    ${canEdit
+      ? `<textarea class="form-control" rows="3" placeholder="Tambahkan catatan riset..." oninput="state.timelineNotes=this.value;persistPatched()" style="resize:vertical">${escHtml(state.timelineNotes||'')}</textarea>`
+      : `<div style="font-size:13px;color:var(--text);white-space:pre-wrap">${escHtml(state.timelineNotes||'—')}</div>`}
+  </div>`;
+}
+
+function tlToggleDone(id){
+  state.timelineItems=state.timelineItems.map(i=>i.id===id?{...i,done:!i.done}:i);
+  persistPatched(); renderPage();
+}
+
+function tlEditItem(id){
+  const item=state.timelineItems.find(i=>i.id===id); if(!item) return;
+  const wOpts=(sel)=>[ {label:'Maret W2',idx:0},{label:'Maret W3',idx:1},{label:'Maret W4',idx:2},
+    {label:'April W1',idx:3},{label:'April W2',idx:4},{label:'April W3',idx:5},{label:'April W4',idx:6},
+    {label:'Mei W1',idx:7},{label:'Mei W2',idx:8},{label:'Mei W3',idx:9},{label:'Mei W4',idx:10},
+    {label:'Juni W1',idx:11},{label:'Juni W2',idx:12},{label:'Juni W3',idx:13},{label:'Juni W4',idx:14},
+  ].map(w=>`<option value="${w.idx}"${w.idx===sel?' selected':''}>${w.label}</option>`).join('');
+  showModal('Edit Aktivitas',`
+    <div class="form-group"><label class="form-label">Nama Aktivitas</label><input id="tle-name" class="form-control" value="${escHtml(item.aktivitas)}"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label class="form-label">Mulai</label><select id="tle-start" class="form-control">${wOpts(item.startWeek)}</select></div>
+      <div class="form-group"><label class="form-label">Selesai</label><select id="tle-end" class="form-control">${wOpts(item.endWeek)}</select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Catatan</label><input id="tle-note" class="form-control" value="${escHtml(item.note||'')}"></div>
+    <div class="form-group"><label class="form-label">Status</label>
+      <select id="tle-done" class="form-control"><option value="0"${!item.done?' selected':''}>Berlangsung</option><option value="1"${item.done?' selected':''}>Selesai</option></select></div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="tlDeleteItem('${item.id}')">🗑 Hapus</button>
+      <button class="btn btn-pri" onclick="tlSaveItem('${item.id}')">Simpan</button>
+    </div>`,520);
+}
+
+function tlSaveItem(id){
+  const name=document.getElementById('tle-name').value.trim();
+  const start=+document.getElementById('tle-start').value;
+  const end=+document.getElementById('tle-end').value;
+  const note=document.getElementById('tle-note').value.trim();
+  const done=document.getElementById('tle-done').value==='1';
+  if(!name){toast('Nama wajib diisi','error');return;}
+  if(end<start){toast('Minggu selesai harus ≥ minggu mulai','error');return;}
+  state.timelineItems=state.timelineItems.map(i=>i.id===id?{...i,aktivitas:name,startWeek:start,endWeek:end,note,done}:i);
+  toast('Tersimpan'); closeModal(); persistPatched(); renderPage();
+}
+
+function tlDeleteItem(id){
+  if(!confirm('Hapus aktivitas ini?')) return;
+  state.timelineItems=state.timelineItems.filter(i=>i.id!==id);
+  toast('Dihapus','info'); closeModal(); persistPatched(); renderPage();
+}
+
+function tlAddItem(){
+  const newId='t'+Date.now();
+  const wOpts=(sel=-1)=>[ {label:'Maret W2',idx:0},{label:'Maret W3',idx:1},{label:'Maret W4',idx:2},
+    {label:'April W1',idx:3},{label:'April W2',idx:4},{label:'April W3',idx:5},{label:'April W4',idx:6},
+    {label:'Mei W1',idx:7},{label:'Mei W2',idx:8},{label:'Mei W3',idx:9},{label:'Mei W4',idx:10},
+    {label:'Juni W1',idx:11},{label:'Juni W2',idx:12},{label:'Juni W3',idx:13},{label:'Juni W4',idx:14},
+  ].map(w=>`<option value="${w.idx}"${w.idx===sel?' selected':''}>${w.label}</option>`).join('');
+  showModal('Tambah Aktivitas Baru',`
+    <div class="form-group"><label class="form-label">Nama Aktivitas</label><input id="tla-name" class="form-control" placeholder="Contoh: Data Collection"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label class="form-label">Mulai</label><select id="tla-start" class="form-control">${wOpts(0)}</select></div>
+      <div class="form-group"><label class="form-label">Selesai</label><select id="tla-end" class="form-control">${wOpts(1)}</select></div>
+    </div>
+    <div class="form-group"><label class="form-label">Catatan (opsional)</label><input id="tla-note" class="form-control" placeholder="Catatan singkat"></div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Batal</button>
+      <button class="btn btn-pri" onclick="tlSaveNew('${newId}')">Tambahkan</button>
+    </div>`,520);
+}
+
+function tlSaveNew(newId){
+  const name=document.getElementById('tla-name').value.trim();
+  const start=+document.getElementById('tla-start').value;
+  const end=+document.getElementById('tla-end').value;
+  const note=document.getElementById('tla-note').value.trim();
+  if(!name){toast('Nama wajib diisi','error');return;}
+  if(end<start){toast('Minggu selesai harus ≥ minggu mulai','error');return;}
+  state.timelineItems=[...(state.timelineItems||[]),{id:newId,aktivitas:name,startWeek:start,endWeek:end,done:false,note}];
+  toast('Ditambahkan'); closeModal(); persistPatched(); renderPage();
+}
+
 function renderSettings(){
   const u=state.user;
   return `
