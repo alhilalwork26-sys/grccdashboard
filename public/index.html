@@ -593,22 +593,36 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
 .research-pic { background:#CBE6F7; color:#1D4E89; }
 .research-pic.alt { background:#F8CBAF; color:#8B4B1F; }
 .research-code { background:#315F6C; color:#F8FAFC; }
-.research-status.published { background:#34774D; color:#fff; }
+.research-status.published { background:#187B4B; color:#fff; }
+.research-status.rejected { background:#BE0704; color:#fff; }
+.research-status.submitted { background:#D5F0BF; color:#118048; }
+.research-status.readytosubmit { background:#FFE6A6; color:#5A3B09; }
 .research-status.progress { background:#D97706; color:#fff; }
 .research-status.review { background:#7C3AED; color:#fff; }
 .research-status.draft { background:#64748B; color:#fff; }
 .research-actions { display:flex; gap:6px; justify-content:center; }
-.research-summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:14px; }
+.research-summary-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; margin-bottom:14px; }
 .research-summary-card { border:1px solid var(--border); border-radius:10px; padding:12px; background:rgba(255,255,255,.03); }
 .research-summary-card strong { display:block; font-size:20px; color:var(--text); }
 .research-summary-card span { font-size:11px; color:var(--muted); font-weight:800; text-transform:uppercase; letter-spacing:.7px; }
+.research-status-picker { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.research-status-option input { display:none; }
+.research-status-option span {
+  display:flex; align-items:center; justify-content:center; width:100%; min-height:40px;
+  border-radius:999px; border:2px solid transparent; font-size:13px; font-weight:900;
+  cursor:pointer; transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.research-status-option input:checked + span {
+  border-color:rgba(37,99,235,.55); box-shadow:0 10px 24px rgba(37,99,235,.16);
+  transform:translateY(-1px);
+}
 @media (max-width: 900px) {
   .finance-toolbar { align-items:stretch; }
   .finance-filters { grid-template-columns:1fr; width:100%; }
   .finance-actions { width:100%; }
   .finance-actions .btn, .finance-actions .print-btn { flex:1; justify-content:center; }
   .evidence-grid, .evidence-checklist { grid-template-columns:1fr; }
-  .research-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .research-summary-grid, .research-status-picker { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 
 /* ═══════════════════════════════════════════════
@@ -1739,8 +1753,13 @@ function runAutomaticReminders(){
 }
 
 /* ===== DASHBOARD ===== */
-const RESEARCH_STATUSES = ['Draft','On Progress','Review','Published'];
+const RESEARCH_STATUSES = ['Ready to submit','Submitted','Published','Rejected'];
 const RESEARCH_TYPES = ['Riset Mandiri','Riset Hibah','Riset Internal'];
+function normalizeResearchStatus(status){
+  if(status === 'Draft') return 'Ready to submit';
+  if(status === 'On Progress' || status === 'Review') return 'Submitted';
+  return RESEARCH_STATUSES.includes(status) ? status : 'Ready to submit';
+}
 function normalizeResearchItems(){
   if(!Array.isArray(state.researchItems)) state.researchItems = [];
   state.researchItems = state.researchItems.map((item, idx) => ({
@@ -1749,7 +1768,7 @@ function normalizeResearchItems(){
     pic: item.pic || '',
     code: item.code || '',
     owner: item.owner || '',
-    status: item.status || 'Draft',
+    status: normalizeResearchStatus(item.status),
     title: item.title || '',
     userId: item.userId || '',
     createdAt: item.createdAt || new Date().toISOString(),
@@ -1764,6 +1783,7 @@ function researchTypeClass(type){
 }
 function researchStatusClass(status){
   if(status === 'On Progress') return 'progress';
+  if(status === 'Ready to submit') return 'readytosubmit';
   return String(status || '').toLowerCase().replace(/\s+/g, '');
 }
 function visibleResearchItems(){
@@ -1816,8 +1836,9 @@ function renderResearchTable(items, compact=false){
 function renderResearchDashboard(){
   const items = visibleResearchItems();
   const published = items.filter(item => item.status === 'Published').length;
-  const progress = items.filter(item => item.status === 'On Progress').length;
-  const review = items.filter(item => item.status === 'Review').length;
+  const submitted = items.filter(item => item.status === 'Submitted').length;
+  const ready = items.filter(item => item.status === 'Ready to submit').length;
+  const rejected = items.filter(item => item.status === 'Rejected').length;
   const canEdit = isManagerRole(state.user) || isResearchRole(state.user);
   return `
   <div class="page-header">
@@ -1834,8 +1855,9 @@ function renderResearchDashboard(){
   <div class="research-summary-grid">
     <div class="research-summary-card"><span>Total Riset</span><strong>${items.length}</strong></div>
     <div class="research-summary-card"><span>Published</span><strong>${published}</strong></div>
-    <div class="research-summary-card"><span>On Progress</span><strong>${progress}</strong></div>
-    <div class="research-summary-card"><span>Review</span><strong>${review}</strong></div>
+    <div class="research-summary-card"><span>Submitted</span><strong>${submitted}</strong></div>
+    <div class="research-summary-card"><span>Ready</span><strong>${ready}</strong></div>
+    <div class="research-summary-card"><span>Rejected</span><strong>${rejected}</strong></div>
   </div>
   ${renderResearchTable(items)}`;
 }
@@ -1843,6 +1865,7 @@ function renderResearchMonitorCard(){
   const items = visibleResearchItems().slice(0, 6);
   const total = state.researchItems?.length || 0;
   const published = (state.researchItems || []).filter(item => item.status === 'Published').length;
+  const submitted = (state.researchItems || []).filter(item => item.status === 'Submitted').length;
   return `
   <div class="card" style="padding:16px 20px;margin-bottom:20px">
     <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px">
@@ -1853,6 +1876,7 @@ function renderResearchMonitorCard(){
       <div style="display:flex;gap:8px;align-items:center">
         ${badge(`${total} riset`)}
         ${badge(`${published} published`)}
+        ${badge(`${submitted} submitted`)}
         <button class="btn btn-sec btn-sm" onclick="openResearchModal()">Tambah</button>
       </div>
     </div>
@@ -1994,9 +2018,14 @@ function openResearchModal(editId=''){
         </select>
       </div>
       <div class="form-group"><label class="form-label">Status</label>
-        <select id="rf-status" class="form-control">
-          ${RESEARCH_STATUSES.map(status => `<option value="${escHtml(status)}" ${item?.status===status?'selected':''}>${escHtml(status)}</option>`).join('')}
-        </select>
+        <div class="research-status-picker">
+          ${RESEARCH_STATUSES.map(status => `
+            <label class="research-status-option">
+              <input type="radio" name="rf-status" value="${escHtml(status)}" ${normalizeResearchStatus(item?.status)===status?'checked':''}>
+              <span class="research-pill research-status ${researchStatusClass(status)}">${escHtml(status)}</span>
+            </label>
+          `).join('')}
+        </div>
       </div>
     </div>
     <div class="form-row">
@@ -2032,7 +2061,7 @@ function saveResearchItem(editId=''){
   const pic = document.getElementById('rf-pic')?.value.trim().toUpperCase();
   const code = document.getElementById('rf-code')?.value.trim().toUpperCase();
   const owner = document.getElementById('rf-owner')?.value.trim();
-  const status = document.getElementById('rf-status')?.value || 'Draft';
+  const status = document.querySelector('input[name="rf-status"]:checked')?.value || 'Ready to submit';
   const title = document.getElementById('rf-title')?.value.trim();
   const userId = document.getElementById('rf-user')?.value || '';
   if(!pic || !code || !owner || !title){
