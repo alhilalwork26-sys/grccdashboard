@@ -4,7 +4,7 @@ const { neon } = require('@neondatabase/serverless');
 const { get, put } = require('@vercel/blob');
 const { handleUpload } = require('@vercel/blob/client');
 
-const SESSION_DAYS = 7;
+const SESSION_SECONDS = 2 * 60 * 60;
 const MODULE_TABLES = {
   tasks: 'tasks',
   schedules: 'schedules',
@@ -537,13 +537,14 @@ async function handle(req, res) {
     const rows = await sql`SELECT id, name, username, email, password_hash, role, dept, whatsapp, av, active FROM users WHERE active = true AND (lower(username) = ${identifier} OR lower(email) = ${identifier})`;
     if (!rows[0] || !verifyPassword(password, rows[0].password_hash)) return send(res, 401, { error: 'Username/email atau password salah' });
     const token = crypto.randomBytes(32).toString('base64url');
-    await sql`INSERT INTO sessions (token, user_id, expires_at) VALUES (${token}, ${rows[0].id}, ${Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400})`;
+    const sessionExpiresAt = Math.floor(Date.now() / 1000) + SESSION_SECONDS;
+    await sql`INSERT INTO sessions (token, user_id, expires_at) VALUES (${token}, ${rows[0].id}, ${sessionExpiresAt})`;
     const user = publicUser(rows[0]);
     await audit(user, 'login', 'session', user.id);
     const loaded = await loadState();
     loaded.state.userId = user.id;
-    setSessionCookie(res, token, SESSION_DAYS * 86400);
-    return send(res, 200, { ok: true, user, state: loaded.state, updatedAt: loaded.updatedAt });
+    setSessionCookie(res, token, SESSION_SECONDS);
+    return send(res, 200, { ok: true, user, state: loaded.state, updatedAt: loaded.updatedAt, sessionExpiresAt });
   }
 
   if (path === '/auth/logout' && method === 'POST') {

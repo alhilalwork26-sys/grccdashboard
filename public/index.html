@@ -5036,7 +5036,8 @@ if(state.user){
         body: JSON.stringify({state: statePayload()})
       });
       if(res.status === 401) {
-        setSyncStatus('Login diperlukan untuk menyimpan ke server', 'info');
+        if(typeof window.forceSessionExpiredLogout === 'function') window.forceSessionExpiredLogout();
+        else setSyncStatus('Login diperlukan untuk menyimpan ke server', 'info');
         return;
       }
       if(!res.ok) throw new Error('HTTP ' + res.status);
@@ -5072,7 +5073,8 @@ if(state.user){
       setSyncStatus('Memuat data server...', 'info');
       const res = await fetch(API.state, {headers: {'Accept': 'application/json'}});
       if(res.status === 401){
-        setSyncStatus('Silakan login untuk memakai database server', 'info');
+        if(state.user && typeof window.forceSessionExpiredLogout === 'function') window.forceSessionExpiredLogout();
+        else setSyncStatus('Silakan login untuk memakai database server', 'info');
         return;
       }
       if(!res.ok) throw new Error('HTTP ' + res.status);
@@ -5266,6 +5268,42 @@ if(state.user){
     return data;
   }
 
+  let sessionCheckTimer = null;
+  function setClientSessionExpiry(expiresAt){
+    if(expiresAt) localStorage.setItem('grcc_session_expires_at', String(expiresAt));
+  }
+  function showLoginForExpiredSession(message='Sesi berakhir. Silakan login ulang.'){
+    state.user=null; state.page='dashboard'; state.taskDetail=null; state.progDetail=null;
+    localStorage.removeItem(STORAGE_KEYS_PATCH.session);
+    localStorage.removeItem('grcc_session_expires_at');
+    document.getElementById('app').style.display='none';
+    document.getElementById('login-page').style.display='flex';
+    document.getElementById('login-page')?.classList.remove('login-active');
+    const btn = document.getElementById('login-btn');
+    if(btn){ btn.disabled=false; btn.textContent='Masuk'; }
+    const pw = document.getElementById('login-pw');
+    if(pw) pw.value = '';
+    toast(message, 'info');
+  }
+  async function checkSessionAlive(){
+    if(location.protocol === 'file:' || !state.user) return;
+    const expiresAt = Number(localStorage.getItem('grcc_session_expires_at') || 0);
+    if(expiresAt && Date.now() >= expiresAt * 1000){
+      showLoginForExpiredSession();
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/me', {credentials:'same-origin', headers:{'Accept':'application/json'}});
+      if(res.status === 401) showLoginForExpiredSession();
+    } catch(e) {}
+  }
+  function startSessionWatcher(){
+    clearInterval(sessionCheckTimer);
+    sessionCheckTimer = setInterval(checkSessionAlive, 60000);
+    setTimeout(checkSessionAlive, 3000);
+  }
+  window.forceSessionExpiredLogout = showLoginForExpiredSession;
+
   window.doLogin = async function(){
     const identifier = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-pw').value;
@@ -5278,11 +5316,13 @@ if(state.user){
         body: JSON.stringify({identifier, password})
       });
       applyServerState(data);
+      setClientSessionExpiry(data.sessionExpiresAt);
       if(!state.user) throw new Error('Login berhasil tetapi data user tidak tersedia');
       if(!hasAccessPatched(state.page)) state.page = 'dashboard';
       document.getElementById('login-page').style.display='none';
       document.getElementById('app').style.display='flex';
       initApp();
+      startSessionWatcher();
       toast(`Selamat datang, ${state.user.name}!`);
     } catch(err) {
       toast(err.message || 'Login gagal', 'error');
@@ -5294,6 +5334,8 @@ if(state.user){
     try { await apiJson(AUTH_API.logout, {method:'POST', body:'{}'}); } catch(e) {}
     state.user=null; state.page='dashboard'; state.taskDetail=null; state.progDetail=null;
     localStorage.removeItem(STORAGE_KEYS_PATCH.session);
+    localStorage.removeItem('grcc_session_expires_at');
+    clearInterval(sessionCheckTimer);
     document.getElementById('app').style.display='none';
     document.getElementById('login-page').style.display='flex';
     document.getElementById('login-page')?.classList.remove('login-active');
@@ -5303,6 +5345,10 @@ if(state.user){
     document.getElementById('login-btn').textContent='Masuk';
     toast('Anda sudah keluar', 'info');
   };
+
+  window.addEventListener('load', () => {
+    if(state.user) startSessionWatcher();
+  });
 
   window.saveUserAccount = async function(editId=''){
     const name = document.getElementById('um-name')?.value.trim();
@@ -5540,7 +5586,10 @@ if(state.user){
         credentials: 'same-origin',
         headers: {'Accept':'application/json', 'X-GRCC-Auto-Sync': reason}
       });
-      if(res.status === 401) return false;
+      if(res.status === 401) {
+        if(typeof window.forceSessionExpiredLogout === 'function') window.forceSessionExpiredLogout();
+        return false;
+      }
       const payload = await res.json().catch(() => ({}));
       if(!res.ok || !payload.state) return false;
       return applyAutoSyncPayload(payload, reason);
