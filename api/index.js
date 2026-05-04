@@ -531,15 +531,15 @@ async function syncModuleTables(state) {
     if (!Object.prototype.hasOwnProperty.call(state, stateKey)) continue;
     if (!Array.isArray(state[stateKey])) continue;
     const items = state[stateKey];
-    const ids = [];
     for (const item of items) {
       const id = String(item.id || crypto.randomBytes(8).toString('hex'));
       item.id = id;
-      ids.push(id);
+      if (item._deleted === true) {
+        await sql.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+        continue;
+      }
       await sql.query(`INSERT INTO ${table} (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`, [id, JSON.stringify(item)]);
     }
-    if (ids.length) await sql.query(`DELETE FROM ${table} WHERE id <> ALL($1)`, [ids]);
-    else await sql.query(`DELETE FROM ${table}`);
   }
 }
 

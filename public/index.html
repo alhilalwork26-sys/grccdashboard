@@ -2925,12 +2925,13 @@ function renderSchedule(){
   const daysInMonth=new Date(year,mo+1,0).getDate();
   const DAYS=['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
   const MONTHS=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-  const sorted=[...state.schedules].sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const visibleSchedules = (state.schedules || []).filter(s => !s._deleted);
+  const sorted=[...visibleSchedules].sort((a,b)=>new Date(a.date)-new Date(b.date));
   const now=new Date();
 
   const schForDay=d=>{
     const ds=`${year}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    return state.schedules.filter(s=>s.date===ds||(s.date<=ds&&s.endDate>=ds));
+    return visibleSchedules.filter(s=>s.date===ds||(s.date<=ds&&s.endDate>=ds));
   };
 
   return `
@@ -3005,7 +3006,8 @@ function nextMonth(){ const m=state.calMonth; state.calMonth=new Date(m.getFullY
 function deleteSchedule(id){
   const sched = state.schedules.find(s=>s.id===id);
   if(sched && !isManagerRole(state.user) && sched.pic !== state.user.name){toast('Kamu hanya bisa menghapus jadwal yang kamu buat/PIC','error');return;}
-  state.schedules=state.schedules.filter(s=>s.id!==id); toast('Jadwal dihapus','info'); renderPage();
+  state.schedules=state.schedules.map(s=>s.id===id?{...s,_deleted:true,deletedAt:new Date().toISOString(),deletedBy:state.user?.id||''}:s);
+  toast('Jadwal dihapus','info'); renderPage();
 }
 function openSchedModal(editId){
   if(!(PERMS[state.user?.role]||[]).includes('schedule')){toast('Role kamu belum punya akses jadwal','error');return;}
@@ -5718,6 +5720,7 @@ if(state.user){
       }
       if(!res.ok) throw new Error('HTTP ' + res.status);
       const payload = await res.json();
+      if(payload.state?.schedules) payload.state.schedules = payload.state.schedules.filter(s => !s._deleted);
       if(!payload.state){
         await saveToBackend(true);
         setSyncStatus('Database server disiapkan', 'success');
@@ -5880,6 +5883,7 @@ if(state.user){
   function applyServerState(payload){
     if(!payload) return;
     const serverState = payload.state || payload;
+    if(serverState.schedules) serverState.schedules = serverState.schedules.filter(s => !s._deleted);
     if(Array.isArray(serverState.accounts)){
       ACCOUNTS.splice(0, ACCOUNTS.length, ...serverState.accounts);
     }
@@ -6178,6 +6182,7 @@ if(state.user){
   function applyAutoSyncPayload(payload, reason){
     const serverState = payload?.state || payload;
     if(!serverState || typeof serverState !== 'object') return false;
+    if(serverState.schedules) serverState.schedules = serverState.schedules.filter(s => !s._deleted);
 
     const marker = String(serverState.serverSavedAt || payload.updatedAt || '');
     if(marker && marker === lastSyncMarker) return false;
