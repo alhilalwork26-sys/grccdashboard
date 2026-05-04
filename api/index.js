@@ -17,12 +17,12 @@ const MODULE_TABLES = {
 const DEFAULT_PERMS = {
   'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','timeline','settings'],
   'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','documents'],
-  'Staff Kreatif': ['dashboard','tasks','daily_progress','documents'],
+  'Staff Kreatif': ['dashboard','tasks','daily_progress','schedule','documents'],
   'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','documents'],
-  Finance: ['dashboard','daily_progress','finance'],
-  'Staff Finance + Dokumen': ['dashboard','daily_progress','finance','documents'],
+  Finance: ['dashboard','daily_progress','schedule','finance'],
+  'Staff Finance + Dokumen': ['dashboard','daily_progress','schedule','finance','documents'],
   'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','documents'],
-  Riset: ['dashboard','tasks','daily_progress','documents','timeline']
+  Riset: ['dashboard','tasks','daily_progress','schedule','documents','timeline']
 };
 const DEFAULT_ROLE_COLORS = {
   'Super Admin + Manager': '#F97316',
@@ -464,6 +464,7 @@ async function ensureSchema() {
   for (const [role, permissions] of Object.entries(DEFAULT_PERMS)) {
     await sql`INSERT INTO roles (name, permissions, color) VALUES (${role}, ${JSON.stringify(permissions)}, ${DEFAULT_ROLE_COLORS[role] || '#6B7280'}) ON CONFLICT (name) DO UPDATE SET permissions = EXCLUDED.permissions, color = EXCLUDED.color, updated_at = now()`;
   }
+  await sql.query(`UPDATE roles SET permissions = permissions || '["schedule"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'schedule'`);
   for (const [oldRole, newRole] of Object.entries(LEGACY_ROLE_MIGRATIONS)) {
     await sql`UPDATE users SET role = ${newRole}, updated_at = now() WHERE role = ${oldRole}`;
     await sql`DELETE FROM roles WHERE name = ${oldRole} AND NOT EXISTS (SELECT 1 FROM users WHERE role = ${oldRole})`;
