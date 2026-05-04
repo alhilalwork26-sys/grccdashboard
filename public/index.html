@@ -5179,6 +5179,7 @@ if(state.user){
     const originalSaveTaskNotif = saveTask;
     saveTask = function(editId){
       const before = editId ? state.tasks.find(t => t.id === editId) : null;
+      const beforeTaskIds = new Set((state.tasks || []).map(t => t.id));
       originalSaveTaskNotif(editId);
       const titleInput = document.getElementById('tf-title');
       if(titleInput) return; // modal likely still open due validation
@@ -5188,10 +5189,19 @@ if(state.user){
           createAppNotification({ title:'Task diperbarui', message:`${after.title} telah diperbarui.`, type:'info', recipientUserIds:[after.aId], linkPage:'tasks', linkId:after.id, dedupeKey:`task_update_${after.id}_${after.deadline}_${after.status}` });
         }
       } else {
-        const latest = [...state.tasks].sort((a,b)=>new Date(b.deadline||0)-new Date(a.deadline||0))[0];
-        if(latest){
-          createAppNotification({ title:'Task baru ditugaskan', message:`Anda mendapat task: ${latest.title}.`, type:'info', recipientUserIds:[latest.aId], linkPage:'tasks', linkId:latest.id, dedupeKey:`task_create_${latest.id}` });
-        }
+        const createdTasks = (state.tasks || []).filter(t => !beforeTaskIds.has(t.id));
+        createdTasks.forEach(task => {
+          if(!task?.aId) return;
+          createAppNotification({
+            title:'Task baru ditugaskan',
+            message:`Anda mendapat task: ${task.title}.`,
+            type:'info',
+            recipientUserIds:[task.aId],
+            linkPage:'tasks',
+            linkId:task.id,
+            dedupeKey:`task_create_${task.id}`
+          });
+        });
       }
       scanDeadlineReminders();
     };
