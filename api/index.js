@@ -73,6 +73,7 @@ const EMPTY_STATE = {
 
 let schemaReady = false;
 const JAKARTA_TIMEZONE = 'Asia/Jakarta';
+let googleDriveTokenCache = null;
 
 function db() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL belum diset');
@@ -216,6 +217,164 @@ async function streamToBuffer(stream) {
   return Buffer.concat(chunks);
 }
 
+function base64Url(input) {
+  return Buffer.from(input).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function googleDriveConfig() {
+  const raw = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON_BASE64
+    ? Buffer.from(process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON_BASE64, 'base64').toString('utf8')
+    : process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON;
+  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  if (!raw || !folderId) return null;
+  const credentials = JSON.parse(raw);
+  if (!credentials.client_email || !credentials.private_key) throw new Error('Credential Google Drive tidak lengkap');
+  return { credentials, folderId };
+}
+
+function isGoogleDriveConfigured() {
+  return Boolean(process.env.GOOGLE_DRIVE_FOLDER_ID && (process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON_BASE64));
+}
+
+async function getGoogleDriveToken() {
+  if (googleDriveTokenCache && googleDriveTokenCache.expiresAt > Date.now() + 60000) return googleDriveTokenCache.token;
+  const config = googleDriveConfig();
+  if (!config) return '';
+  const { credentials } = config;
+  const now = Math.floor(Date.now() / 1000);
+  const tokenUri = credentials.token_uri || 'https://oauth2.googleapis.com/token';
+  const unsigned = `${base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${base64Url(JSON.stringify({
+    iss: credentials.client_email,
+    scope: 'https://www.googleapis.com/auth/drive',
+    aud: tokenUri,
+    iat: now,
+    exp: now + 3600
+  }))}`;
+  const signature = crypto.sign('RSA-SHA256', Buffer.from(unsigned), String(credentials.private_key).replace(/\\n/g, '\n'));
+  const assertion = `${unsigned}.${signature.toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}`;
+  const response = await fetch(tokenUri, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error_description || data.error || `Google token gagal (${response.status})`);
+  googleDriveTokenCache = { token: data.access_token, expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000 };
+  return googleDriveTokenCache.token;
+}
+
+function driveQueryValue(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+async function ensureGoogleDriveFolder(folderName) {
+  const config = googleDriveConfig();
+  if (!config) return '';
+  const token = await getGoogleDriveToken();
+  const name = String(folderName || 'Dokumen Resmi').trim() || 'Dokumen Resmi';
+  const query = `mimeType='application/vnd.google-apps.folder' and trashed=false and '${driveQueryValue(config.folderId)}' in parents and name='${driveQueryValue(name)}'`;
+  const search = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&supportsAllDrives=true`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const found = await search.json().catch(() => ({}));
+  if (search.ok && found.files?.[0]?.id) return found.files[0].id;
+  const create = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,name&supportsAllDrives=true', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [config.folderId]
+    })
+  });
+  const created = await create.json().catch(() => ({}));
+  if (!create.ok) throw new Error(created.error?.message || `Buat folder Drive gagal (${create.status})`);
+  return created.id;
+}
+
+async function uploadToGoogleDrive({ filename, contentType, buffer, folder, documentId, visibility }) {
+  const config = googleDriveConfig();
+  if (!config) return null;
+  const token = await getGoogleDriveToken();
+  const parentId = await ensureGoogleDriveFolder(folder);
+  const boundary = `grcc_${crypto.randomBytes(12).toString('hex')}`;
+  const metadata = {
+    name: filename,
+    parents: [parentId || config.folderId],
+    description: `GRCC Dashboard document ${documentId || ''} (${visibility || 'public'})`
+  };
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`),
+    Buffer.from(`--${boundary}\r\nContent-Type: ${contentType || 'application/octet-stream'}\r\n\r\n`),
+    buffer,
+    Buffer.from(`\r\n--${boundary}--\r\n`)
+  ]);
+  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink&supportsAllDrives=true', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+      'Content-Length': String(body.length)
+    },
+    body
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error?.message || `Upload Google Drive gagal (${response.status})`);
+  return data;
+}
+
+async function mirrorDocumentToGoogleDrive({ buffer, blobUrl, blobAccess, filename, contentType, folder, documentId, visibility }) {
+  if (!googleDriveConfig()) return null;
+  let fileBuffer = buffer;
+  if (!fileBuffer && blobUrl) {
+    const blob = await get(blobUrl, { access: blobAccess === 'private' ? 'private' : 'public' });
+    if (!blob || blob.statusCode !== 200 || !blob.stream) throw new Error('Blob tidak bisa dibaca untuk mirror Drive');
+    fileBuffer = await streamToBuffer(blob.stream);
+  }
+  if (!fileBuffer) throw new Error('File buffer kosong untuk mirror Drive');
+  return uploadToGoogleDrive({ filename, contentType, buffer: fileBuffer, folder, documentId, visibility });
+}
+
+async function googleDriveStatus() {
+  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID || '';
+  const hasCredential = Boolean(process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON_BASE64);
+  if (!folderId && !hasCredential) {
+    return { ready: false, state: 'not_configured', folderId: '', serviceAccountEmail: '', message: 'Google Drive belum dikonfigurasi' };
+  }
+  if (!folderId) {
+    return { ready: false, state: 'missing_folder', folderId: '', serviceAccountEmail: '', message: 'Folder ID Google Drive belum diisi' };
+  }
+  if (!hasCredential) {
+    return { ready: false, state: 'missing_credential', folderId, serviceAccountEmail: '', message: 'Folder sudah dipilih, credential Service Account belum diisi' };
+  }
+  const config = googleDriveConfig();
+  const token = await getGoogleDriveToken();
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType&supportsAllDrives=true`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return {
+      ready: false,
+      state: 'folder_check_failed',
+      folderId,
+      serviceAccountEmail: config.credentials.client_email,
+      message: data.error?.message || `Folder Google Drive belum bisa diakses (${response.status})`
+    };
+  }
+  return {
+    ready: true,
+    state: 'ready',
+    folderId,
+    folderName: data.name || '',
+    serviceAccountEmail: config.credentials.client_email,
+    message: `Google Drive siap: ${data.name || folderId}`
+  };
+}
+
 function readableDocumentText(buffer, filename, contentType) {
   const name = String(filename || '').toLowerCase();
   const type = String(contentType || '').toLowerCase();
@@ -295,6 +454,9 @@ async function ensureSchema() {
   await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary text NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary_at timestamptz`;
   await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary_model text NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS folder text NOT NULL DEFAULT 'Dokumen Resmi'`;
+  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS google_drive_file_id text NOT NULL DEFAULT ''`;
+  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS google_drive_url text NOT NULL DEFAULT ''`;
   await sql`CREATE TABLE IF NOT EXISTS audit_log (id bigserial PRIMARY KEY, actor_id text, actor_name text, action text NOT NULL, entity_type text NOT NULL, entity_id text, details jsonb, created_at timestamptz NOT NULL DEFAULT now())`;
   for (const table of Object.values(MODULE_TABLES)) {
     await sql.query(`CREATE TABLE IF NOT EXISTS ${table} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
@@ -773,6 +935,7 @@ async function handle(req, res) {
         const filename = String(payload.filename || '').trim();
         const contentType = String(payload.contentType || 'application/octet-stream');
         const size = Number(payload.size || 0);
+        const folder = String(payload.folder || 'Dokumen Resmi').trim() || 'Dokumen Resmi';
         const visibility = String(payload.visibility || 'public') === 'important' ? 'important' : 'public';
         const pin = String(payload.pin || '');
         if (!id || !filename) throw new Error('id dan filename wajib diisi');
@@ -784,6 +947,7 @@ async function handle(req, res) {
             filename,
             contentType,
             size,
+            folder,
             visibility,
             pinHash: visibility === 'important' ? hashPassword(pin) : '',
             userId: user.id,
@@ -795,13 +959,45 @@ async function handle(req, res) {
       onUploadCompleted: async ({ blob, tokenPayload }) => {
         const payload = JSON.parse(tokenPayload || '{}');
         const actor = { id: payload.userId, name: payload.userName, role: payload.userRole };
-        const previous = await sql`SELECT filename, content_type, blob_url, blob_access, visibility, size, uploaded_by FROM documents WHERE id=${payload.id}`;
+        const previous = await sql`SELECT filename, content_type, blob_url, blob_access, visibility, folder, size, uploaded_by, google_drive_file_id, google_drive_url FROM documents WHERE id=${payload.id}`;
         const access = blob.url && blob.url.includes('.private.blob.vercel-storage.com') ? 'private' : 'public';
-        await sql`INSERT INTO documents (id, filename, content_type, blob_url, blob_access, visibility, pin_hash, size, uploaded_by, uploaded_at) VALUES (${payload.id}, ${payload.filename}, ${payload.contentType || blob.contentType || 'application/octet-stream'}, ${blob.url}, ${access}, ${payload.visibility || 'public'}, ${payload.pinHash || ''}, ${payload.size || 0}, ${payload.userId}, now()) ON CONFLICT (id) DO UPDATE SET filename=EXCLUDED.filename, content_type=EXCLUDED.content_type, blob_url=EXCLUDED.blob_url, blob_access=EXCLUDED.blob_access, visibility=EXCLUDED.visibility, pin_hash=EXCLUDED.pin_hash, size=EXCLUDED.size, uploaded_by=EXCLUDED.uploaded_by, ai_summary='', ai_summary_at=NULL, ai_summary_model='', uploaded_at=now()`;
-        await audit(actor, previous[0] ? 'replace' : 'upload', 'document', payload.id, { before: previous[0] || null, after: { filename: payload.filename, contentType: payload.contentType || blob.contentType, size: payload.size, visibility: payload.visibility || 'public', blobAccess: access, pinProtected: payload.visibility === 'important' } });
+        let driveFile = null;
+        let driveError = '';
+        try {
+          driveFile = await mirrorDocumentToGoogleDrive({
+            blobUrl: blob.url,
+            blobAccess: access,
+            filename: payload.filename,
+            contentType: payload.contentType || blob.contentType || 'application/octet-stream',
+            folder: payload.folder,
+            documentId: payload.id,
+            visibility: payload.visibility || 'public'
+          });
+        } catch (err) {
+          driveError = err.message || 'Mirror Google Drive gagal';
+          console.warn('google drive mirror gagal', driveError);
+        }
+        await sql`INSERT INTO documents (id, filename, content_type, blob_url, blob_access, visibility, pin_hash, folder, size, uploaded_by, google_drive_file_id, google_drive_url, uploaded_at) VALUES (${payload.id}, ${payload.filename}, ${payload.contentType || blob.contentType || 'application/octet-stream'}, ${blob.url}, ${access}, ${payload.visibility || 'public'}, ${payload.pinHash || ''}, ${payload.folder || 'Dokumen Resmi'}, ${payload.size || 0}, ${payload.userId}, ${driveFile?.id || ''}, ${driveFile?.webViewLink || ''}, now()) ON CONFLICT (id) DO UPDATE SET filename=EXCLUDED.filename, content_type=EXCLUDED.content_type, blob_url=EXCLUDED.blob_url, blob_access=EXCLUDED.blob_access, visibility=EXCLUDED.visibility, pin_hash=EXCLUDED.pin_hash, folder=EXCLUDED.folder, size=EXCLUDED.size, uploaded_by=EXCLUDED.uploaded_by, google_drive_file_id=EXCLUDED.google_drive_file_id, google_drive_url=EXCLUDED.google_drive_url, ai_summary='', ai_summary_at=NULL, ai_summary_model='', uploaded_at=now()`;
+        await audit(actor, previous[0] ? 'replace' : 'upload', 'document', payload.id, { before: previous[0] || null, after: { filename: payload.filename, contentType: payload.contentType || blob.contentType, size: payload.size, folder: payload.folder || 'Dokumen Resmi', visibility: payload.visibility || 'public', blobAccess: access, pinProtected: payload.visibility === 'important', googleDrive: driveFile ? 'mirrored' : (isGoogleDriveConfigured() ? 'mirror_failed' : 'not_configured'), googleDriveFileId: driveFile?.id || '', googleDriveError: driveError } });
       }
     });
     return send(res, 200, jsonResponse);
+  }
+
+  if (path === '/documents/drive-status' && method === 'GET') {
+    const user = await requireAdmin(req, res);
+    if (!user) return;
+    try {
+      return send(res, 200, await googleDriveStatus());
+    } catch (err) {
+      return send(res, 200, {
+        ready: false,
+        state: 'error',
+        folderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
+        serviceAccountEmail: '',
+        message: err.message || 'Status Google Drive belum bisa dicek'
+      });
+    }
   }
 
   if (path === '/documents' && method === 'POST') {
@@ -813,6 +1009,7 @@ async function handle(req, res) {
     const filename = String(body.filename || '').trim();
     const contentType = String(body.contentType || 'application/octet-stream');
     const dataUrl = String(body.dataUrl || '');
+    const folder = String(body.folder || 'Dokumen Resmi').trim() || 'Dokumen Resmi';
     const visibility = String(body.visibility || 'public').trim() === 'important' ? 'important' : 'public';
     const pin = String(body.pin || '');
     if (!id || !filename || !dataUrl.includes(',')) return send(res, 400, { error: 'id, filename, dan dataUrl wajib diisi' });
@@ -824,11 +1021,26 @@ async function handle(req, res) {
       access: blobAccess === 'private' ? 'private' : 'public',
       contentType
     });
-    const previous = await sql`SELECT filename, content_type, blob_url, blob_access, visibility, size, uploaded_by FROM documents WHERE id=${id}`;
+    const previous = await sql`SELECT filename, content_type, blob_url, blob_access, visibility, folder, size, uploaded_by, google_drive_file_id, google_drive_url FROM documents WHERE id=${id}`;
     const pinHash = visibility === 'important' ? hashPassword(pin) : '';
-    await sql`INSERT INTO documents (id, filename, content_type, blob_url, blob_access, visibility, pin_hash, size, uploaded_by, uploaded_at) VALUES (${id}, ${filename}, ${contentType}, ${blob.url}, ${blobAccess === 'private' ? 'private' : 'public'}, ${visibility}, ${pinHash}, ${buffer.length}, ${user.id}, now()) ON CONFLICT (id) DO UPDATE SET filename=EXCLUDED.filename, content_type=EXCLUDED.content_type, blob_url=EXCLUDED.blob_url, blob_access=EXCLUDED.blob_access, visibility=EXCLUDED.visibility, pin_hash=EXCLUDED.pin_hash, size=EXCLUDED.size, uploaded_by=EXCLUDED.uploaded_by, uploaded_at=now()`;
-    await audit(user, previous[0] ? 'replace' : 'upload', 'document', id, { before: previous[0] || null, after: { filename, contentType, size: buffer.length, visibility, blobAccess: blobAccess === 'private' ? 'private' : 'public', pinProtected: visibility === 'important' } });
-    return send(res, 200, { ok: true, downloadUrl: `/api/documents/${encodeURIComponent(id)}/download`, size: buffer.length });
+    let driveFile = null;
+    let driveError = '';
+    try {
+      driveFile = await mirrorDocumentToGoogleDrive({
+        buffer,
+        filename,
+        contentType,
+        folder,
+        documentId: id,
+        visibility
+      });
+    } catch (err) {
+      driveError = err.message || 'Mirror Google Drive gagal';
+      console.warn('google drive mirror gagal', driveError);
+    }
+    await sql`INSERT INTO documents (id, filename, content_type, blob_url, blob_access, visibility, pin_hash, folder, size, uploaded_by, google_drive_file_id, google_drive_url, uploaded_at) VALUES (${id}, ${filename}, ${contentType}, ${blob.url}, ${blobAccess === 'private' ? 'private' : 'public'}, ${visibility}, ${pinHash}, ${folder}, ${buffer.length}, ${user.id}, ${driveFile?.id || ''}, ${driveFile?.webViewLink || ''}, now()) ON CONFLICT (id) DO UPDATE SET filename=EXCLUDED.filename, content_type=EXCLUDED.content_type, blob_url=EXCLUDED.blob_url, blob_access=EXCLUDED.blob_access, visibility=EXCLUDED.visibility, pin_hash=EXCLUDED.pin_hash, folder=EXCLUDED.folder, size=EXCLUDED.size, uploaded_by=EXCLUDED.uploaded_by, google_drive_file_id=EXCLUDED.google_drive_file_id, google_drive_url=EXCLUDED.google_drive_url, uploaded_at=now()`;
+    await audit(user, previous[0] ? 'replace' : 'upload', 'document', id, { before: previous[0] || null, after: { filename, contentType, size: buffer.length, folder, visibility, blobAccess: blobAccess === 'private' ? 'private' : 'public', pinProtected: visibility === 'important', googleDrive: driveFile ? 'mirrored' : (isGoogleDriveConfigured() ? 'mirror_failed' : 'not_configured'), googleDriveFileId: driveFile?.id || '', googleDriveError: driveError } });
+    return send(res, 200, { ok: true, downloadUrl: `/api/documents/${encodeURIComponent(id)}/download`, size: buffer.length, googleDriveUrl: driveFile?.webViewLink || '', googleDriveFileId: driveFile?.id || '' });
   }
 
   const docMatch = path.match(/^\/documents\/([^/]+)\/download$/);

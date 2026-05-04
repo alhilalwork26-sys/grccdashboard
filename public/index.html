@@ -1971,6 +1971,11 @@ function renderDashboard(){
   const done   = state.tasks.filter(t=>t.status==='Done').length;
   const mSched = state.schedules.filter(s=>thisMonth(s.date)).length;
   const mExp   = state.expenses.filter(e=>thisMonth(e.date)&&(e.status==='Approved'||e.status==='Submitted')).reduce((s,e)=>s+(e.total||e.amount||0),0);
+  const programs = Array.isArray(state.programs) ? state.programs : [];
+  const runningPrograms = programs.filter(p=>{
+    const status = String(p.status || '').toLowerCase();
+    return status.includes('progress') || status.includes('berjalan') || status.includes('ongoing') || status.includes('aktif');
+  }).length;
   const upcoming = [...state.schedules].sort((a,b)=>new Date(a.date)-new Date(b.date)).filter(s=>new Date(s.date)>=now).slice(0,4);
   const activeTasks = state.tasks.filter(t=>t.status!=='Done').slice(0,4);
   const COLS = ['To Do','On Progress','Review','Done'];
@@ -2023,8 +2028,8 @@ function renderDashboard(){
       <div class="stat-card-top">
         <div>
           <div class="stat-label">Program Training</div>
-          <div class="stat-val">3</div>
-          <div class="stat-sub">1 sedang berjalan</div>
+          <div class="stat-val">${programs.length}</div>
+          <div class="stat-sub">${runningPrograms} sedang berjalan</div>
         </div>
         <div class="stat-icon" style="background:#FFFBEB">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
@@ -3470,6 +3475,7 @@ function renderDocuments(){
     if(sf&&!d.name.toLowerCase().includes(sf.toLowerCase())) return false;
     return true;
   });
+  if(isSuperAdminRole(state.user) && location.protocol !== 'file:') setTimeout(loadDocumentDriveStatus, 0);
 
   return `
   <div class="page-header">
@@ -3487,6 +3493,13 @@ function renderDocuments(){
       Upload Dokumen
     </button>`:''}
   </div>
+  ${isSuperAdminRole(state.user) ? `<div id="drive-status-card" style="margin:-8px 0 14px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.68);display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div>
+      <div style="font-size:12px;font-weight:900;color:var(--text)">Google Drive</div>
+      <div id="drive-status-text" style="font-size:11px;color:var(--muted);margin-top:2px">Mengecek koneksi Drive...</div>
+    </div>
+    <span id="drive-status-pill" style="font-size:10px;font-weight:900;border-radius:999px;padding:5px 9px;background:rgba(148,163,184,.14);color:var(--muted)">CEK</span>
+  </div>` : ''}
   <div class="table-wrap"><div class="table-scroll">
     <table>
       <thead><tr>${['Dokumen','Folder','Akses','Ukuran','CUK AI','Diupload Oleh','Tanggal','Aksi'].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
@@ -3527,6 +3540,26 @@ function renderDocuments(){
   </div></div>`;
 }
 function deleteDoc(id){ state.docs=state.docs.filter(d=>d.id!==id); toast('Dokumen dihapus','info'); renderPage(); }
+async function loadDocumentDriveStatus(){
+  const textEl = document.getElementById('drive-status-text');
+  const pillEl = document.getElementById('drive-status-pill');
+  if(!textEl || !pillEl || location.protocol === 'file:') return;
+  try{
+    const res = await fetch('/api/documents/drive-status');
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || 'Status Drive gagal dicek');
+    textEl.textContent = data.message || 'Status Google Drive tidak diketahui';
+    if(data.serviceAccountEmail && !data.ready) textEl.textContent += ` - share folder ke ${data.serviceAccountEmail}`;
+    pillEl.textContent = data.ready ? 'SIAP' : 'BELUM AKTIF';
+    pillEl.style.background = data.ready ? 'rgba(16,185,129,.12)' : 'rgba(245,158,11,.14)';
+    pillEl.style.color = data.ready ? '#059669' : '#B45309';
+  }catch(err){
+    textEl.textContent = err.message || 'Status Drive gagal dicek';
+    pillEl.textContent = 'ERROR';
+    pillEl.style.background = 'rgba(239,68,68,.12)';
+    pillEl.style.color = '#DC2626';
+  }
+}
 function openDocModal(){
   const importantAllowed = canManageImportantDocs(state.user);
   const html=`
@@ -5721,6 +5754,7 @@ if(state.user){
           filename: doc.name || file.name,
           contentType: file.type || 'application/octet-stream',
           size: file.size,
+          folder: doc.folder || 'Dokumen Resmi',
           visibility: options.visibility || doc.visibility || 'public',
           pin: options.pin || ''
         })
@@ -5734,7 +5768,7 @@ if(state.user){
       const res = await fetch(API.documents, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({id: doc.id, filename: doc.name || file.name, contentType: file.type || 'application/octet-stream', dataUrl, visibility: options.visibility || doc.visibility || 'public', pin: options.pin || ''})
+        body: JSON.stringify({id: doc.id, filename: doc.name || file.name, contentType: file.type || 'application/octet-stream', dataUrl, folder: doc.folder || 'Dokumen Resmi', visibility: options.visibility || doc.visibility || 'public', pin: options.pin || ''})
       });
       const saved = await res.json().catch(()=>({}));
       if(!res.ok) throw new Error(saved.error || 'HTTP ' + res.status);
@@ -5756,6 +5790,8 @@ if(state.user){
       state.docs = state.docs.map(item => item.id === doc.id ? {
         ...item,
         downloadUrl: saved.downloadUrl,
+        googleDriveUrl: saved.googleDriveUrl || item.googleDriveUrl || '',
+        googleDriveFileId: saved.googleDriveFileId || item.googleDriveFileId || '',
         size: saved.size ? fmtFileSizePatch(saved.size) : item.size,
         isLocal: false,
         serverStored: true,
