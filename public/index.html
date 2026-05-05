@@ -1734,6 +1734,22 @@ let state = {
   filterEquityOwner:'Semua',
 };
 
+const LOCAL_UI_STATE_KEYS = [
+  'page','taskDetail','progDetail','calMonth',
+  'filterTaskStatus','filterTaskUser','searchTask',
+  'filterExpStatus','filterExpType','filterExpMonth','financeView',
+  'searchDoc','folderDoc',
+  'filterProgressUser','filterProgressStatus','filterProgressDate',
+  'filterEquityStatus','filterEquityOwner'
+];
+function cleanServerStateForClient(serverState={}){
+  const cleaned = {...serverState};
+  delete cleaned.user;
+  delete cleaned.userId;
+  LOCAL_UI_STATE_KEYS.forEach(key => delete cleaned[key]);
+  return cleaned;
+}
+
 /* ===== HELPERS ===== */
 const uid = () => '_'+Math.random().toString(36).substr(2,9);
 const fmt$ = v => new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(v||0);
@@ -6171,6 +6187,8 @@ if(state.user){
       calMonth: state.calMonth instanceof Date ? state.calMonth.toISOString() : state.calMonth
     };
     delete payload.user;
+    delete payload.userId;
+    LOCAL_UI_STATE_KEYS.forEach(key => delete payload[key]);
     return payload;
   }
 
@@ -6256,11 +6274,10 @@ if(state.user){
         if(meRes.ok) sessionUser = (await meRes.json()).user || sessionUser;
       } catch(e) {}
       const sessionId = sessionUser?.id || localStorage.getItem(STORAGE_KEYS_PATCH.session) || '';
-      Object.assign(state, payload.state);
+      Object.assign(state, cleanServerStateForClient(payload.state));
       delete state.accounts;
       delete state.permissions;
       delete state.roleColors;
-      if(payload.state.calMonth) state.calMonth = new Date(payload.state.calMonth);
       state.user = sessionId ? (ACCOUNTS.find(a => a.id === sessionId) || sessionUser || null) : null;
       if(state.user){
         document.getElementById('login-page').style.display='none';
@@ -6400,6 +6417,7 @@ if(state.user){
   function applyServerState(payload){
     if(!payload) return;
     const serverState = payload.state || payload;
+    const incomingUserId = payload.user?.id || serverState.userId || state.user?.id || '';
     if(serverState.schedules) serverState.schedules = serverState.schedules.filter(s => !s._deleted);
     if(Array.isArray(serverState.accounts)){
       ACCOUNTS.splice(0, ACCOUNTS.length, ...serverState.accounts);
@@ -6413,12 +6431,11 @@ if(state.user){
       Object.keys(ROLE_COLORS).forEach(k => delete ROLE_COLORS[k]);
       Object.assign(ROLE_COLORS, serverState.roleColors);
     }
-    Object.assign(state, serverState);
+    Object.assign(state, cleanServerStateForClient(serverState));
     delete state.accounts;
     delete state.permissions;
     delete state.roleColors;
-    if(serverState.calMonth) state.calMonth = new Date(serverState.calMonth);
-    const user = payload.user || (state.userId ? ACCOUNTS.find(a => a.id === state.userId) : null);
+    const user = payload.user || (incomingUserId ? ACCOUNTS.find(a => a.id === incomingUserId) : null);
     state.user = user || null;
   }
 
@@ -6719,11 +6736,10 @@ if(state.user){
     ensureRequiredRolePerms();
     if(serverState.roleColors && typeof serverState.roleColors === 'object') replaceObject(ROLE_COLORS, serverState.roleColors);
 
-    Object.assign(state, serverState);
+    Object.assign(state, cleanServerStateForClient(serverState));
     delete state.accounts;
     delete state.permissions;
     delete state.roleColors;
-    if(serverState.calMonth) state.calMonth = new Date(serverState.calMonth);
     state.user = currentUserId ? (ACCOUNTS.find(a => a.id === currentUserId) || state.user) : state.user;
     if(state.user && typeof hasAccessPatched === 'function' && !hasAccessPatched(state.page)) state.page = 'dashboard';
 
