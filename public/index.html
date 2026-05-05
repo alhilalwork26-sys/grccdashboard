@@ -3070,6 +3070,20 @@ function saveSchedule(editId){
 }
 
 /* ===== FINANCE ===== */
+const FINANCE_EXPENSE_TYPES = [
+  {value:'makan', label:'Makan', tone:'purple'},
+  {value:'uang_mingguan_mas_ghofur', label:'Uang Mingguan Mas Ghofur', tone:'blue'},
+  {value:'atk', label:'ATK', tone:'blue'},
+  {value:'rumah_tangga', label:'Rumah Tangga', tone:'blue'},
+  {value:'keperluan_prof', label:'Keperluan Prof', tone:'blue'},
+  {value:'aksara_art_house', label:'Aksara Art House', tone:'blue'},
+  {value:'kegiatan', label:'Kegiatan', tone:'blue'}
+];
+function financeExpenseTypeMeta(type){
+  return FINANCE_EXPENSE_TYPES.find(item => item.value === type) || {value:type || 'lainnya', label:String(type || 'Lainnya'), tone:'blue'};
+}
+function financeExpenseTypeLabel(type){ return financeExpenseTypeMeta(type).label; }
+function canManageFinanceReimburse(userOrRole){ return isSuperAdminRole(userOrRole) || isFinanceRole(userOrRole); }
 function renderFinance(){
   const fs=state.filterExpStatus, ft=state.filterExpType, fm=state.filterExpMonth||'', fv=state.financeView||'detail';
   const monthLong = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
@@ -3132,8 +3146,7 @@ function renderFinance(){
         <label>Tipe</label>
         <select class="form-control" onchange="state.filterExpType=this.value;persistPatched();renderPage()">
           <option value="Semua"${ft==='Semua'?' selected':''}>Semua Tipe</option>
-          <option value="makan"${ft==='makan'?' selected':''}>Pengeluaran Makan</option>
-          <option value="kegiatan"${ft==='kegiatan'?' selected':''}>Pengeluaran Kegiatan</option>
+          ${FINANCE_EXPENSE_TYPES.map(type=>`<option value="${type.value}"${ft===type.value?' selected':''}>${escHtml(type.label)}</option>`).join('')}
         </select>
       </div>
       <div class="finance-filter-field">
@@ -3180,15 +3193,15 @@ function renderFinance(){
       </tr></thead>
       <tbody>
         ${filtered.length===0?`<tr><td colspan="8" style="padding:32px;text-align:center;color:var(--muted)">Tidak ada data pengeluaran</td></tr>`:
-          filtered.map(e=>`
+          filtered.map(e=>{const typeMeta=financeExpenseTypeMeta(e.type);return `
           <tr>
             <td style="white-space:nowrap;color:var(--sub);font-size:12px">${fmtD(e.date)}</td>
             <td>
               <div style="font-weight:600;font-size:12px">${escHtml(e.activity)}</div>
               <div style="color:var(--muted);font-size:11px">${escHtml(e.desc||'')}</div>
             </td>
-            <td><span style="background:${e.type==='makan'?'var(--purple-lt)':'var(--blue-lt)'};color:${e.type==='makan'?'var(--purple)':'var(--navy-md)'};font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700">${e.type==='makan'?'Makan':'Kegiatan'}</span></td>
-            <td style="font-size:11px;color:var(--sub)">${e.type==='makan'?`${e.people} orang · ${escHtml(e.vendor||'')}`:escHtml(e.cat||'')}</td>
+            <td><span style="background:${typeMeta.tone==='purple'?'var(--purple-lt)':'var(--blue-lt)'};color:${typeMeta.tone==='purple'?'var(--purple)':'var(--navy-md)'};font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700">${escHtml(typeMeta.label)}</span></td>
+            <td style="font-size:11px;color:var(--sub)">${e.type==='makan'?`${e.people || 0} orang · ${escHtml(e.vendor||'')}`:escHtml(e.cat||e.desc||'-')}</td>
             <td style="font-weight:700;white-space:nowrap">${fmt$(e.total||e.amount)}</td>
             <td style="font-size:12px;color:var(--sub)">${escHtml(e.pic)}</td>
             <td>${badge(e.status)}</td>
@@ -3209,7 +3222,7 @@ function renderFinance(){
                 </button>`:''}
               </div>
             </td>
-          </tr>`).join('')}
+          </tr>`;}).join('')}
       </tbody>
       ${filtered.length>0?`<tfoot><tr>
         <td colspan="4" style="padding:10px 14px;font-weight:700;color:var(--sub);font-size:12px">Total (${filtered.length} item)</td>
@@ -3221,6 +3234,7 @@ function renderFinance(){
 }
 function renderFinanceWeeklyView(groups){
   if(!groups.length) return `<div class="card" style="padding:28px;text-align:center;color:var(--muted);font-size:13px">Belum ada data mingguan untuk filter ini.</div>`;
+  const canReimburse = canManageFinanceReimburse(state.user);
   return `<div class="weekly-finance-grid">
     ${groups.map(g=>{
       const paid = g.paid;
@@ -3241,9 +3255,9 @@ function renderFinanceWeeklyView(groups){
           <div class="weekly-finance-metric"><span>Rejected</span><strong>${fmt$(g.rejected)}</strong></div>
         </div>
         ${paid ? `<div style="font-size:11px;color:var(--sub);line-height:1.45">Dibayar oleh <strong>${escHtml(paid.paidBy || '-')}</strong> pada ${escHtml(new Date(paid.paidAt).toLocaleString('id-ID'))}${paid.note?`<br>Catatan: ${escHtml(paid.note)}`:''}</div>` : `<div style="font-size:11px;color:var(--muted)">Tandai reimburse setelah nominal approved minggu ini sudah dibayar.</div>`}
-        <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+        ${canReimburse ? `<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
           ${paid ? `<button class="btn btn-sec btn-sm" onclick="undoFinanceWeekReimbursed('${g.key}')">Batalkan</button>` : `<button class="btn btn-suc btn-sm" ${canMark?'':'disabled'} onclick="markFinanceWeekReimbursed('${g.key}')">Sudah Direimburse</button>`}
-        </div>
+        </div>` : `<div style="font-size:10.5px;color:var(--muted);font-weight:700;text-align:right">Hanya Super Admin/Finance yang bisa menandai reimburse.</div>`}
       </div>`;
     }).join('')}
   </div>`;
@@ -3264,8 +3278,7 @@ function openExpModal(){
   const html=`
     <div class="form-group"><label class="form-label">Tipe Pengeluaran</label>
       <select id="ef-type" class="form-control" onchange="toggleExpForm()">
-        <option value="makan">Pengeluaran Makan</option>
-        <option value="kegiatan">Pengeluaran Kegiatan</option>
+        ${FINANCE_EXPENSE_TYPES.filter(type=>type.value!=='kegiatan').map(type=>`<option value="${type.value}">${escHtml(type.label)}</option>`).join('')}
       </select>
     </div>
     <div class="form-group"><label class="form-label">Nama Kegiatan <span>*</span></label>
@@ -3294,9 +3307,6 @@ function openExpModal(){
     </div>
     <div id="ef-kegiatan" style="display:none">
       <div class="form-row">
-        <div class="form-group"><label class="form-label">Kategori</label>
-          <select id="ef-cat" class="form-control">${['Konsumsi','Transport','Perlengkapan','Honorarium','Akomodasi','Lain-lain'].map(c=>`<option>${c}</option>`).join('')}</select>
-        </div>
         <div class="form-group"><label class="form-label">Nominal (Rp)</label>
           <input id="ef-amount" type="number" class="form-control" placeholder="0">
         </div>
@@ -3327,7 +3337,7 @@ function saveExp(){
   const stamp = new Date().toISOString();
   const data={id:uid(),type,activity,date,pic:document.getElementById('ef-pic').value,desc:document.getElementById('ef-desc').value,status:'Draft',createdAt:stamp,updatedAt:stamp,reimbursed:false};
   if(type==='makan'){data.people=Number(document.getElementById('ef-people').value)||0;data.vendor=document.getElementById('ef-vendor').value;data.total=Number(document.getElementById('ef-total').value)||0;}
-  else{data.cat=document.getElementById('ef-cat').value;data.amount=Number(document.getElementById('ef-amount').value)||0;}
+  else{data.cat=financeExpenseTypeLabel(type);data.amount=Number(document.getElementById('ef-amount').value)||0;}
   state.expenses=[...state.expenses,data];
   toast('Pengeluaran berhasil disimpan');
   closeModal(); renderPage();
@@ -3455,11 +3465,13 @@ function setFinanceView(view='detail'){
   renderPage();
 }
 function markFinanceWeekReimbursed(key){
+  if(!canManageFinanceReimburse(state.user)){toast('Hanya Super Admin/Finance yang bisa menandai reimburse','error');return;}
   const groups = financeWeeklyGroups(state.expenses || []);
   const group = groups.find(g => g.key === key);
   if(!group) return;
-  const note = prompt('Catatan pembayaran reimburse minggu ini (opsional):', group.paid?.note || '');
+  const note = prompt('Keterangan pembayaran reimburse minggu ini wajib diisi:', group.paid?.note || '');
   if(note === null) return;
+  if(!note.trim()){toast('Keterangan reimburse wajib diisi','error');return;}
   const reimb = financeReimbursements();
   reimb[key] = {
     key,
@@ -3469,7 +3481,7 @@ function markFinanceWeekReimbursed(key){
     paidById:state.user?.id || '',
     amount:group.approved,
     itemCount:group.items.length,
-    note:note || ''
+    note:note.trim()
   };
   state.expenses = state.expenses.map(e => financeWeekKeyFromExpense(e) === key ? {...e,reimbursed:true,reimbursedAt:reimb[key].paidAt,reimbursedBy:reimb[key].paidBy} : e);
   persistPatched();
@@ -3477,6 +3489,7 @@ function markFinanceWeekReimbursed(key){
   toast('Minggu ditandai sudah direimburse','success');
 }
 function undoFinanceWeekReimbursed(key){
+  if(!canManageFinanceReimburse(state.user)){toast('Hanya Super Admin/Finance yang bisa membatalkan reimburse','error');return;}
   if(!confirm('Batalkan tanda sudah direimburse untuk minggu ini?')) return;
   const reimb = financeReimbursements();
   delete reimb[key];
@@ -4578,7 +4591,7 @@ function exportFinanceCsv(){
         g ? financeWeekLabel(g.monthKey,g.weekNo) : '',
         e.date,
         e.activity,
-        e.type === 'makan' ? 'Makan' : 'Kegiatan',
+        financeExpenseTypeLabel(e.type),
         e.type === 'makan' ? `${e.people || 0} orang - ${e.vendor || ''}` : (e.cat || ''),
         expenseAmount(e),
         e.pic,
