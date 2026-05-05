@@ -1312,6 +1312,184 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
 .print-btn:hover { color:var(--text); border-color:var(--blue); background:var(--blue-lt); }
 [data-theme="light"] .print-btn:hover { background:rgba(59,130,246,0.08); }
 
+/* ══ MINIMALIST OVERHAUL + ANIMATIONS ══ */
+
+/* New keyframes */
+@keyframes staggerIn {
+  from { opacity:0; transform:translateY(10px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes springPop {
+  from { opacity:0; transform:scale(0.88) translateY(12px); }
+  to   { opacity:1; transform:scale(1) translateY(0); }
+}
+@keyframes rippleFade {
+  from { transform:scale(0); opacity:.38; }
+  to   { transform:scale(2.8); opacity:0; }
+}
+@keyframes skeletonShimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+@keyframes numberPop {
+  0%   { transform:scale(1); }
+  40%  { transform:scale(1.12); }
+  100% { transform:scale(1); }
+}
+
+/* Glass card overrides */
+.card {
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.07);
+}
+[data-theme="light"] .card {
+  background: rgba(255,255,255,0.72);
+  border: 1px solid rgba(0,0,0,0.07);
+}
+.stat-card {
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.08);
+  position: relative;
+  overflow: hidden;
+}
+[data-theme="light"] .stat-card {
+  background: rgba(255,255,255,0.78);
+  border: 1px solid rgba(0,0,0,0.08);
+}
+.stat-card::before, .stat-card::after { display:none !important; }
+.kan-card {
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.07);
+}
+[data-theme="light"] .kan-card {
+  background: rgba(255,255,255,0.75);
+  border: 1px solid rgba(0,0,0,0.07);
+}
+.prog-card {
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.07);
+}
+[data-theme="light"] .prog-card {
+  background: rgba(255,255,255,0.75);
+  border: 1px solid rgba(0,0,0,0.07);
+}
+.table-wrap {
+  background: rgba(255,255,255,0.025);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+[data-theme="light"] .table-wrap {
+  background: rgba(255,255,255,0.7);
+}
+
+/* Spring modal animation */
+.modal-box {
+  animation: springPop .38s cubic-bezier(.34,1.56,.64,1);
+}
+
+/* Stagger: stat grid */
+.stat-grid > *:nth-child(1) { animation: staggerIn .32s ease both; animation-delay:.03s; }
+.stat-grid > *:nth-child(2) { animation: staggerIn .32s ease both; animation-delay:.09s; }
+.stat-grid > *:nth-child(3) { animation: staggerIn .32s ease both; animation-delay:.15s; }
+.stat-grid > *:nth-child(4) { animation: staggerIn .32s ease both; animation-delay:.21s; }
+.stat-grid > *:nth-child(5) { animation: staggerIn .32s ease both; animation-delay:.27s; }
+.stat-grid > *:nth-child(6) { animation: staggerIn .32s ease both; animation-delay:.33s; }
+
+/* Stagger: prog grid */
+.prog-grid > *:nth-child(1) { animation: staggerIn .32s ease both; animation-delay:.04s; }
+.prog-grid > *:nth-child(2) { animation: staggerIn .32s ease both; animation-delay:.10s; }
+.prog-grid > *:nth-child(3) { animation: staggerIn .32s ease both; animation-delay:.16s; }
+.prog-grid > *:nth-child(4) { animation: staggerIn .32s ease both; animation-delay:.22s; }
+.prog-grid > *:nth-child(5) { animation: staggerIn .32s ease both; animation-delay:.28s; }
+.prog-grid > *:nth-child(6) { animation: staggerIn .32s ease both; animation-delay:.34s; }
+
+/* Stagger: kanban columns */
+.kanban > *:nth-child(1) { animation: staggerIn .35s ease both; animation-delay:.05s; }
+.kanban > *:nth-child(2) { animation: staggerIn .35s ease both; animation-delay:.13s; }
+.kanban > *:nth-child(3) { animation: staggerIn .35s ease both; animation-delay:.21s; }
+.kanban > *:nth-child(4) { animation: staggerIn .35s ease both; animation-delay:.29s; }
+
+/* Stagger: table rows */
+tbody tr:nth-child(1)  { animation: staggerIn .28s ease both; animation-delay:.02s; }
+tbody tr:nth-child(2)  { animation: staggerIn .28s ease both; animation-delay:.06s; }
+tbody tr:nth-child(3)  { animation: staggerIn .28s ease both; animation-delay:.10s; }
+tbody tr:nth-child(4)  { animation: staggerIn .28s ease both; animation-delay:.14s; }
+tbody tr:nth-child(5)  { animation: staggerIn .28s ease both; animation-delay:.18s; }
+tbody tr:nth-child(6)  { animation: staggerIn .28s ease both; animation-delay:.22s; }
+tbody tr:nth-child(7)  { animation: staggerIn .28s ease both; animation-delay:.26s; }
+tbody tr:nth-child(8)  { animation: staggerIn .28s ease both; animation-delay:.30s; }
+tbody tr:nth-child(9)  { animation: staggerIn .28s ease both; animation-delay:.34s; }
+tbody tr:nth-child(10) { animation: staggerIn .28s ease both; animation-delay:.38s; }
+
+/* Button ripple */
+.btn { position:relative; overflow:hidden; }
+.btn-ripple {
+  position: absolute;
+  border-radius: 50%;
+  width: 80px; height: 80px;
+  margin-top: -40px; margin-left: -40px;
+  pointer-events: none;
+  background: rgba(255,255,255,0.28);
+  animation: rippleFade .55s ease-out forwards;
+}
+
+/* Form focus lift */
+.form-control:focus,
+.f-inp:focus,
+select:focus {
+  transform: translateY(-1px);
+}
+
+/* Sidebar flat */
+.sidebar {
+  background: rgba(255,255,255,0.02);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+[data-theme="light"] .sidebar {
+  background: rgba(248,250,252,0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Header flat */
+.header {
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+[data-theme="light"] .header {
+  background: rgba(255,255,255,0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Skeleton loader */
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.05) 75%);
+  background-size: 800px 100%;
+  animation: skeletonShimmer 1.4s ease-in-out infinite;
+  border-radius: 6px;
+}
+[data-theme="light"] .skeleton {
+  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.09) 50%, rgba(0,0,0,0.04) 75%);
+  background-size: 800px 100%;
+  animation: skeletonShimmer 1.4s ease-in-out infinite;
+}
+
+/* Stat value number-pop after count-up */
+.stat-val[data-animated] {
+  animation: numberPop .25s ease;
+}
+
 </style>
 </head>
 <body>
@@ -4202,6 +4380,43 @@ function afterRender(){
     if(typeof refreshDeadlineBanner === 'function') refreshDeadlineBanner();
     if(typeof updateFabVisibility === 'function') updateFabVisibility();
     if(typeof safeRefreshNotifications === 'function') safeRefreshNotifications();
+    _initCountUp();
+    _initRipple();
+  });
+}
+
+function _initCountUp(){
+  document.querySelectorAll('.stat-val:not([data-animated])').forEach(el => {
+    const raw = el.textContent.trim();
+    if(raw.includes('Rp') || raw.includes('.') || raw.includes('%') || raw.includes('/')) return;
+    const target = parseInt(raw, 10);
+    if(isNaN(target) || target <= 0) return;
+    el.setAttribute('data-animated','1');
+    const duration = Math.min(900, 300 + target * 1.5);
+    const start = performance.now();
+    function tick(now){
+      const t = Math.min(1, (now - start) / duration);
+      const ease = 1 - Math.pow(1 - t, 3);
+      el.textContent = Math.round(ease * target);
+      if(t < 1) requestAnimationFrame(tick);
+      else { el.textContent = target; el.style.animation = 'numberPop .25s ease'; }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+function _initRipple(){
+  document.querySelectorAll('.btn:not([data-ripple])').forEach(btn => {
+    btn.setAttribute('data-ripple','1');
+    btn.addEventListener('click', function(e){
+      const r = document.createElement('span');
+      r.className = 'btn-ripple';
+      const rect = this.getBoundingClientRect();
+      r.style.left = (e.clientX - rect.left) + 'px';
+      r.style.top  = (e.clientY - rect.top)  + 'px';
+      this.appendChild(r);
+      setTimeout(() => r.remove(), 580);
+    });
   });
 }
 
