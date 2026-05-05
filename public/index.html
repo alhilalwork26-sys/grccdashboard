@@ -525,6 +525,7 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   min-height:68px; border:1px solid rgba(255,255,255,0.05);
   border-radius:7px; padding:5px; background:rgba(255,255,255,0.02);
   transition:background .15s;
+  position:relative; overflow:visible;
 }
 .cal-cell:hover { background:rgba(91,141,246,0.06); }
 .cal-cell.today { background:rgba(91,141,246,0.1); border-color:rgba(91,141,246,0.25); }
@@ -538,6 +539,19 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   font-size:9px; padding:1px 5px; border-radius:4px; margin-top:2px;
   font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
+.cal-event-wrap { position:relative; }
+.cal-tooltip {
+  position:absolute; left:0; top:calc(100% + 6px); z-index:30;
+  width:220px; padding:10px 11px; border-radius:10px;
+  background:rgba(12,17,33,.96); border:1px solid rgba(255,255,255,.13);
+  box-shadow:0 18px 44px rgba(0,0,0,.35);
+  opacity:0; pointer-events:none; transform:translateY(-4px);
+  transition:opacity .16s ease, transform .16s ease;
+}
+.cal-event-wrap:hover .cal-tooltip { opacity:1; transform:translateY(0); }
+.cal-tooltip-title { font-size:12px; font-weight:900; color:#fff; margin-bottom:6px; line-height:1.25; }
+.cal-tooltip-row { font-size:10px; color:rgba(255,255,255,.72); line-height:1.45; }
+.cal-tooltip-row strong { color:#fff; font-weight:800; }
 
 /* ═══════════════════════════════════════════════
    PROGRESS BAR
@@ -1774,7 +1788,16 @@ const STATUS_M = {
   'Belum Absen':{bg:'rgba(255,255,255,0.05)',c:'#8080A0',bd:'rgba(255,255,255,0.1)'},
 };
 const PRIO_M = {'High':{bg:'rgba(248,113,113,0.12)',c:'#F87171',bd:'rgba(248,113,113,0.25)'},'Medium':{bg:'rgba(251,191,36,0.12)',c:'#FBBF24',bd:'rgba(251,191,36,0.25)'},'Low':{bg:'rgba(52,211,153,0.12)',c:'#34D399',bd:'rgba(52,211,153,0.25)'}};
-const TYPE_M = {'Training':{bg:'rgba(91,141,246,0.12)',c:'#7AAAF7',dot:'#5B8DF6'},'Rapat':{bg:'rgba(52,211,153,0.12)',c:'#34D399',dot:'#34D399'},'Dinas':{bg:'rgba(251,191,36,0.12)',c:'#FBBF24',dot:'#FBBF24'}};
+const SCHEDULE_TYPES = ['Pelatihan In-House','Pelatihan Public','Sertifikasi','Riset'];
+const TYPE_M = {
+  'Pelatihan In-House':{bg:'rgba(91,141,246,0.13)',c:'#7AAAF7',dot:'#5B8DF6'},
+  'Pelatihan Public':{bg:'rgba(20,184,166,0.13)',c:'#2DD4BF',dot:'#14B8A6'},
+  'Sertifikasi':{bg:'rgba(168,85,247,0.13)',c:'#C084FC',dot:'#A855F7'},
+  'Riset':{bg:'rgba(251,191,36,0.14)',c:'#FBBF24',dot:'#F59E0B'},
+  'Training':{bg:'rgba(91,141,246,0.12)',c:'#7AAAF7',dot:'#5B8DF6'},
+  'Rapat':{bg:'rgba(52,211,153,0.12)',c:'#34D399',dot:'#34D399'},
+  'Dinas':{bg:'rgba(251,191,36,0.12)',c:'#FBBF24',dot:'#FBBF24'}
+};
 const COL_MAP = {'To Do':'#5B8DF6','On Progress':'#FBBF24','Review':'#A78BFA','Done':'#34D399'};
 const EXT_M = {pdf:{bg:'rgba(248,113,113,0.12)',c:'#F87171',l:'PDF'},xlsx:{bg:'rgba(52,211,153,0.12)',c:'#34D399',l:'XLS'},pptx:{bg:'rgba(251,191,36,0.12)',c:'#FBBF24',l:'PPT'},docx:{bg:'rgba(91,141,246,0.12)',c:'#7AAAF7',l:'DOC'}};
 
@@ -2299,7 +2322,7 @@ function renderDashboard(){
       </div>
       <div style="padding:8px 0">
         ${upcoming.length===0?'<div class="empty"><div class="empty-icon">📅</div><div class="empty-text">Tidak ada jadwal</div></div>':
-          upcoming.map(s=>{ const tm=TYPE_M[s.type]||TYPE_M.Rapat; return `
+          upcoming.map(s=>{ const tm=scheduleTypeMeta(s.type); return `
           <div style="padding:10px 18px;border-bottom:1px solid var(--bg2);display:flex;gap:12px;align-items:flex-start">
             <div style="width:4px;height:36px;border-radius:4px;background:${tm.dot};flex-shrink:0;margin-top:2px"></div>
             <div style="flex:1">
@@ -3146,6 +3169,34 @@ function saveDailyProgress(phase='full'){
   renderPage();
 }
 /* ===== SCHEDULE ===== */
+function scheduleTypeMeta(type){
+  return TYPE_M[type] || TYPE_M['Pelatihan In-House'];
+}
+function scheduleCreatorName(s){
+  return s?.createdByName || s?.creatorName || s?.pic || '-';
+}
+function scheduleCreatorRole(s){
+  return s?.createdByRole || s?.creatorRole || s?.role || 'Role tidak tercatat';
+}
+function scheduleOwnedByUser(s, user){
+  if(!s || !user) return false;
+  return s.createdById === user.id || s.pic === user.name || s.createdByName === user.name;
+}
+function renderScheduleEvent(e){
+  const tm = scheduleTypeMeta(e.type);
+  const dateLabel = `${fmtD(e.date)}${e.endDate&&e.endDate!==e.date?` - ${fmtD(e.endDate)}`:''}`;
+  return `<div class="cal-event-wrap">
+    <div class="cal-event" style="background:${tm.bg};color:${tm.c}">${escHtml(e.name)}</div>
+    <div class="cal-tooltip">
+      <div class="cal-tooltip-title">${escHtml(e.name)}</div>
+      <div class="cal-tooltip-row"><strong>Tipe:</strong> ${escHtml(e.type || '-')}</div>
+      <div class="cal-tooltip-row"><strong>Tanggal:</strong> ${escHtml(dateLabel)}</div>
+      <div class="cal-tooltip-row"><strong>Lokasi:</strong> ${escHtml(e.loc || '-')}</div>
+      <div class="cal-tooltip-row"><strong>Ditambahkan oleh:</strong> ${escHtml(scheduleCreatorName(e))}</div>
+      <div class="cal-tooltip-row"><strong>Role:</strong> ${escHtml(scheduleCreatorRole(e))}</div>
+    </div>
+  </div>`;
+}
 function renderSchedule(){
   const u=state.user;
   const canCreate=(PERMS[u.role]||[]).includes('schedule');
@@ -3189,7 +3240,7 @@ function renderSchedule(){
             const events=schForDay(d);
             return `<div class="cal-cell${isToday?' today':''}">
               <div class="cal-cell-num">${d}</div>
-              ${events.slice(0,2).map(e=>{const tm=TYPE_M[e.type]||TYPE_M.Rapat;return `<div class="cal-event" style="background:${tm.bg};color:${tm.c}">${escHtml(e.name)}</div>`;}).join('')}
+              ${events.slice(0,2).map(renderScheduleEvent).join('')}
               ${events.length>2?`<div style="font-size:9px;color:var(--muted);margin-top:1px">+${events.length-2}</div>`:''}
             </div>`;
           }).join('')}
@@ -3205,14 +3256,15 @@ function renderSchedule(){
         <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700">Semua Jadwal</div>
         <div style="max-height:480px;overflow-y:auto">
           ${sorted.length===0?'<div class="empty"><div class="empty-icon">📅</div><div class="empty-text">Belum ada jadwal</div></div>':
-            sorted.map(s=>{const tm=TYPE_M[s.type]||TYPE_M.Rapat; const canEditItem=canManage || s.pic===u.name; return `
+            sorted.map(s=>{const tm=scheduleTypeMeta(s.type); const canEditItem=canManage || scheduleOwnedByUser(s,u); return `
             <div style="padding:12px 16px;border-bottom:1px solid var(--bg2)">
               <div style="display:flex;gap:10px;align-items:flex-start">
                 <div style="width:3px;height:40px;border-radius:4px;background:${tm.dot};flex-shrink:0;margin-top:2px"></div>
                 <div style="flex:1">
                   <div style="font-size:12px;font-weight:700;margin-bottom:2px">${escHtml(s.name)}</div>
                   <div style="font-size:11px;color:var(--muted);margin-bottom:2px">${fmtD(s.date)}${s.endDate&&s.endDate!==s.date?` – ${fmtD(s.endDate)}`:''}</div>
-                  <div style="font-size:11px;color:var(--muted)">${escHtml(s.loc)}</div>
+                  <div style="font-size:11px;color:var(--muted)">${escHtml(s.loc || '-')}</div>
+                  <div style="font-size:10px;color:var(--muted);margin-top:3px">Dibuat oleh ${escHtml(scheduleCreatorName(s))} · ${escHtml(scheduleCreatorRole(s))}</div>
                 </div>
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-left:13px">
@@ -3236,14 +3288,17 @@ function prevMonth(){ const m=state.calMonth; state.calMonth=new Date(m.getFullY
 function nextMonth(){ const m=state.calMonth; state.calMonth=new Date(m.getFullYear(),m.getMonth()+1,1); renderPage(); }
 function deleteSchedule(id){
   const sched = state.schedules.find(s=>s.id===id);
-  if(sched && !isManagerRole(state.user) && sched.pic !== state.user.name){toast('Kamu hanya bisa menghapus jadwal yang kamu buat/PIC','error');return;}
+  if(sched && !isManagerRole(state.user) && !scheduleOwnedByUser(sched,state.user)){toast('Kamu hanya bisa menghapus jadwal yang kamu buat','error');return;}
   state.schedules=state.schedules.map(s=>s.id===id?{...s,_deleted:true,deletedAt:new Date().toISOString(),deletedBy:state.user?.id||''}:s);
   toast('Jadwal dihapus','info'); renderPage();
 }
 function openSchedModal(editId){
   if(!(PERMS[state.user?.role]||[]).includes('schedule')){toast('Role kamu belum punya akses jadwal','error');return;}
   const s=editId?state.schedules.find(x=>x.id===editId):null;
-  if(editId && s && !isManagerRole(state.user) && s.pic !== state.user.name){toast('Kamu hanya bisa mengedit jadwal yang kamu buat/PIC','error');return;}
+  if(editId && s && !isManagerRole(state.user) && !scheduleOwnedByUser(s,state.user)){toast('Kamu hanya bisa mengedit jadwal yang kamu buat','error');return;}
+  const creatorName = editId ? scheduleCreatorName(s) : state.user.name;
+  const creatorRole = editId ? scheduleCreatorRole(s) : state.user.role;
+  const selectedType = SCHEDULE_TYPES.includes(s?.type) ? s.type : (isResearchRole(state.user) ? 'Riset' : 'Pelatihan In-House');
   const html=`
     <div class="form-group"><label class="form-label">Nama Kegiatan <span>*</span></label>
       <input id="sf-name" class="form-control" placeholder="Nama kegiatan..." value="${escHtml(s?.name||'')}">
@@ -3260,11 +3315,12 @@ function openSchedModal(editId){
       <input id="sf-loc" class="form-control" placeholder="Lokasi kegiatan..." value="${escHtml(s?.loc||'')}">
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">PIC</label>
-        <select id="sf-pic" class="form-control">${ACCOUNTS.map(a=>`<option${s?.pic===a.name?' selected':''}>${escHtml(a.name)}</option>`).join('')}</select>
+      <div class="form-group"><label class="form-label">Dibuat Oleh</label>
+        <input class="form-control" value="${escHtml(creatorName)}" disabled>
+        <div style="font-size:10px;color:var(--muted);margin-top:5px">Role: ${escHtml(creatorRole)}</div>
       </div>
       <div class="form-group"><label class="form-label">Tipe</label>
-        <select id="sf-type" class="form-control">${['Training','Rapat','Dinas'].map(t=>`<option${s?.type===t?' selected':''}>${t}</option>`).join('')}</select>
+        <select id="sf-type" class="form-control">${SCHEDULE_TYPES.map(t=>`<option value="${escHtml(t)}"${selectedType===t?' selected':''}>${escHtml(t)}</option>`).join('')}</select>
       </div>
     </div>
     <div class="modal-footer">
@@ -3277,9 +3333,23 @@ function saveSchedule(editId){
   const name=document.getElementById('sf-name').value.trim();
   const date=document.getElementById('sf-date').value;
   if(!name||!date){toast('Nama dan tanggal wajib diisi','error');return;}
-  const data={name,date,endDate:document.getElementById('sf-end').value||date,loc:document.getElementById('sf-loc').value,pic:document.getElementById('sf-pic').value,type:document.getElementById('sf-type').value};
+  const current = editId ? state.schedules.find(s=>s.id===editId) : null;
+  const data={
+    name,
+    date,
+    endDate:document.getElementById('sf-end').value||date,
+    loc:document.getElementById('sf-loc').value,
+    pic:current?.pic || state.user.name,
+    type:document.getElementById('sf-type').value,
+    createdById:current?.createdById || state.user.id,
+    createdByName:current?.createdByName || current?.pic || state.user.name,
+    createdByRole:current?.createdByRole || state.user.role,
+    updatedById:state.user.id,
+    updatedByName:state.user.name,
+    updatedAt:new Date().toISOString()
+  };
   if(editId){state.schedules=state.schedules.map(s=>s.id===editId?{...s,...data}:s);toast('Jadwal diperbarui');}
-  else{state.schedules=[...state.schedules,{...data,id:uid()}];toast('Jadwal ditambahkan');}
+  else{state.schedules=[...state.schedules,{...data,id:uid(),createdAt:new Date().toISOString()}];toast('Jadwal ditambahkan');}
   closeModal(); renderPage();
 }
 
@@ -4490,8 +4560,24 @@ const PRIO_LIGHT = {
   'Medium':{bg:'#FFFBEB',c:'#B45309',bd:'#FDE68A'},
   'Low':{bg:'#ECFDF5',c:'#065F46',bd:'#A7F3D0'}
 };
-const TYPE_DARK  = {'Training':{bg:'rgba(91,141,246,0.12)',c:'#7AAAF7',dot:'#5B8DF6'},'Rapat':{bg:'rgba(52,211,153,0.12)',c:'#34D399',dot:'#34D399'},'Dinas':{bg:'rgba(251,191,36,0.12)',c:'#FBBF24',dot:'#FBBF24'}};
-const TYPE_LIGHT = {'Training':{bg:'#EFF6FF',c:'#1D4ED8',dot:'#3B82F6'},'Rapat':{bg:'#ECFDF5',c:'#065F46',dot:'#059669'},'Dinas':{bg:'#FFFBEB',c:'#B45309',dot:'#D97706'}};
+const TYPE_DARK  = {
+  'Pelatihan In-House':{bg:'rgba(91,141,246,0.13)',c:'#7AAAF7',dot:'#5B8DF6'},
+  'Pelatihan Public':{bg:'rgba(20,184,166,0.13)',c:'#2DD4BF',dot:'#14B8A6'},
+  'Sertifikasi':{bg:'rgba(168,85,247,0.13)',c:'#C084FC',dot:'#A855F7'},
+  'Riset':{bg:'rgba(251,191,36,0.14)',c:'#FBBF24',dot:'#F59E0B'},
+  'Training':{bg:'rgba(91,141,246,0.12)',c:'#7AAAF7',dot:'#5B8DF6'},
+  'Rapat':{bg:'rgba(52,211,153,0.12)',c:'#34D399',dot:'#34D399'},
+  'Dinas':{bg:'rgba(251,191,36,0.12)',c:'#FBBF24',dot:'#FBBF24'}
+};
+const TYPE_LIGHT = {
+  'Pelatihan In-House':{bg:'#EFF6FF',c:'#1D4ED8',dot:'#3B82F6'},
+  'Pelatihan Public':{bg:'#CCFBF1',c:'#0F766E',dot:'#14B8A6'},
+  'Sertifikasi':{bg:'#F5F3FF',c:'#6D28D9',dot:'#8B5CF6'},
+  'Riset':{bg:'#FEF3C7',c:'#92400E',dot:'#F59E0B'},
+  'Training':{bg:'#EFF6FF',c:'#1D4ED8',dot:'#3B82F6'},
+  'Rapat':{bg:'#ECFDF5',c:'#065F46',dot:'#059669'},
+  'Dinas':{bg:'#FFFBEB',c:'#B45309',dot:'#D97706'}
+};
 const EXT_DARK  = {pdf:{bg:'rgba(248,113,113,0.12)',c:'#F87171',l:'PDF'},xlsx:{bg:'rgba(52,211,153,0.12)',c:'#34D399',l:'XLS'},pptx:{bg:'rgba(251,191,36,0.12)',c:'#FBBF24',l:'PPT'},docx:{bg:'rgba(91,141,246,0.12)',c:'#7AAAF7',l:'DOC'}};
 const EXT_LIGHT = {pdf:{bg:'#FEF2F2',c:'#991B1B',l:'PDF'},xlsx:{bg:'#ECFDF5',c:'#065F46',l:'XLS'},pptx:{bg:'#FFFBEB',c:'#B45309',l:'PPT'},docx:{bg:'#EFF6FF',c:'#1D4ED8',l:'DOC'}};
 const DSTATUS_DARK  = {'On Track':{bg:'rgba(91,141,246,0.12)',c:'#7AAAF7'},'Need Help':{bg:'rgba(248,113,113,0.12)',c:'#F87171'},'Done':{bg:'rgba(52,211,153,0.12)',c:'#34D399'}};
