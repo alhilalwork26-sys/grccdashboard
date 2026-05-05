@@ -562,7 +562,7 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   gap:14px; margin-bottom:18px; flex-wrap:wrap;
 }
 .finance-filters {
-  display:grid; grid-template-columns:minmax(120px,150px) minmax(170px,230px) minmax(190px,250px);
+  display:grid; grid-template-columns:minmax(120px,150px) minmax(170px,230px) minmax(190px,250px) minmax(130px,170px);
   gap:10px; align-items:end;
 }
 .finance-filter-field { display:flex; flex-direction:column; gap:6px; }
@@ -573,6 +573,23 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
 .finance-filter-field .form-control { height:40px; min-width:0; }
 .finance-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .finance-period-note { font-size:11px; color:var(--muted); margin-top:-8px; margin-bottom:14px; }
+.weekly-finance-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+.weekly-finance-card {
+  border:1px solid var(--border); border-radius:10px; background:rgba(255,255,255,.72);
+  padding:13px; display:flex; flex-direction:column; gap:10px; min-width:0;
+}
+.weekly-finance-card.is-paid { border-color:rgba(16,185,129,.32); background:rgba(236,253,245,.74); }
+.weekly-finance-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+.weekly-finance-title { font-size:12px; font-weight:900; color:var(--text); }
+.weekly-finance-sub { font-size:10.5px; color:var(--muted); margin-top:2px; }
+.weekly-finance-amount { font-size:18px; font-weight:900; color:var(--navy); }
+.weekly-finance-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; }
+.weekly-finance-metric { border:1px solid var(--border); border-radius:8px; padding:8px; background:rgba(255,255,255,.52); }
+.weekly-finance-metric span { display:block; font-size:9px; color:var(--muted); font-weight:900; letter-spacing:.7px; text-transform:uppercase; font-family:var(--mono); }
+.weekly-finance-metric strong { display:block; margin-top:3px; font-size:12px; color:var(--text); }
+.reimburse-pill { font-size:10px; font-weight:900; border-radius:999px; padding:4px 8px; white-space:nowrap; }
+.reimburse-pill.paid { color:#047857; background:rgba(16,185,129,.13); border:1px solid rgba(16,185,129,.24); }
+.reimburse-pill.unpaid { color:#B45309; background:rgba(245,158,11,.13); border:1px solid rgba(245,158,11,.24); }
 .evidence-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:14px; }
 .evidence-card {
   border:1px solid var(--border); border-radius:10px; padding:10px;
@@ -1513,7 +1530,7 @@ let state = {
   progDetail: null,
   calMonth: new Date(2026,3,1),
   filterTaskStatus:'Semua', filterTaskUser:'Semua', searchTask:'',
-  filterExpStatus:'Semua', filterExpType:'Semua', filterExpMonth:'',
+  filterExpStatus:'Semua', filterExpType:'Semua', filterExpMonth:'', financeView:'detail',
   searchDoc:'', folderDoc:'Semua',
   notifEmail: true, notifDeadline: true,
   dailyProgresses: [],
@@ -3054,7 +3071,7 @@ function saveSchedule(editId){
 
 /* ===== FINANCE ===== */
 function renderFinance(){
-  const fs=state.filterExpStatus, ft=state.filterExpType, fm=state.filterExpMonth||'';
+  const fs=state.filterExpStatus, ft=state.filterExpType, fm=state.filterExpMonth||'', fv=state.financeView||'detail';
   const monthLong = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
   const periodOptions = [...new Set(state.expenses.map(e => String(e.date||'').slice(0,7)).filter(v => /^\d{4}-\d{2}$/.test(v)))].sort().reverse();
   if(fm && !periodOptions.includes(fm)) periodOptions.unshift(fm);
@@ -3072,10 +3089,12 @@ function renderFinance(){
   const periodExpenses=state.expenses.filter(e=>!fm||String(e.date||'').slice(0,7)===fm);
   const approved=periodExpenses.filter(e=>e.status==='Approved').reduce((s,e)=>s+(e.total||e.amount||0),0);
   const pending=periodExpenses.filter(e=>e.status==='Submitted').reduce((s,e)=>s+(e.total||e.amount||0),0);
+  const weeklyGroups=financeWeeklyGroups(filtered);
+  const reimbursedTotal=weeklyGroups.filter(g=>g.paid).reduce((s,g)=>s+g.approved,0);
   const SA={'Draft':['Submitted'],'Submitted':['Approved','Rejected'],'Approved':[],'Rejected':['Draft']};
 
   return `
-  <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr)">
     <div class="stat-card"><div class="stat-card-top">
       <div><div class="stat-label">Total Pengeluaran</div><div class="stat-val" style="font-size:16px">${fmt$(total)}</div></div>
       <div class="stat-icon" style="background:var(--blue-lt)">
@@ -3092,6 +3111,12 @@ function renderFinance(){
       <div><div class="stat-label">Menunggu Approval</div><div class="stat-val" style="font-size:16px">${fmt$(pending)}</div></div>
       <div class="stat-icon" style="background:var(--amber-lt)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+    </div></div>
+    <div class="stat-card"><div class="stat-card-top">
+      <div><div class="stat-label">Sudah Direimburse</div><div class="stat-val" style="font-size:16px">${fmt$(reimbursedTotal)}</div></div>
+      <div class="stat-icon" style="background:#ECFDF5">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
       </div>
     </div></div>
   </div>
@@ -3122,6 +3147,13 @@ function renderFinance(){
           }).join('')}
         </select>
       </div>
+      <div class="finance-filter-field">
+        <label>Tampilan</label>
+        <select class="form-control" onchange="setFinanceView(this.value)">
+          <option value="detail"${fv==='detail'?' selected':''}>Detail</option>
+          <option value="weekly"${fv==='weekly'?' selected':''}>Mingguan</option>
+        </select>
+      </div>
     </div>
     <div class="finance-actions">
       <button class="btn btn-sec btn-sm" onclick="exportFinanceCsv()">
@@ -3139,6 +3171,8 @@ function renderFinance(){
     </div>
   </div>
   <div class="finance-period-note">Menampilkan ${filtered.length} item untuk ${escHtml(periodLabel)}.</div>
+  ${fv==='weekly' ? renderFinanceWeeklyView(weeklyGroups) : ''}
+  ${fv==='detail' ? `
   <div class="table-wrap"><div class="table-scroll">
     <table>
       <thead><tr>
@@ -3183,9 +3217,38 @@ function renderFinance(){
         <td colspan="4"></td>
       </tr></tfoot>`:''}
     </table>
-  </div></div>`;
+  </div></div>` : ''}`;
 }
-function changeExpStatus(id,status){ state.expenses=state.expenses.map(e=>e.id===id?{...e,status}:e); toast(`Status diubah ke ${status}`); renderPage(); }
+function renderFinanceWeeklyView(groups){
+  if(!groups.length) return `<div class="card" style="padding:28px;text-align:center;color:var(--muted);font-size:13px">Belum ada data mingguan untuk filter ini.</div>`;
+  return `<div class="weekly-finance-grid">
+    ${groups.map(g=>{
+      const paid = g.paid;
+      const canMark = g.approved > 0;
+      return `<div class="weekly-finance-card ${paid?'is-paid':''}">
+        <div class="weekly-finance-head">
+          <div>
+            <div class="weekly-finance-title">${escHtml(financeWeekLabel(g.monthKey,g.weekNo))}</div>
+            <div class="weekly-finance-sub">${escHtml(financeWeekRangeLabel(g.monthKey,g.weekNo))} · ${g.items.length} item</div>
+          </div>
+          <span class="reimburse-pill ${paid?'paid':'unpaid'}">${paid ? (g.hasNewAfterPaid ? 'ADA TAMBAHAN' : 'SUDAH DIREIMBURSE') : 'BELUM DIREIMBURSE'}</span>
+        </div>
+        <div class="weekly-finance-amount">${fmt$(g.total)}</div>
+        <div class="weekly-finance-metrics">
+          <div class="weekly-finance-metric"><span>Approved</span><strong>${fmt$(g.approved)}</strong></div>
+          <div class="weekly-finance-metric"><span>Submitted</span><strong>${fmt$(g.submitted)}</strong></div>
+          <div class="weekly-finance-metric"><span>Draft</span><strong>${fmt$(g.draft)}</strong></div>
+          <div class="weekly-finance-metric"><span>Rejected</span><strong>${fmt$(g.rejected)}</strong></div>
+        </div>
+        ${paid ? `<div style="font-size:11px;color:var(--sub);line-height:1.45">Dibayar oleh <strong>${escHtml(paid.paidBy || '-')}</strong> pada ${escHtml(new Date(paid.paidAt).toLocaleString('id-ID'))}${paid.note?`<br>Catatan: ${escHtml(paid.note)}`:''}</div>` : `<div style="font-size:11px;color:var(--muted)">Tandai reimburse setelah nominal approved minggu ini sudah dibayar.</div>`}
+        <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+          ${paid ? `<button class="btn btn-sec btn-sm" onclick="undoFinanceWeekReimbursed('${g.key}')">Batalkan</button>` : `<button class="btn btn-suc btn-sm" ${canMark?'':'disabled'} onclick="markFinanceWeekReimbursed('${g.key}')">Sudah Direimburse</button>`}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+function changeExpStatus(id,status){ state.expenses=state.expenses.map(e=>e.id===id?{...e,status,updatedAt:new Date().toISOString()}:e); toast(`Status diubah ke ${status}`); renderPage(); }
 function deleteExp(id){ state.expenses=state.expenses.filter(e=>e.id!==id); toast('Data dihapus','info'); renderPage(); }
 function setFinancePeriodFilter(value=''){
   state.filterExpMonth = value || '';
@@ -3261,7 +3324,8 @@ function saveExp(){
   const date=document.getElementById('ef-date').value;
   if(!activity||!date){toast('Kegiatan dan tanggal wajib diisi','error');return;}
   const type=document.getElementById('ef-type').value;
-  const data={id:uid(),type,activity,date,pic:document.getElementById('ef-pic').value,desc:document.getElementById('ef-desc').value,status:'Draft'};
+  const stamp = new Date().toISOString();
+  const data={id:uid(),type,activity,date,pic:document.getElementById('ef-pic').value,desc:document.getElementById('ef-desc').value,status:'Draft',createdAt:stamp,updatedAt:stamp,reimbursed:false};
   if(type==='makan'){data.people=Number(document.getElementById('ef-people').value)||0;data.vendor=document.getElementById('ef-vendor').value;data.total=Number(document.getElementById('ef-total').value)||0;}
   else{data.cat=document.getElementById('ef-cat').value;data.amount=Number(document.getElementById('ef-amount').value)||0;}
   state.expenses=[...state.expenses,data];
@@ -3328,6 +3392,98 @@ function triggerExpInvoiceUpload(expenseId){
   });
   document.body.appendChild(input);
   input.click();
+}
+
+function expenseAmount(e){ return Number(e?.total || e?.amount || 0); }
+function financeMonthKey(date=''){
+  const value = String(date || '');
+  return /^\d{4}-\d{2}/.test(value) ? value.slice(0,7) : '';
+}
+function financeWeekOfMonth(date=''){
+  const d = new Date(`${date}T00:00:00`);
+  if(Number.isNaN(d.getTime())) return 1;
+  return Math.max(1, Math.ceil(d.getDate() / 7));
+}
+function financeWeekKeyFromExpense(e){
+  const month = financeMonthKey(e?.date);
+  if(!month) return '';
+  return `${month}-W${financeWeekOfMonth(e.date)}`;
+}
+function financeWeekLabel(monthKey, weekNo){
+  const monthLong = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  const [y,m] = String(monthKey || '').split('-');
+  return `Minggu ${weekNo} - ${monthLong[Number(m)-1] || m} ${y}`;
+}
+function financeWeekRangeLabel(monthKey, weekNo){
+  const [y,m] = String(monthKey || '').split('-').map(Number);
+  if(!y || !m) return '';
+  const start = (weekNo - 1) * 7 + 1;
+  const last = new Date(y, m, 0).getDate();
+  const end = Math.min(start + 6, last);
+  return `${String(start).padStart(2,'0')}-${String(end).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`;
+}
+function financeReimbursements(){
+  if(!state.financeReimbursements || typeof state.financeReimbursements !== 'object') state.financeReimbursements = {};
+  return state.financeReimbursements;
+}
+function financeWeeklyGroups(items){
+  const groups = {};
+  (items || []).forEach(e => {
+    const monthKey = financeMonthKey(e.date);
+    if(!monthKey) return;
+    const weekNo = financeWeekOfMonth(e.date);
+    const key = `${monthKey}-W${weekNo}`;
+    if(!groups[key]) groups[key] = {key, monthKey, weekNo, items:[], total:0, approved:0, submitted:0, draft:0, rejected:0};
+    groups[key].items.push(e);
+    groups[key].total += expenseAmount(e);
+    groups[key].approved += e.status === 'Approved' ? expenseAmount(e) : 0;
+    groups[key].submitted += e.status === 'Submitted' ? expenseAmount(e) : 0;
+    groups[key].draft += e.status === 'Draft' ? expenseAmount(e) : 0;
+    groups[key].rejected += e.status === 'Rejected' ? expenseAmount(e) : 0;
+  });
+  const reimbursements = financeReimbursements();
+  return Object.values(groups).sort((a,b)=>a.monthKey===b.monthKey ? a.weekNo-b.weekNo : a.monthKey.localeCompare(b.monthKey)).map(g => {
+    const paid = reimbursements[g.key] || null;
+    const paidAt = paid?.paidAt || '';
+    const hasNewAfterPaid = Boolean(paidAt && g.items.some(e => new Date(e.updatedAt || e.createdAt || e.date).getTime() > new Date(paidAt).getTime()));
+    return {...g, paid, hasNewAfterPaid};
+  });
+}
+function setFinanceView(view='detail'){
+  state.financeView = view;
+  persistPatched();
+  renderPage();
+}
+function markFinanceWeekReimbursed(key){
+  const groups = financeWeeklyGroups(state.expenses || []);
+  const group = groups.find(g => g.key === key);
+  if(!group) return;
+  const note = prompt('Catatan pembayaran reimburse minggu ini (opsional):', group.paid?.note || '');
+  if(note === null) return;
+  const reimb = financeReimbursements();
+  reimb[key] = {
+    key,
+    status:'paid',
+    paidAt:new Date().toISOString(),
+    paidBy:state.user?.name || '',
+    paidById:state.user?.id || '',
+    amount:group.approved,
+    itemCount:group.items.length,
+    note:note || ''
+  };
+  state.expenses = state.expenses.map(e => financeWeekKeyFromExpense(e) === key ? {...e,reimbursed:true,reimbursedAt:reimb[key].paidAt,reimbursedBy:reimb[key].paidBy} : e);
+  persistPatched();
+  renderPage();
+  toast('Minggu ditandai sudah direimburse','success');
+}
+function undoFinanceWeekReimbursed(key){
+  if(!confirm('Batalkan tanda sudah direimburse untuk minggu ini?')) return;
+  const reimb = financeReimbursements();
+  delete reimb[key];
+  state.expenses = state.expenses.map(e => financeWeekKeyFromExpense(e) === key ? {...e,reimbursed:false,reimbursedAt:'',reimbursedBy:''} : e);
+  persistPatched();
+  renderPage();
+  toast('Status reimburse minggu dibatalkan','info');
 }
 
 /* ===== PROGRAMS ===== */
@@ -4354,6 +4510,8 @@ function restorePatched(){
       if(parsed.calMonth) state.calMonth = new Date(parsed.calMonth);
     }
     if(state.filterExpMonth === undefined) state.filterExpMonth = '';
+    if(state.financeView === undefined) state.financeView = 'detail';
+    if(!state.financeReimbursements || typeof state.financeReimbursements !== 'object') state.financeReimbursements = {};
     const sessionId = localStorage.getItem(STORAGE_KEYS_PATCH.session) || state.userId;
     state.user = sessionId ? ACCOUNTS.find(a => a.id === sessionId) || null : null;
   } catch(e) {
@@ -4374,21 +4532,62 @@ function wrapPersist(fnName){
   };
 }
 function exportFinanceCsv(){
-  const rows = [['Tanggal','Kegiatan','Tipe','Detail','Jumlah','PIC','Status']];
   const filtered = state.expenses.filter(e => {
     if(state.filterExpStatus !== 'Semua' && e.status !== state.filterExpStatus) return false;
     if(state.filterExpType !== 'Semua' && e.type !== state.filterExpType) return false;
+    if(state.filterExpMonth && financeMonthKey(e.date) !== state.filterExpMonth) return false;
     return true;
   });
-  filtered.forEach(e => rows.push([
-    e.date,
-    e.activity,
-    e.type,
-    e.type === 'makan' ? `${e.people || 0} orang - ${e.vendor || ''}` : (e.cat || ''),
-    String(e.total || e.amount || 0),
-    e.pic,
-    e.status
+  const weekly = financeWeeklyGroups(filtered);
+  const period = state.filterExpMonth || 'Semua Periode';
+  const rows = [
+    ['LAPORAN FINANCE OPERASIONAL GRCC'],
+    ['Tanggal Export', new Date().toLocaleString('id-ID')],
+    ['Periode', period],
+    ['Filter Status', state.filterExpStatus || 'Semua'],
+    ['Filter Tipe', state.filterExpType || 'Semua'],
+    [],
+    ['RINGKASAN MINGGUAN'],
+    ['Minggu','Rentang Tanggal','Item','Total Pengeluaran','Approved','Submitted','Draft','Rejected','Status Reimburse','Dibayar Oleh','Tanggal Bayar','Catatan']
+  ];
+  weekly.forEach(g => rows.push([
+    financeWeekLabel(g.monthKey,g.weekNo),
+    financeWeekRangeLabel(g.monthKey,g.weekNo),
+    g.items.length,
+    g.total,
+    g.approved,
+    g.submitted,
+    g.draft,
+    g.rejected,
+    g.paid ? (g.hasNewAfterPaid ? 'Sudah direimburse - ada tambahan baru' : 'Sudah direimburse') : 'Belum direimburse',
+    g.paid?.paidBy || '',
+    g.paid?.paidAt ? new Date(g.paid.paidAt).toLocaleString('id-ID') : '',
+    g.paid?.note || ''
   ]));
+  rows.push([]);
+  rows.push(['DETAIL PENGELUARAN']);
+  rows.push(['No','Minggu','Tanggal','Kegiatan','Tipe','Detail','Jumlah','PIC','Status Approval','Status Reimburse','Invoice','Keterangan']);
+  filtered
+    .slice()
+    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))
+    .forEach((e,i) => {
+      const weekKey = financeWeekKeyFromExpense(e);
+      const g = weekly.find(item => item.key === weekKey);
+      rows.push([
+        i + 1,
+        g ? financeWeekLabel(g.monthKey,g.weekNo) : '',
+        e.date,
+        e.activity,
+        e.type === 'makan' ? 'Makan' : 'Kegiatan',
+        e.type === 'makan' ? `${e.people || 0} orang - ${e.vendor || ''}` : (e.cat || ''),
+        expenseAmount(e),
+        e.pic,
+        e.status,
+        e.reimbursed ? 'Sudah direimburse' : 'Belum direimburse',
+        (e.invoices || []).map(inv => inv.name).join('; '),
+        e.desc || ''
+      ]);
+    });
   const csv = rows.map(r => r.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(',')).join('\n');
   downloadTextFilePatch(`finance-operasional-${today()}.csv`, csv, 'text/csv;charset=utf-8;');
   toast('Export CSV berhasil diunduh', 'success');

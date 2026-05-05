@@ -54,6 +54,8 @@ const EMPTY_STATE = {
   filterExpStatus: 'Semua',
   filterExpType: 'Semua',
   filterExpMonth: '',
+  financeView: 'detail',
+  financeReimbursements: {},
   searchDoc: '',
   folderDoc: 'Semua',
   notifEmail: true,
