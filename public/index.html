@@ -171,7 +171,17 @@ a { text-decoration: none; }
   display:flex; align-items:center; justify-content:space-between; flex-shrink:0;
   box-shadow: 0 1px 0 rgba(255,255,255,0.04), 0 4px 20px rgba(0,0,0,0.2);
 }
-#content { flex:1; overflow-y:auto; padding:24px; }
+#content { flex:1; overflow-y:auto; padding:24px; will-change:contents; }
+/* sync indicator in header */
+#sync-dot {
+  width:7px; height:7px; border-radius:50%; flex-shrink:0;
+  background:var(--blue); opacity:0;
+  transition:opacity .3s ease;
+  box-shadow:0 0 6px rgba(91,141,246,0.8);
+}
+#sync-dot[data-sync="saving"] { opacity:1; animation:pulse .9s ease-in-out infinite; }
+#sync-dot[data-sync="error"]  { opacity:1; background:var(--red); box-shadow:0 0 6px rgba(248,113,113,0.8); animation:none; }
+#sync-dot[data-sync="success"]{ opacity:0.6; animation:none; }
 
 /* ═══════════════════════════════════════════════
    SIDEBAR
@@ -1415,8 +1425,9 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
         </button>
         <button class="hdr-bell">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          <span class="hdr-badge">3</span>
+          <span class="hdr-badge" style="display:none">0</span>
         </button>
+        <div id="sync-dot" title="Menyinkronkan..."></div>
         <div style="display:flex;align-items:center;gap:8px">
           <div class="av" id="hdr-av" style="width:32px;height:32px;font-size:11px"></div>
           <div>
@@ -1768,12 +1779,18 @@ function renderPage(){
   const c = document.getElementById('content');
   const p = state.page;
   const pageKey = `${p}:${state.taskDetail || ''}:${state.progDetail || ''}`;
-  if(pageKey !== lastRenderedPageKey){
+  const isPageChange = pageKey !== lastRenderedPageKey;
+  const savedScroll = isPageChange ? 0 : c.scrollTop;
+
+  if(isPageChange){
+    c.style.transition='none';
+    c.style.opacity='1';
     c.style.animation='none';
-    c.offsetHeight;
+    void c.offsetHeight;
     c.style.animation='fadeUp .28s ease';
     lastRenderedPageKey = pageKey;
   }
+
   if(p==='dashboard') c.innerHTML=renderDashboard();
   else if(p==='tasks') c.innerHTML=renderTasks();
   else if(p==='daily_progress') c.innerHTML=renderDailyProgress();
@@ -1783,6 +1800,8 @@ function renderPage(){
   else if(p==='documents') c.innerHTML=renderDocuments();
   else if(p==='settings') c.innerHTML=renderSettings();
   else if(p==='timeline') c.innerHTML=renderTimeline();
+
+  if(!isPageChange && savedScroll > 0) c.scrollTop = savedScroll;
   afterRender();
 }
 
@@ -4178,7 +4197,13 @@ function renderSettings(){
 }
 
 /* ===== AFTER RENDER (event rebinding) ===== */
-function afterRender(){}
+function afterRender(){
+  requestAnimationFrame(() => {
+    if(typeof refreshDeadlineBanner === 'function') refreshDeadlineBanner();
+    if(typeof updateFabVisibility === 'function') updateFabVisibility();
+    if(typeof safeRefreshNotifications === 'function') safeRefreshNotifications();
+  });
+}
 
 /* ===== INIT LOGIN PAGE ===== */
 function initLogin(){
@@ -5887,25 +5912,27 @@ if(state.user){
   let lastBackendPayload = '';
 
   function setSyncStatus(text, type='info'){
+    /* update the tiny dot in the header */
+    const dot = document.getElementById('sync-dot');
+    if(dot){
+      clearTimeout(dot._hideTimer);
+      dot.setAttribute('data-sync', type === 'success' ? 'success' : type === 'error' ? 'error' : 'saving');
+      dot._hideTimer = setTimeout(() => dot.removeAttribute('data-sync'), type === 'error' ? 6000 : 2800);
+    }
+
+    /* floating badge — only show for errors; success/info are silent */
+    if(type !== 'error') return;
     let el = document.getElementById(syncBadgeId);
     if(!el){
       el = document.createElement('div');
       el.id = syncBadgeId;
-      el.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:9999;padding:8px 11px;border-radius:10px;font-size:11px;font-weight:700;background:rgba(24,24,42,.92);border:1px solid rgba(255,255,255,.12);color:#E4E4F0;box-shadow:0 8px 24px rgba(0,0,0,.35);pointer-events:none;transition:opacity .2s';
+      el.style.cssText = 'position:fixed;right:18px;bottom:74px;z-index:9990;padding:7px 11px;border-radius:10px;font-size:11px;font-weight:700;background:rgba(248,113,113,.14);border:1px solid rgba(248,113,113,.35);color:#F87171;box-shadow:0 8px 24px rgba(0,0,0,.35);pointer-events:none;transition:opacity .35s ease;opacity:0';
       document.body.appendChild(el);
     }
-    const colors = {
-      success: ['rgba(52,211,153,.14)', 'rgba(52,211,153,.35)', '#34D399'],
-      error: ['rgba(248,113,113,.14)', 'rgba(248,113,113,.35)', '#F87171'],
-      info: ['rgba(91,141,246,.14)', 'rgba(91,141,246,.35)', '#7AAAF7']
-    }[type] || ['rgba(255,255,255,.08)', 'rgba(255,255,255,.14)', '#E4E4F0'];
-    el.style.background = colors[0];
-    el.style.borderColor = colors[1];
-    el.style.color = colors[2];
     el.textContent = text;
     el.style.opacity = '1';
     clearTimeout(el._hideTimer);
-    el._hideTimer = setTimeout(()=>{ el.style.opacity = '.45'; }, 2600);
+    el._hideTimer = setTimeout(() => { el.style.opacity = '0'; }, 4500);
   }
 
   function showFileModeWarning(){
@@ -5940,6 +5967,8 @@ if(state.user){
     if(saving && !immediate) return;
     saving = true;
     window.__grccSavingToBackend = true;
+    const dot = document.getElementById('sync-dot');
+    if(dot){ clearTimeout(dot._hideTimer); dot.setAttribute('data-sync','saving'); }
     try {
       const body = JSON.stringify({state: statePayload()});
       if(!immediate && body === lastBackendPayload) return;
@@ -6488,12 +6517,14 @@ if(state.user){
     const afterSignature = pageSyncSignature();
     const pageDataChanged = beforeSignature !== afterSignature;
     const canRenderNow = pageDataChanged && typeof renderPage === 'function' && !modalIsOpen() && !userIsTyping();
-    if(canRenderNow) renderPage();
+    if(canRenderNow){
+      const c = document.getElementById('content');
+      if(c){ c.style.transition='opacity .15s ease'; c.style.opacity='.7'; requestAnimationFrame(()=>{ renderPage(); c.style.opacity='1'; }); }
+      else renderPage();
+    }
     if(typeof safeRefreshNotifications === 'function') safeRefreshNotifications();
 
-    if(bootstrapped && canRenderNow && !['silent','after-save'].includes(reason) && typeof toast === 'function'){
-      toast('Data terbaru diterima dari server', 'info');
-    }
+    /* intentionally silent — sync dot in header is the only indicator */
     bootstrapped = true;
     return true;
   }
