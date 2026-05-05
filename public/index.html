@@ -471,6 +471,7 @@ th { padding:12px 14px; text-align:left; font-size:10px; font-weight:800; color:
 td { padding:12px 14px; border-top:1px solid rgba(255,255,255,0.04); }
 tbody tr { transition:background .15s; }
 tbody tr:hover { background:rgba(91,141,246,0.04); }
+tbody tr.clickable-row { cursor:pointer; }
 tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,246,0.06); }
 
 /* ═══════════════════════════════════════════════
@@ -3192,9 +3193,9 @@ function renderFinance(){
         ${['Tanggal','Kegiatan','Tipe','Detail','Jumlah','PIC','Status','Invoice','Aksi'].map(h=>`<th>${h}</th>`).join('')}
       </tr></thead>
       <tbody>
-        ${filtered.length===0?`<tr><td colspan="8" style="padding:32px;text-align:center;color:var(--muted)">Tidak ada data pengeluaran</td></tr>`:
+        ${filtered.length===0?`<tr><td colspan="9" style="padding:32px;text-align:center;color:var(--muted)">Tidak ada data pengeluaran</td></tr>`:
           filtered.map(e=>{const typeMeta=financeExpenseTypeMeta(e.type);return `
-          <tr>
+          <tr class="clickable-row" onclick="openExpenseDetail('${e.id}')">
             <td style="white-space:nowrap;color:var(--sub);font-size:12px">${fmtD(e.date)}</td>
             <td>
               <div style="font-weight:600;font-size:12px">${escHtml(e.activity)}</div>
@@ -3209,15 +3210,15 @@ function renderFinance(){
               ${e.invoices?.length ? `
                 <div style="display:flex;flex-direction:column;gap:5px">
                   ${e.invoices.map(inv => `
-                    <a href="${escHtml(inv.downloadUrl)}" target="_blank" style="font-size:11px;color:var(--blue);font-weight:700;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(inv.name)}">${escHtml(inv.name)}</a>
+                    <a href="${escHtml(inv.downloadUrl)}" target="_blank" onclick="event.stopPropagation()" style="font-size:11px;color:var(--blue);font-weight:700;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(inv.name)}">${escHtml(inv.name)}</a>
                   `).join('')}
                 </div>` : `<span style="font-size:11px;color:var(--muted)">Belum ada</span>`}
             </td>
             <td>
               <div style="display:flex;gap:4px;align-items:center">
-                <button class="btn btn-sec btn-sm" onclick="triggerExpInvoiceUpload('${e.id}')">Upload</button>
-                ${(SA[e.status]||[]).map(s=>`<button class="btn btn-sm ${s==='Approved'?'btn-suc':s==='Rejected'?'btn-dan':s==='Submitted'?'btn-pri':'btn-sec'}" onclick="changeExpStatus('${e.id}','${s}')">${s}</button>`).join('')}
-                ${e.status==='Draft'?`<button onclick="deleteExp('${e.id}')" style="color:var(--muted);padding:4px;transition:color .15s" onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--muted)'">
+                <button class="btn btn-sec btn-sm" onclick="event.stopPropagation();triggerExpInvoiceUpload('${e.id}')">Upload</button>
+                ${(SA[e.status]||[]).map(s=>`<button class="btn btn-sm ${s==='Approved'?'btn-suc':s==='Rejected'?'btn-dan':s==='Submitted'?'btn-pri':'btn-sec'}" onclick="event.stopPropagation();changeExpStatus('${e.id}','${s}')">${s}</button>`).join('')}
+                ${e.status==='Draft'?`<button onclick="event.stopPropagation();deleteExp('${e.id}')" style="color:var(--muted);padding:4px;transition:color .15s" onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--muted)'">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                 </button>`:''}
               </div>
@@ -3483,7 +3484,7 @@ function markFinanceWeekReimbursed(key){
     itemCount:group.items.length,
     note:note.trim()
   };
-  state.expenses = state.expenses.map(e => financeWeekKeyFromExpense(e) === key ? {...e,reimbursed:true,reimbursedAt:reimb[key].paidAt,reimbursedBy:reimb[key].paidBy} : e);
+  state.expenses = state.expenses.map(e => financeWeekKeyFromExpense(e) === key ? {...e,reimbursed:true,reimbursedAt:reimb[key].paidAt,reimbursedBy:reimb[key].paidBy,reimbursementNote:note.trim()} : e);
   persistPatched();
   renderPage();
   toast('Minggu ditandai sudah direimburse','success');
@@ -3493,10 +3494,70 @@ function undoFinanceWeekReimbursed(key){
   if(!confirm('Batalkan tanda sudah direimburse untuk minggu ini?')) return;
   const reimb = financeReimbursements();
   delete reimb[key];
-  state.expenses = state.expenses.map(e => financeWeekKeyFromExpense(e) === key ? {...e,reimbursed:false,reimbursedAt:'',reimbursedBy:''} : e);
+  state.expenses = state.expenses.map(e => financeWeekKeyFromExpense(e) === key ? {...e,reimbursed:false,reimbursedAt:'',reimbursedBy:'',reimbursementNote:''} : e);
   persistPatched();
   renderPage();
   toast('Status reimburse minggu dibatalkan','info');
+}
+function financeReimbursementInfoForExpense(expense){
+  const key = financeWeekKeyFromExpense(expense);
+  const paid = financeReimbursements()[key] || null;
+  return {key, paid};
+}
+function openExpenseDetail(id){
+  const e = state.expenses.find(item => item.id === id);
+  if(!e) return;
+  const typeMeta = financeExpenseTypeMeta(e.type);
+  const {key, paid} = financeReimbursementInfoForExpense(e);
+  const weekNo = financeWeekOfMonth(e.date);
+  const monthKey = financeMonthKey(e.date);
+  const reimbursed = Boolean(e.reimbursed || paid);
+  const reimburseNote = paid?.note || e.reimbursementNote || '';
+  const reimburseBy = paid?.paidBy || e.reimbursedBy || '';
+  const reimburseAt = paid?.paidAt || e.reimbursedAt || '';
+  const html = `
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px">
+      ${[
+        ['Tanggal', fmtD(e.date)],
+        ['Minggu', `${financeWeekLabel(monthKey, weekNo)} (${financeWeekRangeLabel(monthKey, weekNo)})`],
+        ['Tipe', typeMeta.label],
+        ['Jumlah', fmt$(expenseAmount(e))],
+        ['PIC', e.pic || '-'],
+        ['Status Approval', e.status || '-']
+      ].map(([label,value])=>`
+        <div style="border:1px solid var(--border);border-radius:9px;padding:10px;background:rgba(255,255,255,.035)">
+          <div style="font-size:10px;font-weight:900;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;font-family:var(--mono);margin-bottom:4px">${escHtml(label)}</div>
+          <div style="font-size:12px;font-weight:800;color:var(--text)">${escHtml(value)}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div style="border:1px solid ${reimbursed?'rgba(16,185,129,.28)':'rgba(245,158,11,.28)'};border-radius:12px;padding:13px;background:${reimbursed?'rgba(236,253,245,.72)':'rgba(245,158,11,.08)'};margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:900;color:var(--text)">Informasi Reimburse</div>
+        <span class="reimburse-pill ${reimbursed?'paid':'unpaid'}">${reimbursed?'SUDAH DIREIMBURSE':'BELUM DIREIMBURSE'}</span>
+      </div>
+      ${reimbursed ? `
+        <div style="font-size:12px;color:var(--sub);line-height:1.55">
+          <div>Dibayar oleh: <strong>${escHtml(reimburseBy || '-')}</strong></div>
+          <div>Tanggal bayar: <strong>${escHtml(reimburseAt ? new Date(reimburseAt).toLocaleString('id-ID') : '-')}</strong></div>
+          <div>Keterangan: <strong>${escHtml(reimburseNote || '-')}</strong></div>
+        </div>
+      ` : `<div style="font-size:12px;color:var(--muted)">Pengeluaran ini belum masuk minggu yang ditandai sudah direimburse.</div>`}
+    </div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:900;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Keterangan Pengeluaran</div>
+      <div style="font-size:12px;color:var(--text);line-height:1.55">${escHtml(e.desc || e.cat || '-')}</div>
+    </div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
+      <div style="font-size:11px;font-weight:900;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Invoice</div>
+      ${(e.invoices || []).length ? (e.invoices || []).map(inv => `<a href="${escHtml(inv.downloadUrl)}" target="_blank" style="display:block;font-size:12px;color:var(--blue);font-weight:800;margin-bottom:5px">${escHtml(inv.name)}</a>`).join('') : '<div style="font-size:12px;color:var(--muted)">Belum ada invoice.</div>'}
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Tutup</button>
+      ${canManageFinanceReimburse(state.user) && !reimbursed && key ? `<button class="btn btn-suc" onclick="closeModal();markFinanceWeekReimbursed('${key}')">Tandai Minggu Direimburse</button>` : ''}
+    </div>
+  `;
+  showModal(`Detail Pengeluaran - ${escHtml(e.activity)}`, html, 640);
 }
 
 /* ===== PROGRAMS ===== */
