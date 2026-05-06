@@ -3,6 +3,8 @@ const { Readable } = require('stream');
 const { neon } = require('@neondatabase/serverless');
 const { get, put } = require('@vercel/blob');
 const { handleUpload } = require('@vercel/blob/client');
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
 
 const SESSION_SECONDS = 2 * 60 * 60;
 const MODULE_TABLES = {
@@ -377,9 +379,29 @@ async function googleDriveStatus() {
   };
 }
 
-function readableDocumentText(buffer, filename, contentType) {
+function normalizeDocumentText(text) {
+  return String(text || '')
+    .replace(/\u0000/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+    .slice(0, 18000);
+}
+
+async function readableDocumentText(buffer, filename, contentType) {
   const name = String(filename || '').toLowerCase();
   const type = String(contentType || '').toLowerCase();
+  if (type.includes('pdf') || name.endsWith('.pdf')) {
+    const result = await pdfParse(buffer);
+    const text = normalizeDocumentText(result?.text || '');
+    if (text) return text;
+  }
+  if (type.includes('wordprocessingml') || name.endsWith('.docx')) {
+    const result = await mammoth.extractRawText({ buffer });
+    const text = normalizeDocumentText(result?.value || '');
+    if (text) return text;
+  }
   const textLike = type.startsWith('text/') || /(\.txt|\.md|\.csv|\.json|\.html|\.xml)$/i.test(name);
   let text = buffer.toString('utf8');
   if (!textLike) {
@@ -388,8 +410,7 @@ function readableDocumentText(buffer, filename, contentType) {
       .replace(/\s+/g, ' ')
       .trim();
   }
-  text = text.replace(/\s+/g, ' ').trim().slice(0, 18000);
-  return text;
+  return normalizeDocumentText(text);
 }
 
 function fallbackSummary(filename, text) {
@@ -421,7 +442,7 @@ async function summarizeWithCukAI(filename, text) {
   if (!process.env.OPENAI_API_KEY) {
     return { summary: fallbackSummary(filename, text), model: 'cuk-ai-local' };
   }
-  const model = process.env.OPENAI_SUMMARY_MODEL || 'gpt-4.1-mini';
+  const model = process.env.OPENAI_SUMMARY_MODEL || 'gpt-5.4-mini';
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
@@ -696,7 +717,7 @@ async function handle(req, res) {
   const method = req.method;
   const sql = db();
 
-  if (path === '/health') return send(res, 200, { ok: true, db: 'postgres' });
+  if (path === '/health') return send(res, 200, { ok: true, db: 'postgres', cukAI: process.env.OPENAI_API_KEY ? 'openai' : 'fallback' });
 
   const cronMatch = path.match(/^\/cron\/progress-(morning|evening)$/);
   if (cronMatch && method === 'GET') {
@@ -1113,7 +1134,7 @@ async function handle(req, res) {
     const blob = await get(doc.blob_url, { access });
     if (!blob || blob.statusCode !== 200 || !blob.stream) return send(res, 404, { error: 'Dokumen tidak ditemukan' });
     const buffer = await streamToBuffer(blob.stream);
-    const text = readableDocumentText(buffer, doc.filename, blob.contentType || doc.content_type);
+    const text = await readableDocumentText(buffer, doc.filename, blob.contentType || doc.content_type);
     if (text.length < 80) return send(res, 422, { error: 'CUK AI belum bisa membaca cukup teks dari dokumen ini. Coba file PDF teks, DOCX teks, TXT, CSV, atau dokumen yang tidak berupa scan gambar.' });
     const result = await summarizeWithCukAI(doc.filename, text);
     await sql`UPDATE documents SET ai_summary=${result.summary}, ai_summary_at=now(), ai_summary_model=${result.model} WHERE id=${id}`;
