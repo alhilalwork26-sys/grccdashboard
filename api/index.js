@@ -438,27 +438,62 @@ function outputTextFromOpenAI(data) {
   return parts.join('\n').trim();
 }
 
-async function summarizeWithCukAI(filename, text) {
-  if (!process.env.OPENAI_API_KEY) {
-    return { summary: fallbackSummary(filename, text), model: 'cuk-ai-local' };
+function outputTextFromGemini(data) {
+  const parts = [];
+  for (const candidate of data.candidates || []) {
+    for (const part of candidate.content?.parts || []) {
+      if (part.text) parts.push(part.text);
+    }
   }
-  const model = process.env.OPENAI_SUMMARY_MODEL || 'gpt-5.4-mini';
-  const response = await fetch('https://api.openai.com/v1/responses', {
+  return parts.join('\n').trim();
+}
+
+async function summarizeWithGemini(filename, text) {
+  const model = process.env.GEMINI_SUMMARY_MODEL || 'gemini-1.5-flash';
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
+    headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
-      model,
-      instructions: 'Kamu adalah CUK AI, singkatan dari Cepat Urus Kerjaan AI. Ringkas dokumen perusahaan dalam bahasa Indonesia yang jelas, rapi, profesional, dan langsung bisa dipakai manajemen. Jangan mengarang di luar isi dokumen.',
-      input: `Nama dokumen: ${filename}\n\nBuat ringkasan dengan format:\n1. Ringkasan singkat\n2. Poin penting\n3. Action item / tindak lanjut jika ada\n4. Risiko atau angka penting jika ada\n\nIsi dokumen:\n${text}`,
-      max_output_tokens: 900
+      systemInstruction: {
+        parts: [{ text: 'Kamu adalah CUK AI, singkatan dari Cepat Urus Kerjaan AI. Ringkas dokumen perusahaan dalam bahasa Indonesia yang jelas, rapi, profesional, dan langsung bisa dipakai manajemen. Jangan mengarang di luar isi dokumen.' }]
+      },
+      contents: [{
+        role: 'user',
+        parts: [{ text: `Nama dokumen: ${filename}\n\nBuat ringkasan dengan format:\n1. Ringkasan singkat\n2. Poin penting\n3. Action item / tindak lanjut jika ada\n4. Risiko atau angka penting jika ada\n\nIsi dokumen:\n${text}` }]
+      }],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 900
+      }
     })
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error?.message || `OpenAI gagal (${response.status})`);
-  return { summary: outputTextFromOpenAI(data) || fallbackSummary(filename, text), model };
+  if (!response.ok) throw new Error(data.error?.message || `Gemini gagal (${response.status})`);
+  return { summary: outputTextFromGemini(data) || fallbackSummary(filename, text), model: `gemini:${model}` };
+}
+
+async function summarizeWithCukAI(filename, text) {
+  if (process.env.OPENAI_API_KEY) {
+    const model = process.env.OPENAI_SUMMARY_MODEL || 'gpt-5.4-mini';
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        instructions: 'Kamu adalah CUK AI, singkatan dari Cepat Urus Kerjaan AI. Ringkas dokumen perusahaan dalam bahasa Indonesia yang jelas, rapi, profesional, dan langsung bisa dipakai manajemen. Jangan mengarang di luar isi dokumen.',
+        input: `Nama dokumen: ${filename}\n\nBuat ringkasan dengan format:\n1. Ringkasan singkat\n2. Poin penting\n3. Action item / tindak lanjut jika ada\n4. Risiko atau angka penting jika ada\n\nIsi dokumen:\n${text}`,
+        max_output_tokens: 900
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error?.message || `OpenAI gagal (${response.status})`);
+    return { summary: outputTextFromOpenAI(data) || fallbackSummary(filename, text), model: `openai:${model}` };
+  }
+  if (process.env.GEMINI_API_KEY) return summarizeWithGemini(filename, text);
+  return { summary: fallbackSummary(filename, text), model: 'cuk-ai-local' };
 }
 
 async function ensureSchema() {
@@ -717,7 +752,13 @@ async function handle(req, res) {
   const method = req.method;
   const sql = db();
 
-  if (path === '/health') return send(res, 200, { ok: true, db: 'postgres', cukAI: process.env.OPENAI_API_KEY ? 'openai' : 'fallback' });
+  if (path === '/health') {
+    return send(res, 200, {
+      ok: true,
+      db: 'postgres',
+      cukAI: process.env.OPENAI_API_KEY ? 'openai' : process.env.GEMINI_API_KEY ? 'gemini' : 'fallback'
+    });
+  }
 
   const cronMatch = path.match(/^\/cron\/progress-(morning|evening)$/);
   if (cronMatch && method === 'GET') {
