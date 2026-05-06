@@ -5066,12 +5066,12 @@ function cukAiHero(summary=''){
 }
 function localCukAiSummary(doc, reason=''){
   if(location.protocol === 'file:'){
-    return `CUK AI belum membaca isi dokumen
+    return `CUK AI aktif di website production
 
 Kamu sedang membuka dashboard dari file lokal:
 file:///Users/macbook/Documents/New project 3/public/index.html
 
-Di mode file lokal, upload hanya masuk ke browser lokal. File tidak masuk ke database/server, jadi CUK AI tidak bisa mengambil isi PDF asli.
+Di mode file lokal, database/server tidak aktif. CUK AI tidak bisa mengambil file PDF asli dari server walaupun tombolnya terlihat.
 
 Yang harus dilakukan:
 1. Buka https://grcc-dashboard.vercel.app
@@ -5134,7 +5134,7 @@ function openCukAiSummary(id){
   const doc = state.docs.find(x => x.id === id);
   if(!doc) return;
   if(location.protocol === 'file:'){
-    runCukAiSummary(id, true);
+    showCukAiSummaryResult(doc, localCukAiSummary(doc, 'mode file lokal'), 'cuk-ai-production-only');
     return;
   }
   if(doc.aiSummary && !(isCukAiPreview(doc) && isDocServerReady(doc))){
@@ -5161,8 +5161,6 @@ async function runCukAiSummary(id, refresh=false){
   if(doc.visibility === 'important' && !pin && !refresh){toast('PIN wajib diisi','error');return;}
   if(!isDocServerReady(doc)){
     const localSummary = localCukAiSummary(doc, location.protocol === 'file:' ? 'mode file lokal' : 'file belum tersimpan di server');
-    state.docs = state.docs.map(d => d.id === id ? {...d, aiSummary:localSummary, aiSummaryModel:'cuk-ai-local-preview', aiSummaryAt:new Date().toISOString()} : d);
-    persistPatched();
     showCukAiSummaryResult(doc, localSummary, 'cuk-ai-local-preview');
     return;
   }
