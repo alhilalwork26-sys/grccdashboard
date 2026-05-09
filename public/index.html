@@ -3990,6 +3990,54 @@ function removeReimburseFormRow(id){
   if(row && document.querySelectorAll('[data-rr-row]').length > 1) row.remove();
   else toast('Minimal satu baris reimburse harus ada', 'warning');
 }
+async function uploadReimburseDocumentToServer(file, doc, options={}){
+  if(typeof window.uploadDocumentToServer === 'function') {
+    return window.uploadDocumentToServer(file, doc, options);
+  }
+  if(!isProductionRuntime()) {
+    return {downloadUrl: URL.createObjectURL(file), size:file.size};
+  }
+  try {
+    const { upload } = await import('https://esm.sh/@vercel/blob@2.3.0/client');
+    const safeName = String(doc.name || file.name).replace(/[^A-Za-z0-9._-]+/g, '_');
+    await upload(`grcc/${doc.id}_${safeName}`, file, {
+      access:'public',
+      handleUploadUrl:'/api/documents/client-upload',
+      clientPayload:JSON.stringify({
+        id:doc.id,
+        filename:doc.name || file.name,
+        contentType:file.type || 'application/octet-stream',
+        size:file.size,
+        folder:doc.folder || 'Reimburse',
+        visibility:options.visibility || doc.visibility || 'public',
+        pin:options.pin || ''
+      })
+    });
+    return {downloadUrl:`/api/documents/${encodeURIComponent(doc.id)}/download`, size:file.size};
+  } catch(err) {
+    if(typeof readFileAsDataUrl === 'function') {
+      const dataUrl = await readFileAsDataUrl(file);
+      const res = await fetch('/api/documents', {
+        method:'POST',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          id:doc.id,
+          filename:doc.name || file.name,
+          contentType:file.type || 'application/octet-stream',
+          dataUrl,
+          folder:doc.folder || 'Reimburse',
+          visibility:options.visibility || doc.visibility || 'public',
+          pin:options.pin || ''
+        })
+      });
+      const saved = await res.json().catch(() => ({}));
+      if(!res.ok) throw new Error(saved.error || `Upload gagal (${res.status})`);
+      return saved;
+    }
+    throw err;
+  }
+}
 async function submitReimburseRequest(){
   const btn = document.getElementById('rr-submit');
   const date = document.getElementById('rr-date')?.value || today();
@@ -4013,9 +4061,7 @@ async function submitReimburseRequest(){
       const docId = `reimburse_${reqId.replace(/^_/,'')}_${uid().replace(/^_/,'')}`;
       const ext = (file.name.split('.').pop() || '').toLowerCase();
       const doc = {id:docId, name:file.name, folder:'Reimburse', size:fmtFileSizePatch(file.size), by:state.user?.name || '', date:today(), ext, visibility:'public', isLocal:true};
-      let saved;
-      if(isProductionRuntime()) saved = await uploadDocumentToServer(file, doc, {visibility:'public'});
-      else saved = {downloadUrl: URL.createObjectURL(file), size:file.size};
+      const saved = await uploadReimburseDocumentToServer(file, doc, {visibility:'public'});
       receipts.push({id:docId, name:file.name, size:fmtFileSizePatch(file.size), downloadUrl:saved.downloadUrl, uploadedAt:new Date().toISOString(), uploadedBy:state.user?.name || ''});
     }
     const now = new Date().toISOString();
@@ -6791,6 +6837,7 @@ if(state.user && !isProductionRuntime()){
       return saved;
     }
   }
+  window.uploadDocumentToServer = uploadDocumentToServer;
 
   async function uploadDocumentFile(file, docRecord=null, options={}){
     if(location.protocol === 'file:') return;
