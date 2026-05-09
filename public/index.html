@@ -4860,6 +4860,13 @@ const STORAGE_KEYS_PATCH = {
   session: 'grcc_dashboard_session_patch_v1',
   accounts: 'grcc_dashboard_accounts_patch_v1'
 };
+function isProductionRuntime(){ return location.protocol !== 'file:'; }
+function clearLocalSessionPatch(){
+  try {
+    localStorage.removeItem(STORAGE_KEYS_PATCH.session);
+    localStorage.removeItem('grcc_session_expires_at');
+  } catch(e) {}
+}
 
 function fmtFileSizePatch(bytes){
   if(bytes == null) return '—';
@@ -4890,8 +4897,10 @@ function persistPatched(){
     delete payload.user;
     localStorage.setItem(STORAGE_KEYS_PATCH.state, JSON.stringify(payload));
     localStorage.setItem(STORAGE_KEYS_PATCH.accounts, JSON.stringify(ACCOUNTS));
-    if(state.user?.id) localStorage.setItem(STORAGE_KEYS_PATCH.session, state.user.id);
-    else localStorage.removeItem(STORAGE_KEYS_PATCH.session);
+    if(!isProductionRuntime()){
+      if(state.user?.id) localStorage.setItem(STORAGE_KEYS_PATCH.session, state.user.id);
+      else localStorage.removeItem(STORAGE_KEYS_PATCH.session);
+    }
   } catch(e) {
     console.warn('persist gagal', e);
   }
@@ -4928,8 +4937,9 @@ function restorePatched(){
     if(state.filterExpMonth === undefined) state.filterExpMonth = '';
     if(state.financeView === undefined) state.financeView = 'detail';
     if(!state.financeReimbursements || typeof state.financeReimbursements !== 'object') state.financeReimbursements = {};
-    const sessionId = localStorage.getItem(STORAGE_KEYS_PATCH.session) || state.userId;
+    const sessionId = isProductionRuntime() ? '' : (localStorage.getItem(STORAGE_KEYS_PATCH.session) || state.userId);
     state.user = sessionId ? ACCOUNTS.find(a => a.id === sessionId) || null : null;
+    if(isProductionRuntime()) clearLocalSessionPatch();
   } catch(e) {
     console.warn('restore gagal', e);
   }
@@ -5394,7 +5404,7 @@ if(docInput){
 }
 
 // auto restore session on refresh
-if(state.user){
+if(state.user && !isProductionRuntime()){
   document.getElementById('login-page').style.display='none';
   document.getElementById('app').style.display='flex';
   initApp();
@@ -6352,12 +6362,12 @@ if(state.user){
       if(payload.state.permissions && typeof payload.state.permissions === 'object') Object.assign(PERMS, payload.state.permissions);
       ensureRequiredRolePerms();
       if(payload.state.roleColors && typeof payload.state.roleColors === 'object') Object.assign(ROLE_COLORS, payload.state.roleColors);
-      let sessionUser = state.user || null;
+      let sessionUser = null;
       try {
         const meRes = await fetch('/api/auth/me', {headers: {'Accept': 'application/json'}, credentials: 'same-origin'});
         if(meRes.ok) sessionUser = (await meRes.json()).user || sessionUser;
       } catch(e) {}
-      const sessionId = sessionUser?.id || localStorage.getItem(STORAGE_KEYS_PATCH.session) || '';
+      const sessionId = sessionUser?.id || '';
       Object.assign(state, cleanServerStateForClient(payload.state));
       delete state.accounts;
       delete state.permissions;
@@ -6613,7 +6623,8 @@ if(state.user){
   };
 
   window.addEventListener('load', () => {
-    if(state.user) startSessionWatcher();
+    if(isProductionRuntime()) clearLocalSessionPatch();
+    if(state.user && !isProductionRuntime()) startSessionWatcher();
   });
 
   window.saveUserAccount = async function(editId=''){
@@ -6810,7 +6821,7 @@ if(state.user){
       return false;
     }
 
-    const currentUserId = state.user?.id || localStorage.getItem(STORAGE_KEYS_PATCH.session) || '';
+    const currentUserId = state.user?.id || (!isProductionRuntime() ? localStorage.getItem(STORAGE_KEYS_PATCH.session) : '') || '';
     const beforeSignature = pageSyncSignature();
 
     if(Array.isArray(serverState.accounts) && serverState.accounts.length){
