@@ -14,17 +14,18 @@ const MODULE_TABLES = {
   programs: 'programs',
   dailyProgresses: 'daily_progresses',
   timelineEquity: 'timeline_equity',
+  reimburseRequests: 'reimburse_requests',
   notifications: 'notifications'
 };
 const DEFAULT_PERMS = {
-  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','documents','timeline','settings'],
-  'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','documents'],
-  'Staff Kreatif': ['dashboard','tasks','daily_progress','schedule','documents'],
-  'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','documents'],
-  Finance: ['dashboard','daily_progress','schedule','finance'],
-  'Staff Finance + Dokumen': ['dashboard','daily_progress','schedule','finance','documents'],
-  'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','documents'],
-  Riset: ['dashboard','tasks','daily_progress','schedule','documents','timeline']
+  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','documents','timeline','settings'],
+  'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents'],
+  'Staff Kreatif': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
+  'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
+  Finance: ['dashboard','daily_progress','schedule','finance','reimburse'],
+  'Staff Finance + Dokumen': ['dashboard','daily_progress','schedule','finance','reimburse','documents'],
+  'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','reimburse','documents'],
+  Riset: ['dashboard','tasks','daily_progress','schedule','reimburse','documents','timeline']
 };
 const DEFAULT_ROLE_COLORS = {
   'Super Admin + Manager': '#F97316',
@@ -67,6 +68,7 @@ const EMPTY_STATE = {
   filterProgressDate: '',
   researchItems: [],
   timelineEquity: [],
+  reimburseRequests: [],
   timelineEquitySeeded: false,
   filterEquityStatus: 'Semua',
   filterEquityOwner: 'Semua',
@@ -523,6 +525,7 @@ async function ensureSchema() {
     await sql`INSERT INTO roles (name, permissions, color) VALUES (${role}, ${JSON.stringify(permissions)}, ${DEFAULT_ROLE_COLORS[role] || '#6B7280'}) ON CONFLICT (name) DO UPDATE SET permissions = EXCLUDED.permissions, color = EXCLUDED.color, updated_at = now()`;
   }
   await sql.query(`UPDATE roles SET permissions = permissions || '["schedule"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'schedule'`);
+  await sql.query(`UPDATE roles SET permissions = permissions || '["reimburse"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'reimburse'`);
   for (const [oldRole, newRole] of Object.entries(LEGACY_ROLE_MIGRATIONS)) {
     await sql`UPDATE users SET role = ${newRole}, updated_at = now() WHERE role = ${oldRole}`;
     await sql`DELETE FROM roles WHERE name = ${oldRole} AND NOT EXISTS (SELECT 1 FROM users WHERE role = ${oldRole})`;
@@ -642,6 +645,11 @@ function jakartaTimeLabel(date = new Date()) {
   }).format(date);
 }
 
+function jakartaIsWeekend(date = new Date()) {
+  const day = new Intl.DateTimeFormat('en-US', { timeZone: JAKARTA_TIMEZONE, weekday: 'short' }).format(date);
+  return day === 'Sat' || day === 'Sun';
+}
+
 function userCanUseDailyProgress(user, permissions = {}) {
   if (!user || user.active === false || SUPER_ADMIN_ROLES.has(user.role)) return false;
   return (permissions[user.role] || []).includes('daily_progress');
@@ -690,6 +698,21 @@ async function runWhatsappProgressReminder(phase) {
   const loaded = await loadState();
   const state = loaded.state;
   const dateKey = jakartaDateKey();
+  if (jakartaIsWeekend()) {
+    return {
+      ok: true,
+      phase,
+      date: dateKey,
+      timeWib: jakartaTimeLabel(),
+      weekend: true,
+      total: 0,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+      complete: 0,
+      results: []
+    };
+  }
   const progressItems = Array.isArray(state.dailyProgresses) ? state.dailyProgresses : [];
   const users = (Array.isArray(state.accounts) ? state.accounts : [])
     .filter(user => userCanUseDailyProgress(user, state.permissions || {}));
