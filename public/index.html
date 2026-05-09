@@ -783,6 +783,33 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
 .eq-status span { display:inline-flex; padding:5px 12px; border-radius:999px; font-size:12px; font-weight:900; }
 .eq-actions { min-width:140px; text-align:center; background:var(--surface); }
 .eq-actions .btn { margin:0 3px; }
+.rab-shell { display:flex; flex-direction:column; gap:14px; }
+.rab-hero {
+  border:1px solid var(--border); border-radius:14px; background:rgba(255,255,255,.86);
+  padding:18px; display:flex; justify-content:space-between; gap:16px; align-items:flex-start;
+  box-shadow:0 14px 36px rgba(15,23,42,.055);
+}
+.rab-kicker { font-size:10px; font-weight:950; letter-spacing:1.2px; text-transform:uppercase; color:var(--blue); font-family:var(--mono); }
+.rab-title { margin-top:6px; font-size:24px; line-height:1.1; font-weight:950; color:var(--text); }
+.rab-sub { margin-top:8px; color:var(--muted); font-size:12.5px; line-height:1.5; max-width:640px; }
+.rab-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.rab-stat { border:1px solid var(--border); border-radius:12px; padding:12px; background:rgba(255,255,255,.78); }
+.rab-stat span { display:block; font-size:9.5px; font-weight:900; letter-spacing:.8px; text-transform:uppercase; color:var(--muted); font-family:var(--mono); }
+.rab-stat strong { display:block; margin-top:4px; font-size:18px; color:var(--text); }
+.rab-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+.rab-board { border:1px solid var(--border); border-radius:14px; overflow:hidden; background:var(--surface); box-shadow:0 12px 32px rgba(15,23,42,.05); }
+.rab-table { width:100%; border-collapse:separate; border-spacing:0; min-width:980px; }
+.rab-table th { padding:11px 12px; background:#F8FAFC; color:#64748B; font-size:10.5px; font-weight:950; text-align:left; text-transform:uppercase; letter-spacing:.8px; font-family:var(--mono); border-bottom:1px solid var(--border); }
+.rab-table td { padding:13px 12px; border-bottom:1px solid var(--border); font-size:12.5px; color:var(--text); vertical-align:top; background:rgba(255,255,255,.9); }
+.rab-table tr:hover td { background:rgba(91,141,246,.045); }
+.rab-code { font-weight:950; color:var(--navy); }
+.rab-status { display:inline-flex; align-items:center; min-height:24px; padding:4px 9px; border-radius:999px; font-size:10.5px; font-weight:950; white-space:nowrap; }
+.rab-status.draft { color:#475569; background:#F1F5F9; border:1px solid #E2E8F0; }
+.rab-status.submitted { color:#1D4ED8; background:#DBEAFE; border:1px solid #BFDBFE; }
+.rab-status.approved { color:#047857; background:#D1FAE5; border:1px solid #A7F3D0; }
+.rab-status.rejected { color:#B91C1C; background:#FEE2E2; border:1px solid #FECACA; }
+.rab-form-row { display:grid; grid-template-columns:1.35fr .75fr .85fr 1fr 38px; gap:8px; margin-bottom:8px; align-items:start; }
+.rab-line-list { margin:0; padding-left:16px; color:var(--sub); line-height:1.55; }
 @media (max-width: 900px) {
   .finance-toolbar { align-items:stretch; }
   .finance-filters { grid-template-columns:1fr; width:100%; }
@@ -792,6 +819,9 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   .reimburse-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .reimburse-form-row { grid-template-columns:1fr; }
   .finance-reimburse-list { grid-template-columns:1fr; }
+  .rab-hero { flex-direction:column; }
+  .rab-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .rab-form-row { grid-template-columns:1fr; }
   .research-summary-grid, .research-status-picker { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 
@@ -1730,7 +1760,7 @@ const ACCOUNTS = [
   {id:'owner',name:'Administrator GRCC', username:'admin', email:'admin@grcc.id', pw:'admin12345', role:'Super Admin + Manager', dept:'Manajemen', av:'AG'},
 ];
 const PERMS = {
-  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','documents','settings','timeline'],
+  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','rab','documents','settings','timeline'],
   'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents'],
   'Staff Kreatif': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
   'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
@@ -1740,8 +1770,8 @@ const PERMS = {
   'Riset': ['dashboard','tasks','daily_progress','schedule','reimburse','documents','timeline'],
 };
 const REQUIRED_ROLE_PERMS = {
-  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','documents','timeline','settings'],
-  'Super Admin': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','documents','timeline','settings'],
+  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','rab','documents','timeline','settings'],
+  'Super Admin': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','rab','documents','timeline','settings'],
   'Staff Kreatif': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
   'Finance': ['dashboard','daily_progress','schedule','finance','reimburse'],
   'Staff Finance + Dokumen': ['dashboard','daily_progress','schedule','finance','reimburse','documents'],
@@ -1794,6 +1824,7 @@ const NAV = [
   {id:'programs', label:'Program & Training', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`},
   {id:'finance',  label:'Finance Operasional', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`},
   {id:'reimburse', label:'Ajukan Reimburse', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>`},
+  {id:'rab', label:'RAB', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/><path d="M8 9h2"/></svg>`},
   {id:'documents',label:'Dokumen', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`},
   {id:'settings', label:'Pengaturan', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`},
   {id:'timeline', label:'Timeline Equity', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="11" cy="18" r="2" fill="currentColor" stroke="none"/></svg>`},
@@ -1819,8 +1850,10 @@ let state = {
   researchItems: [],
   timelineEquity: [],
   reimburseRequests: [],
+  rabItems: [],
   timelineEquitySeeded:false,
   filterReimburseStatus:'Semua',
+  filterRabStatus:'Semua',
   filterProgressUser:'Semua',
   filterProgressStatus:'Semua',
   filterProgressDate:'',
@@ -1834,7 +1867,7 @@ const LOCAL_UI_STATE_KEYS = [
   'filterExpStatus','filterExpType','filterExpMonth','financeView',
   'searchDoc','folderDoc',
   'filterProgressUser','filterProgressStatus','filterProgressDate',
-  'filterEquityStatus','filterEquityOwner','filterReimburseStatus'
+  'filterEquityStatus','filterEquityOwner','filterReimburseStatus','filterRabStatus'
 ];
 function cleanServerStateForClient(serverState={}){
   const cleaned = {...serverState};
@@ -2043,8 +2076,8 @@ function initApp(){
 function renderNav(){
   ensureRequiredRolePerms();
   const perms = PERMS[state.user.role]||[];
-  const titles = {dashboard:'Dashboard',tasks:'Task Management',daily_progress:'Progres Harian',schedule:'Jadwal Kegiatan',programs:'Program & Training',finance:'Finance Operasional',reimburse:'Ajukan Reimburse',documents:'Manajemen Dokumen',timeline:'Timeline Equity',settings:'Pengaturan Akun'};
-  document.getElementById('nav-items').innerHTML = NAV.filter(n=>perms.includes(n.id)).map(n=>`
+  const titles = {dashboard:'Dashboard',tasks:'Task Management',daily_progress:'Progres Harian',schedule:'Jadwal Kegiatan',programs:'Program & Training',finance:'Finance Operasional',reimburse:'Ajukan Reimburse',rab:'RAB',documents:'Manajemen Dokumen',timeline:'Timeline Equity',settings:'Pengaturan Akun'};
+  document.getElementById('nav-items').innerHTML = NAV.filter(n=>perms.includes(n.id) && (n.id !== 'rab' || isSuperAdminRole(state.user))).map(n=>`
     <button class="sb-item${state.page===n.id?' active':''}" onclick="navigate('${n.id}')">
       ${n.icon}${escHtml(n.label)}<span class="sb-dot"></span>
     </button>`).join('');
@@ -2094,6 +2127,7 @@ function renderPage(){
   else if(p==='schedule') c.innerHTML=renderSchedule();
   else if(p==='finance') c.innerHTML=renderFinance();
   else if(p==='reimburse') c.innerHTML=renderReimburse();
+  else if(p==='rab') c.innerHTML=renderRab();
   else if(p==='programs') c.innerHTML=renderPrograms();
   else if(p==='documents') c.innerHTML=renderDocuments();
   else if(p==='settings') c.innerHTML=renderSettings();
@@ -4341,6 +4375,220 @@ async function submitReimbursePaid(id){
     if(btn){ btn.disabled = false; btn.textContent = 'Simpan Pembayaran'; }
   }
 }
+
+/* ===== RAB ===== */
+const RAB_STATUSES = ['Draft','Submitted','Approved','Rejected'];
+function ensureRabState(){
+  if(!Array.isArray(state.rabItems)) state.rabItems = [];
+  if(!state.filterRabStatus) state.filterRabStatus = 'Semua';
+}
+function canAccessRab(userOrRole=state.user){ return isSuperAdminRole(userOrRole); }
+function rabTotal(rab){ return (rab.items || []).reduce((sum,item)=>sum + ((Number(item.qty) || 0) * (Number(item.price) || 0)), 0); }
+function rabStatusBadge(status){
+  const cls = String(status || 'Draft').toLowerCase();
+  return `<span class="rab-status ${cls}">${escHtml(status || 'Draft')}</span>`;
+}
+function visibleRabItems(){
+  ensureRabState();
+  return [...state.rabItems]
+    .filter(r => state.filterRabStatus === 'Semua' || r.status === state.filterRabStatus)
+    .sort((a,b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+}
+function renderRab(){
+  ensureRabState();
+  if(!canAccessRab()) return `<div class="empty"><div class="empty-text">Halaman RAB hanya untuk Super Admin.</div></div>`;
+  const items = visibleRabItems();
+  const submitted = state.rabItems.filter(r => r.status === 'Submitted').reduce((s,r)=>s+rabTotal(r),0);
+  const approved = state.rabItems.filter(r => r.status === 'Approved').reduce((s,r)=>s+rabTotal(r),0);
+  const draft = state.rabItems.filter(r => r.status === 'Draft').length;
+  const total = state.rabItems.reduce((s,r)=>s+rabTotal(r),0);
+  return `<div class="rab-shell">
+    <div class="rab-hero">
+      <div>
+        <div class="rab-kicker">Budget Planning</div>
+        <div class="rab-title">Rencana Anggaran Biaya</div>
+        <div class="rab-sub">Susun estimasi biaya kegiatan sebelum eksekusi. RAB ini khusus Super Admin agar anggaran tetap rapi sebelum masuk ke Finance Operasional.</div>
+      </div>
+      <button class="btn btn-pri" onclick="openRabModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Buat RAB
+      </button>
+    </div>
+    <div class="rab-stats">
+      <div class="rab-stat"><span>Total RAB</span><strong>${state.rabItems.length}</strong></div>
+      <div class="rab-stat"><span>Draft</span><strong>${draft}</strong></div>
+      <div class="rab-stat"><span>Submitted</span><strong>${fmt$(submitted)}</strong></div>
+      <div class="rab-stat"><span>Approved</span><strong>${fmt$(approved)}</strong></div>
+    </div>
+    <div class="rab-toolbar">
+      <select class="form-control" style="width:auto;height:38px" onchange="state.filterRabStatus=this.value;persistPatched();renderPage()">
+        ${['Semua', ...RAB_STATUSES].map(s=>`<option value="${s}"${state.filterRabStatus===s?' selected':''}>${s==='Semua'?'Semua Status':s}</option>`).join('')}
+      </select>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sec btn-sm" onclick="exportRabCsv()">Export CSV</button>
+        <button class="print-btn no-print" onclick="printPage('RAB')">Print</button>
+      </div>
+    </div>
+    <div class="rab-board"><div class="table-scroll">
+      <table class="rab-table">
+        <thead><tr><th>Kode</th><th>Kegiatan</th><th>Periode</th><th>Item Anggaran</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+        <tbody>
+          ${items.length ? items.map(rab => renderRabRow(rab)).join('') : `<tr><td colspan="7"><div class="empty"><div class="empty-text">Belum ada RAB. Buat RAB pertama untuk mulai menyusun anggaran.</div></div></td></tr>`}
+        </tbody>
+      </table>
+    </div></div>
+  </div>`;
+}
+function renderRabRow(rab){
+  const list = (rab.items || []).slice(0,3).map(item => `<li>${escHtml(item.name || '-')} · ${escHtml(item.qty || 0)} ${escHtml(item.unit || '')} × ${fmt$(item.price)}</li>`).join('');
+  const more = (rab.items || []).length > 3 ? `<li style="color:var(--muted)">+${(rab.items || []).length - 3} item lainnya</li>` : '';
+  return `<tr>
+    <td><div class="rab-code">${escHtml(rab.code || rab.id)}</div><div style="font-size:10.5px;color:var(--muted)">${escHtml(new Date(rab.createdAt || Date.now()).toLocaleString('id-ID'))}</div></td>
+    <td><strong>${escHtml(rab.name || '-')}</strong><div style="font-size:10.5px;color:var(--muted);margin-top:3px">${escHtml(rab.pic || 'Super Admin')}${rab.note?` · ${escHtml(rab.note)}`:''}</div></td>
+    <td>${fmtD(rab.startDate)}${rab.endDate?` - ${fmtD(rab.endDate)}`:''}</td>
+    <td><ol class="rab-line-list">${list}${more}</ol></td>
+    <td style="font-weight:950;white-space:nowrap">${fmt$(rabTotal(rab))}</td>
+    <td>${rabStatusBadge(rab.status)}</td>
+    <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-sec btn-sm" onclick="openRabModal('${rab.id}')">Edit</button>
+      ${rab.status !== 'Approved' ? `<button class="btn btn-suc btn-sm" onclick="setRabStatus('${rab.id}','Approved')">Approve</button>` : ''}
+      ${rab.status !== 'Submitted' ? `<button class="btn btn-pri btn-sm" onclick="setRabStatus('${rab.id}','Submitted')">Submit</button>` : ''}
+      ${rab.status !== 'Rejected' ? `<button class="btn btn-dan btn-sm" onclick="setRabStatus('${rab.id}','Rejected')">Tolak</button>` : ''}
+      <button class="btn btn-sec btn-sm" onclick="deleteRab('${rab.id}')">Hapus</button>
+    </div></td>
+  </tr>`;
+}
+function rabFormRow(data={}){
+  const rowId = uid();
+  return `<div class="rab-form-row" data-rab-row="${rowId}">
+    <input class="form-control rab-name" placeholder="Item biaya" value="${escHtml(data.name || '')}">
+    <input class="form-control rab-qty" type="number" min="0" placeholder="Qty" value="${escHtml(data.qty || '')}" oninput="updateRabModalTotal()">
+    <input class="form-control rab-unit" placeholder="Satuan" value="${escHtml(data.unit || '')}">
+    <input class="form-control rab-price" type="number" min="0" placeholder="Harga satuan" value="${escHtml(data.price || '')}" oninput="updateRabModalTotal()">
+    <button class="btn btn-sec btn-sm" onclick="removeRabFormRow('${rowId}')" title="Hapus item">×</button>
+  </div>`;
+}
+function openRabModal(editId=''){
+  if(!canAccessRab()) return;
+  ensureRabState();
+  const rab = editId ? state.rabItems.find(r => r.id === editId) : null;
+  const rows = (rab?.items?.length ? rab.items : [{name:'',qty:1,unit:'paket',price:''}]).map(rabFormRow).join('');
+  const html = `
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Nama Kegiatan <span>*</span></label><input id="rab-name" class="form-control" value="${escHtml(rab?.name || '')}" placeholder="Contoh: Pelatihan Public Batch 1"></div>
+      <div class="form-group"><label class="form-label">PIC</label><input id="rab-pic" class="form-control" value="${escHtml(rab?.pic || state.user?.name || '')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Tanggal Mulai <span>*</span></label><input id="rab-start" type="date" class="form-control" value="${escHtml(rab?.startDate || today())}"></div>
+      <div class="form-group"><label class="form-label">Tanggal Selesai</label><input id="rab-end" type="date" class="form-control" value="${escHtml(rab?.endDate || '')}"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Catatan</label><input id="rab-note" class="form-control" value="${escHtml(rab?.note || '')}" placeholder="Opsional"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 8px">
+      <div style="font-size:13px;font-weight:950;color:var(--text)">Item Anggaran</div>
+      <button class="btn btn-sec btn-sm" onclick="addRabFormRow()">Tambah Item</button>
+    </div>
+    <div id="rab-rows">${rows}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px;font-weight:950;color:var(--navy)">Total: <span id="rab-modal-total" style="margin-left:8px">${fmt$(rab ? rabTotal(rab) : 0)}</span></div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Batal</button>
+      <button class="btn btn-pri" onclick="saveRab('${editId}')">Simpan RAB</button>
+    </div>`;
+  showModal(editId ? 'Edit RAB' : 'Buat RAB', html, 820);
+  setTimeout(updateRabModalTotal, 0);
+}
+function addRabFormRow(){
+  document.getElementById('rab-rows')?.insertAdjacentHTML('beforeend', rabFormRow({qty:1,unit:'paket'}));
+  updateRabModalTotal();
+}
+function removeRabFormRow(id){
+  const row = document.querySelector(`[data-rab-row="${id}"]`);
+  if(row && document.querySelectorAll('[data-rab-row]').length > 1) row.remove();
+  else toast('Minimal satu item anggaran harus ada', 'warning');
+  updateRabModalTotal();
+}
+function readRabModalItems(){
+  return [...document.querySelectorAll('[data-rab-row]')].map(row => ({
+    id: uid(),
+    name: row.querySelector('.rab-name')?.value.trim() || '',
+    qty: Number(row.querySelector('.rab-qty')?.value || 0),
+    unit: row.querySelector('.rab-unit')?.value.trim() || '',
+    price: Number(row.querySelector('.rab-price')?.value || 0)
+  })).filter(item => item.name || item.qty || item.price);
+}
+function updateRabModalTotal(){
+  const total = readRabModalItems().reduce((s,item)=>s + item.qty * item.price, 0);
+  const el = document.getElementById('rab-modal-total');
+  if(el) el.textContent = fmt$(total);
+}
+function saveRab(editId=''){
+  if(!canAccessRab()) return;
+  const name = document.getElementById('rab-name')?.value.trim() || '';
+  const startDate = document.getElementById('rab-start')?.value || '';
+  const items = readRabModalItems();
+  if(!name || !startDate){ toast('Nama kegiatan dan tanggal mulai wajib diisi', 'error'); return; }
+  if(!items.length || items.some(item => !item.name || item.qty <= 0 || item.price <= 0)){ toast('Setiap item wajib punya nama, qty, dan harga satuan', 'error'); return; }
+  const now = new Date().toISOString();
+  const existing = editId ? state.rabItems.find(r => r.id === editId) : null;
+  const id = editId || uid();
+  const payload = {
+    id,
+    code: existing?.code || `RAB-${today().replaceAll('-','')}-${id.slice(-4).toUpperCase()}`,
+    name,
+    pic: document.getElementById('rab-pic')?.value.trim() || state.user?.name || '',
+    startDate,
+    endDate: document.getElementById('rab-end')?.value || '',
+    note: document.getElementById('rab-note')?.value.trim() || '',
+    items,
+    status: existing?.status || 'Draft',
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    createdBy: existing?.createdBy || state.user?.name || '',
+    updatedBy: state.user?.name || ''
+  };
+  state.rabItems = editId ? state.rabItems.map(r => r.id === editId ? payload : r) : [payload, ...state.rabItems];
+  persistPatched();
+  closeModal();
+  renderPage();
+  toast('RAB berhasil disimpan', 'success');
+}
+function setRabStatus(id, status){
+  if(!canAccessRab()) return;
+  state.rabItems = state.rabItems.map(r => r.id === id ? {...r,status,updatedAt:new Date().toISOString(),updatedBy:state.user?.name || ''} : r);
+  persistPatched();
+  renderPage();
+  toast(`Status RAB menjadi ${status}`, status === 'Approved' ? 'success' : 'info');
+}
+function deleteRab(id){
+  if(!canAccessRab()) return;
+  if(!confirm('Hapus RAB ini?')) return;
+  state.rabItems = state.rabItems.filter(r => r.id !== id);
+  persistPatched();
+  renderPage();
+  toast('RAB dihapus', 'info');
+}
+function exportRabCsv(){
+  ensureRabState();
+  const rows = [['LAPORAN RAB GRCC'], ['Tanggal Export', new Date().toLocaleString('id-ID')], [], ['Kode','Kegiatan','PIC','Mulai','Selesai','Status','Item','Qty','Satuan','Harga Satuan','Subtotal','Catatan']];
+  visibleRabItems().forEach(rab => {
+    (rab.items || []).forEach(item => rows.push([
+      rab.code || rab.id,
+      rab.name || '',
+      rab.pic || '',
+      rab.startDate || '',
+      rab.endDate || '',
+      rab.status || '',
+      item.name || '',
+      item.qty || 0,
+      item.unit || '',
+      item.price || 0,
+      (Number(item.qty)||0) * (Number(item.price)||0),
+      rab.note || ''
+    ]));
+  });
+  const csv = rows.map(r => r.map(v => `"${String(v || '').replace(/"/g,'""')}"`).join(',')).join('\n');
+  downloadTextFilePatch(`rab-${today()}.csv`, csv, 'text/csv;charset=utf-8;');
+  toast('Export RAB berhasil diunduh', 'success');
+}
 function openExpenseDetail(id){
   const e = state.expenses.find(item => item.id === id);
   if(!e) return;
@@ -5498,7 +5746,9 @@ function restorePatched(){
     if(state.financeView === undefined) state.financeView = 'detail';
     if(!state.financeReimbursements || typeof state.financeReimbursements !== 'object') state.financeReimbursements = {};
     if(!Array.isArray(state.reimburseRequests)) state.reimburseRequests = [];
+    if(!Array.isArray(state.rabItems)) state.rabItems = [];
     if(state.filterReimburseStatus === undefined) state.filterReimburseStatus = 'Semua';
+    if(state.filterRabStatus === undefined) state.filterRabStatus = 'Semua';
     const sessionId = isProductionRuntime() ? '' : (localStorage.getItem(STORAGE_KEYS_PATCH.session) || state.userId);
     state.user = sessionId ? ACCOUNTS.find(a => a.id === sessionId) || null : null;
     if(isProductionRuntime()) clearLocalSessionPatch();
@@ -5508,6 +5758,7 @@ function restorePatched(){
 }
 function hasAccessPatched(page){
   ensureRequiredRolePerms();
+  if(page === 'rab') return isSuperAdminRole(state.user);
   return (PERMS[state.user?.role] || []).includes(page);
 }
 function wrapPersist(fnName){
@@ -6525,6 +6776,7 @@ if(state.user && !isProductionRuntime()){
     programs:'Program & Training',
     finance:'Finance Operasional',
     reimburse:'Ajukan Reimburse',
+    rab:'RAB',
     documents:'Dokumen',
     timeline:'Timeline Equity',
     settings:'Pengaturan'
@@ -6718,7 +6970,7 @@ if(state.user && !isProductionRuntime()){
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
             ${NAV.map(n => `
               <label style="display:flex;align-items:center;gap:8px;font-size:12px;padding:9px;border:1px solid var(--border);border-radius:9px;background:rgba(255,255,255,0.025)">
-                <input type="checkbox" class="rm-perm" value="${escHtml(n.id)}" ${perms.has(n.id) || isSuperAdminRole(roleName) ? 'checked' : ''} ${isSuperAdminRole(roleName) ? 'disabled' : ''}>
+                <input type="checkbox" class="rm-perm" value="${escHtml(n.id)}" ${n.id === 'rab' && !isSuperAdminRole(roleName) ? '' : (perms.has(n.id) || isSuperAdminRole(roleName) ? 'checked' : '')} ${isSuperAdminRole(roleName) || n.id === 'rab' ? 'disabled' : ''}>
                 ${escHtml(n.label)}
               </label>
             `).join('')}
@@ -6740,7 +6992,8 @@ if(state.user && !isProductionRuntime()){
     if(!/^[A-Za-z0-9 _.-]{3,40}$/.test(name)){ toast('Nama role minimal 3 karakter', 'error'); return; }
     if(oldName && oldName !== name && PERMS[name]){ toast('Nama role sudah ada', 'error'); return; }
     const selected = [...document.querySelectorAll('.rm-perm:checked')].map(el => el.value);
-    const perms = isSuperAdminRole(oldName) ? PERMS[oldName] : [...new Set(['dashboard', ...selected])];
+    const allowedSelected = isSuperAdminRole(name) || isSuperAdminRole(oldName) ? selected : selected.filter(page => page !== 'rab');
+    const perms = isSuperAdminRole(oldName) ? PERMS[oldName] : [...new Set(['dashboard', ...allowedSelected])];
     if(oldName && oldName !== name){
       delete PERMS[oldName];
       ROLE_COLORS[name] = ROLE_COLORS[oldName] || color;
@@ -7364,13 +7617,14 @@ if(state.user && !isProductionRuntime()){
   function pageSyncSignature(){
     const page = state?.page || 'dashboard';
     const keysByPage = {
-      dashboard: ['tasks','schedules','expenses','programs','dailyProgresses','docs','researchItems','timelineEquity','reimburseRequests'],
+      dashboard: ['tasks','schedules','expenses','programs','dailyProgresses','docs','researchItems','timelineEquity','reimburseRequests','rabItems'],
       tasks: ['tasks'],
       daily_progress: ['dailyProgresses'],
       schedule: ['schedules'],
       programs: ['programs'],
       finance: ['expenses','reimburseRequests'],
       reimburse: ['reimburseRequests'],
+      rab: ['rabItems'],
       documents: ['docs'],
       timeline: ['timelineEquity'],
       settings: []

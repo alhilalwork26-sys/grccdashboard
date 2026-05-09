@@ -15,10 +15,11 @@ const MODULE_TABLES = {
   dailyProgresses: 'daily_progresses',
   timelineEquity: 'timeline_equity',
   reimburseRequests: 'reimburse_requests',
+  rabItems: 'rab_items',
   notifications: 'notifications'
 };
 const DEFAULT_PERMS = {
-  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','documents','timeline','settings'],
+  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','rab','documents','timeline','settings'],
   'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents'],
   'Staff Kreatif': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
   'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
@@ -69,6 +70,7 @@ const EMPTY_STATE = {
   researchItems: [],
   timelineEquity: [],
   reimburseRequests: [],
+  rabItems: [],
   timelineEquitySeeded: false,
   filterEquityStatus: 'Semua',
   filterEquityOwner: 'Semua',
