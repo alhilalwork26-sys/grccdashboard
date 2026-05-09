@@ -662,6 +662,32 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   color:var(--sub); font-size:12px;
 }
 .reimburse-upload-drop input { margin-top:8px; }
+.reimburse-preview-list { display:flex; gap:7px; flex-wrap:wrap; }
+.reimburse-preview-btn {
+  display:inline-flex; align-items:center; gap:6px; max-width:190px; min-height:30px; padding:6px 10px;
+  border:1px solid var(--border); border-radius:9px; background:rgba(255,255,255,.72);
+  color:var(--navy); font-size:11px; font-weight:900; cursor:pointer; transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+.reimburse-preview-btn:hover { transform:translateY(-1px); border-color:rgba(91,141,246,.36); box-shadow:0 8px 20px rgba(37,99,235,.1); }
+.reimburse-preview-btn span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.reimburse-preview-frame {
+  width:100%; height:min(68vh,620px); border:1px solid var(--border); border-radius:12px; background:#fff; overflow:hidden;
+}
+.reimburse-preview-frame img { width:100%; height:100%; object-fit:contain; display:block; background:#0F172A; }
+.reimburse-preview-frame iframe { width:100%; height:100%; border:0; background:#fff; display:block; }
+.finance-reimburse-panel {
+  border:1px solid rgba(91,141,246,.16); border-radius:14px; background:linear-gradient(135deg,rgba(255,255,255,.92),rgba(239,246,255,.72));
+  padding:14px; margin-bottom:16px; box-shadow:0 12px 30px rgba(15,23,42,.05);
+}
+.finance-reimburse-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px; flex-wrap:wrap; }
+.finance-reimburse-title { font-size:13px; font-weight:950; color:var(--text); }
+.finance-reimburse-sub { font-size:11px; color:var(--muted); margin-top:2px; }
+.finance-reimburse-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.finance-reimburse-mini {
+  border:1px solid var(--border); border-radius:11px; padding:10px; background:rgba(255,255,255,.76); min-width:0;
+}
+.finance-reimburse-mini strong { display:block; font-size:12px; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.finance-reimburse-mini span { display:block; margin-top:3px; font-size:10.5px; color:var(--muted); }
 @keyframes reimburseOrbit { from { transform:rotate(0deg) scale(1); } 50% { transform:rotate(180deg) scale(1.04); } to { transform:rotate(360deg) scale(1); } }
 .evidence-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:14px; }
 .evidence-card {
@@ -765,6 +791,7 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   .evidence-grid, .evidence-checklist { grid-template-columns:1fr; }
   .reimburse-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .reimburse-form-row { grid-template-columns:1fr; }
+  .finance-reimburse-list { grid-template-columns:1fr; }
   .research-summary-grid, .research-status-picker { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 
@@ -3428,7 +3455,10 @@ function canManageFinanceReimburse(userOrRole){ return isSuperAdminRole(userOrRo
 function renderFinance(){
   const fs=state.filterExpStatus, ft=state.filterExpType, fm=state.filterExpMonth||'', fv=state.financeView||'detail';
   const monthLong = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-  const periodOptions = [...new Set(state.expenses.map(e => String(e.date||'').slice(0,7)).filter(v => /^\d{4}-\d{2}$/.test(v)))].sort().reverse();
+  const periodOptions = [...new Set([
+    ...state.expenses.map(e => String(e.date||'').slice(0,7)),
+    ...(state.reimburseRequests || []).map(r => String(r.date||'').slice(0,7))
+  ].filter(v => /^\d{4}-\d{2}$/.test(v)))].sort().reverse();
   if(fm && !periodOptions.includes(fm)) periodOptions.unshift(fm);
   const periodLabel = fm ? (() => {
     const [y,m] = fm.split('-');
@@ -3443,9 +3473,12 @@ function renderFinance(){
   const total=filtered.reduce((s,e)=>s+(e.total||e.amount||0),0);
   const periodExpenses=state.expenses.filter(e=>!fm||String(e.date||'').slice(0,7)===fm);
   const approved=periodExpenses.filter(e=>e.status==='Approved').reduce((s,e)=>s+(e.total||e.amount||0),0);
-  const pending=periodExpenses.filter(e=>e.status==='Submitted').reduce((s,e)=>s+(e.total||e.amount||0),0);
+  const periodReimburseRequests = (state.reimburseRequests || []).filter(r => !fm || String(r.date || '').slice(0,7) === fm);
+  const pendingReimburseTotal = periodReimburseRequests.filter(r => r.status === 'Submitted').reduce((s,r)=>s+reimburseTotal(r),0);
+  const paidReimburseTotal = periodReimburseRequests.filter(r => r.status === 'Paid').reduce((s,r)=>s+reimburseTotal(r),0);
+  const pending=periodExpenses.filter(e=>e.status==='Submitted').reduce((s,e)=>s+(e.total||e.amount||0),0) + pendingReimburseTotal;
   const weeklyGroups=financeWeeklyGroups(filtered);
-  const reimbursedTotal=weeklyGroups.filter(g=>g.paid).reduce((s,g)=>s+g.approved,0);
+  const reimbursedTotal=weeklyGroups.filter(g=>g.paid).reduce((s,g)=>s+g.approved,0) + paidReimburseTotal;
   const SA={'Draft':['Submitted'],'Submitted':['Approved','Rejected'],'Approved':[],'Rejected':['Draft']};
 
   return `
@@ -3525,6 +3558,7 @@ function renderFinance(){
     </div>
   </div>
   <div class="finance-period-note">Menampilkan ${filtered.length} item untuk ${escHtml(periodLabel)}.</div>
+  ${renderFinanceReimbursePanel(periodReimburseRequests)}
   ${fv==='weekly' ? renderFinanceWeeklyView(weeklyGroups) : ''}
   ${fv==='detail' ? `
   <div class="table-wrap"><div class="table-scroll">
@@ -3601,6 +3635,40 @@ function renderFinanceWeeklyView(groups){
         </div>` : `<div style="font-size:10.5px;color:var(--muted);font-weight:700;text-align:right">Hanya Super Admin/Finance yang bisa menandai reimburse.</div>`}
       </div>`;
     }).join('')}
+  </div>`;
+}
+function renderFinanceReimbursePanel(requests=[]){
+  const canReview = canReviewReimburse(state.user);
+  const relevant = [...(requests || [])]
+    .filter(r => ['Submitted','Approved','Paid'].includes(r.status))
+    .sort((a,b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')))
+    .slice(0, 6);
+  const submitted = (requests || []).filter(r => r.status === 'Submitted').reduce((s,r)=>s+reimburseTotal(r),0);
+  const approved = (requests || []).filter(r => r.status === 'Approved').reduce((s,r)=>s+reimburseTotal(r),0);
+  const paid = (requests || []).filter(r => r.status === 'Paid').reduce((s,r)=>s+reimburseTotal(r),0);
+  if(!canReview && !relevant.length) return '';
+  return `<div class="finance-reimburse-panel">
+    <div class="finance-reimburse-head">
+      <div>
+        <div class="finance-reimburse-title">Pengajuan Reimburse Karyawan</div>
+        <div class="finance-reimburse-sub">Terhubung dari page Ajukan Reimburse. Finance/Super Admin bisa review dan upload bukti pembayaran dari sana.</div>
+      </div>
+      <button class="btn btn-sec btn-sm" onclick="navigate('reimburse')">Buka Reimburse</button>
+    </div>
+    <div class="weekly-finance-metrics" style="margin-bottom:10px">
+      <div class="weekly-finance-metric"><span>Diajukan</span><strong>${fmt$(submitted)}</strong></div>
+      <div class="weekly-finance-metric"><span>Disetujui</span><strong>${fmt$(approved)}</strong></div>
+      <div class="weekly-finance-metric"><span>Dibayar</span><strong>${fmt$(paid)}</strong></div>
+      <div class="weekly-finance-metric"><span>Total Item</span><strong>${(requests || []).length}</strong></div>
+    </div>
+    ${relevant.length ? `<div class="finance-reimburse-list">
+      ${relevant.map(r => `<div class="finance-reimburse-mini">
+        <strong>${escHtml(r.code || r.id)}</strong>
+        <span>${escHtml(r.applicantName || '-')} · ${fmtD(r.date)}</span>
+        <span>${fmt$(reimburseTotal(r))} · ${reimburseStatusBadge(r.status)}</span>
+        ${(r.paymentProofs || []).length ? `<span>Bukti bayar: ${(r.paymentProofs || []).length} file</span>` : ''}
+      </div>`).join('')}
+    </div>` : `<div style="font-size:12px;color:var(--muted)">Belum ada pengajuan reimburse pada periode ini.</div>`}
   </div>`;
 }
 function changeExpStatus(id,status){ state.expenses=state.expenses.map(e=>e.id===id?{...e,status,updatedAt:new Date().toISOString()}:e); toast(`Status diubah ke ${status}`); renderPage(); }
@@ -3873,6 +3941,45 @@ function visibleReimburseRequests(){
 function reimburseReviewers(){
   return ACCOUNTS.filter(a => isFinanceRole(a) || isSuperAdminRole(a)).map(a => a.id);
 }
+function isPreviewableImage(file){
+  return /\.(png|jpe?g|webp|gif)$/i.test(file?.name || file?.downloadUrl || '');
+}
+function renderReimburseFilePreviews(files=[], prefix='receipt'){
+  if(!files.length) return `<span style="color:var(--muted);font-size:12px">Belum ada</span>`;
+  return `<div class="reimburse-preview-list">${files.map((file, idx) => `
+    <button class="reimburse-preview-btn" onclick="event.stopPropagation();openReimburseFilePreview('${prefix}', ${idx})" title="${escHtml(file.name || 'File')}">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span>${escHtml(file.name || `File ${idx + 1}`)}</span>
+    </button>
+  `).join('')}</div>`;
+}
+function openReimburseFilePreview(prefix, idx){
+  const source = window.__reimbursePreviewFiles || {};
+  const file = source[prefix]?.[idx];
+  if(!file || !file.downloadUrl){ toast('File preview belum tersedia', 'error'); return; }
+  const isImg = isPreviewableImage(file);
+  document.getElementById('reimburse-preview-modal')?.remove();
+  const el = document.createElement('div');
+  el.className = 'modal-overlay';
+  el.id = 'reimburse-preview-modal';
+  el.innerHTML = `
+    <div class="modal-box" style="max-width:920px" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3>Preview File</h3>
+        <button class="modal-close" onclick="closeReimburseFilePreview()">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:10px">${escHtml(file.name || 'File')}</div>
+        <div class="reimburse-preview-frame">
+          ${isImg ? `<img src="${escHtml(file.downloadUrl)}" alt="${escHtml(file.name || 'Preview')}">` : `<iframe src="${escHtml(file.downloadUrl)}"></iframe>`}
+        </div>
+        <div class="modal-footer"><button class="btn btn-sec" onclick="closeReimburseFilePreview()">Tutup</button></div>
+      </div>
+    </div>`;
+  el.addEventListener('click', closeReimburseFilePreview);
+  document.getElementById('modal-container').appendChild(el);
+}
+function closeReimburseFilePreview(){ document.getElementById('reimburse-preview-modal')?.remove(); }
 function renderReimburse(){
   ensureReimburseState();
   const canReview = canReviewReimburse(state.user);
@@ -3920,20 +4027,21 @@ function renderReimburse(){
     </div></div>`;
 }
 function renderReimburseRow(req, canReview){
+  window.__reimbursePreviewFiles = window.__reimbursePreviewFiles || {};
+  window.__reimbursePreviewFiles[`receipt_${req.id}`] = req.receipts || [];
+  window.__reimbursePreviewFiles[`payment_${req.id}`] = req.paymentProofs || [];
   const canAct = canReview && req.status === 'Submitted';
   const canPay = canReview && req.status === 'Approved';
   const itemList = (req.items || []).map(item => `<li><strong>${escHtml(item.category)}</strong> - ${escHtml(item.description || '-')} (${fmt$(item.amount)})${item.note?`<br><span style="color:var(--muted)">${escHtml(item.note)}</span>`:''}</li>`).join('');
-  const receipts = (req.receipts || []).length
-    ? req.receipts.map(file => `<a href="${escHtml(file.downloadUrl || '#')}" target="_blank" onclick="event.stopPropagation()" style="display:block;color:var(--blue);font-weight:800;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(file.name)}">${escHtml(file.name)}</a>`).join('')
-    : `<span style="color:var(--muted)">Belum ada</span>`;
+  const receipts = renderReimburseFilePreviews(req.receipts || [], `receipt_${req.id}`);
   return `<tr>
     <td><div class="reimburse-code">${escHtml(req.code || req.id)}</div><div style="font-size:10.5px;color:var(--muted)">${escHtml(new Date(req.createdAt || Date.now()).toLocaleString('id-ID'))}</div></td>
     <td><strong>${escHtml(req.applicantName || '-')}</strong><div style="font-size:10.5px;color:var(--muted)">${escHtml(req.applicantRole || '-')}</div></td>
     <td>${fmtD(req.date)}</td>
     <td><ol class="reimburse-line-list">${itemList || '<li>-</li>'}</ol>${req.note?`<div style="margin-top:8px;color:var(--muted)">Catatan: ${escHtml(req.note)}</div>`:''}</td>
     <td style="font-weight:950;white-space:nowrap">${fmt$(reimburseTotal(req))}</td>
-    <td>${receipts}</td>
-    <td>${reimburseStatusBadge(req.status)}${req.reviewNote?`<div style="margin-top:6px;color:var(--muted);max-width:170px">Catatan: ${escHtml(req.reviewNote)}</div>`:''}</td>
+    <td>${receipts}${(req.paymentProofs || []).length ? `<div style="margin-top:8px;font-size:10.5px;color:var(--muted)">Bukti bayar</div>${renderReimburseFilePreviews(req.paymentProofs, `payment_${req.id}`)}` : ''}</td>
+    <td>${reimburseStatusBadge(req.status)}${req.reviewNote?`<div style="margin-top:6px;color:var(--muted);max-width:170px">Catatan: ${escHtml(req.reviewNote)}</div>`:''}${req.paidNote?`<div style="margin-top:6px;color:var(--muted);max-width:170px">Bayar: ${escHtml(req.paidNote)}</div>`:''}</td>
     <td><div style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn btn-sec btn-sm" onclick="openReimburseDetail('${req.id}')">Detail</button>
       ${canAct ? `<button class="btn btn-suc btn-sm" onclick="reviewReimburse('${req.id}','Approved')">Approve</button><button class="btn btn-dan btn-sm" onclick="reviewReimburse('${req.id}','Rejected')">Tolak</button>` : ''}
@@ -4097,6 +4205,9 @@ async function submitReimburseRequest(){
 function openReimburseDetail(id){
   const req = state.reimburseRequests.find(r => r.id === id);
   if(!req) return;
+  window.__reimbursePreviewFiles = window.__reimbursePreviewFiles || {};
+  window.__reimbursePreviewFiles[`detail_receipt_${req.id}`] = req.receipts || [];
+  window.__reimbursePreviewFiles[`detail_payment_${req.id}`] = req.paymentProofs || [];
   const history = [
     ['Diajukan', req.createdAt, req.applicantName],
     req.reviewedAt ? [reimburseStatusLabel(req.status), req.reviewedAt, req.reviewedBy] : null,
@@ -4116,7 +4227,8 @@ function openReimburseDetail(id){
       <table><thead><tr><th>Kategori</th><th>Keperluan</th><th>Nominal</th><th>Keterangan</th></tr></thead>
       <tbody>${(req.items||[]).map(item=>`<tr><td>${escHtml(item.category)}</td><td>${escHtml(item.description)}</td><td>${fmt$(item.amount)}</td><td>${escHtml(item.note || '-')}</td></tr>`).join('')}</tbody></table>
     </div>
-    <div style="margin-bottom:12px"><strong>Struk</strong><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${(req.receipts||[]).length ? req.receipts.map(file=>`<a class="btn btn-sec btn-sm" href="${escHtml(file.downloadUrl)}" target="_blank">${escHtml(file.name)}</a>`).join('') : '<span style="color:var(--muted);font-size:12px">Belum ada struk</span>'}</div></div>
+    <div style="margin-bottom:12px"><strong>Preview Struk</strong><div style="margin-top:8px">${renderReimburseFilePreviews(req.receipts || [], `detail_receipt_${req.id}`)}</div></div>
+    <div style="margin-bottom:12px"><strong>Preview Bukti Pembayaran</strong><div style="margin-top:8px">${renderReimburseFilePreviews(req.paymentProofs || [], `detail_payment_${req.id}`)}</div></div>
     <div style="border:1px solid var(--border);border-radius:12px;padding:12px;background:rgba(255,255,255,.55)">
       <div style="font-weight:900;margin-bottom:8px">Riwayat</div>
       ${history.map(h=>`<div style="font-size:12px;color:var(--sub);margin:5px 0"><strong>${escHtml(h[0])}</strong> oleh ${escHtml(h[2] || '-')} - ${escHtml(new Date(h[1]).toLocaleString('id-ID'))}</div>`).join('')}
@@ -4159,30 +4271,73 @@ function markReimbursePaid(id){
   if(!canReviewReimburse(state.user)){toast('Hanya Finance dan Super Admin yang bisa menandai pembayaran','error');return;}
   const req = state.reimburseRequests.find(r => r.id === id);
   if(!req) return;
-  const note = prompt('Keterangan pembayaran reimburse wajib diisi:', '');
-  if(note === null) return;
-  if(!note.trim()){toast('Keterangan pembayaran wajib diisi', 'error');return;}
-  const now = new Date().toISOString();
-  state.reimburseRequests = state.reimburseRequests.map(r => r.id === id ? {
-    ...r,
-    status:'Paid',
-    paidAt:now,
-    paidBy:state.user?.name || '',
-    paidById:state.user?.id || '',
-    paidNote:note.trim(),
-    updatedAt:now
-  } : r);
-  createAppNotification({
-    title:'Reimburse sudah dibayar',
-    message:`Pengajuan ${req.code || req.id} sudah ditandai dibayar.`,
-    type:'success',
-    recipientUserIds:[req.applicantId].filter(Boolean),
-    linkPage:'reimburse',
-    dedupeKey:`reimburse_paid_${id}`
-  });
-  persistPatched();
-  renderPage();
-  toast('Reimburse ditandai sudah dibayar', 'success');
+  const html = `
+    <div style="border:1px solid rgba(91,141,246,.18);border-radius:12px;padding:12px;background:rgba(239,246,255,.76);margin-bottom:12px">
+      <div style="font-weight:950;color:var(--text)">${escHtml(req.code || req.id)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">${escHtml(req.applicantName || '-')} · ${fmtD(req.date)} · ${fmt$(reimburseTotal(req))}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Keterangan Pembayaran <span>*</span></label>
+      <textarea id="rp-note" class="form-control" rows="3" placeholder="Contoh: Transfer BCA tanggal ..."></textarea>
+    </div>
+    <div class="reimburse-upload-drop">
+      <strong>Upload bukti sudah reimburse <span style="color:var(--red)">*</span></strong>
+      <div style="margin-top:3px">Upload bukti transfer/pembayaran berupa gambar atau PDF.</div>
+      <input id="rp-files" type="file" class="form-control" accept="image/*,.pdf" multiple>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Batal</button>
+      <button class="btn btn-pri" id="rp-submit" onclick="submitReimbursePaid('${id}')">Simpan Pembayaran</button>
+    </div>`;
+  showModal('Upload Bukti Reimburse', html, 620);
+}
+async function submitReimbursePaid(id){
+  if(!canReviewReimburse(state.user)){toast('Hanya Finance dan Super Admin yang bisa menandai pembayaran','error');return;}
+  const req = state.reimburseRequests.find(r => r.id === id);
+  if(!req) return;
+  const note = document.getElementById('rp-note')?.value.trim() || '';
+  const files = [...(document.getElementById('rp-files')?.files || [])];
+  if(!note){toast('Keterangan pembayaran wajib diisi', 'error');return;}
+  if(!files.length){toast('Upload minimal satu bukti pembayaran', 'error');return;}
+  const btn = document.getElementById('rp-submit');
+  try {
+    if(btn){ btn.disabled = true; btn.textContent = 'Mengupload...'; }
+    const proofs = [];
+    for(const file of files.slice(0, 4)){
+      const docId = `reimburse_paid_${id.replace(/^_/,'')}_${uid().replace(/^_/,'')}`;
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const doc = {id:docId, name:file.name, folder:'Bukti Reimburse', size:fmtFileSizePatch(file.size), by:state.user?.name || '', date:today(), ext, visibility:'public', isLocal:true};
+      const saved = await uploadReimburseDocumentToServer(file, doc, {visibility:'public'});
+      proofs.push({id:docId, name:file.name, size:fmtFileSizePatch(file.size), downloadUrl:saved.downloadUrl, uploadedAt:new Date().toISOString(), uploadedBy:state.user?.name || ''});
+    }
+    const now = new Date().toISOString();
+    state.reimburseRequests = state.reimburseRequests.map(r => r.id === id ? {
+      ...r,
+      status:'Paid',
+      paidAt:now,
+      paidBy:state.user?.name || '',
+      paidById:state.user?.id || '',
+      paidNote:note,
+      paymentProofs:[...(r.paymentProofs || []), ...proofs],
+      updatedAt:now
+    } : r);
+    createAppNotification({
+      title:'Reimburse sudah dibayar',
+      message:`Pengajuan ${req.code || req.id} sudah ditandai dibayar.`,
+      type:'success',
+      recipientUserIds:[req.applicantId].filter(Boolean),
+      linkPage:'reimburse',
+      dedupeKey:`reimburse_paid_${id}`
+    });
+    persistPatched();
+    closeModal();
+    renderPage();
+    toast('Bukti pembayaran tersimpan dan reimburse ditandai dibayar', 'success');
+  } catch(err) {
+    toast(err.message || 'Upload bukti pembayaran gagal', 'error');
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = 'Simpan Pembayaran'; }
+  }
 }
 function openExpenseDetail(id){
   const e = state.expenses.find(item => item.id === id);
