@@ -3470,12 +3470,14 @@ function renderFinance(){
     if(fm&&String(e.date||'').slice(0,7)!==fm) return false;
     return true;
   });
-  const total=filtered.reduce((s,e)=>s+(e.total||e.amount||0),0);
   const periodExpenses=state.expenses.filter(e=>!fm||String(e.date||'').slice(0,7)===fm);
-  const approved=periodExpenses.filter(e=>e.status==='Approved').reduce((s,e)=>s+(e.total||e.amount||0),0);
   const periodReimburseRequests = (state.reimburseRequests || []).filter(r => !fm || String(r.date || '').slice(0,7) === fm);
+  const totalReimburseRequests = periodReimburseRequests.filter(r => r.status !== 'Rejected').reduce((s,r)=>s+reimburseTotal(r),0);
   const pendingReimburseTotal = periodReimburseRequests.filter(r => r.status === 'Submitted').reduce((s,r)=>s+reimburseTotal(r),0);
+  const approvedReimburseTotal = periodReimburseRequests.filter(r => r.status === 'Approved').reduce((s,r)=>s+reimburseTotal(r),0);
   const paidReimburseTotal = periodReimburseRequests.filter(r => r.status === 'Paid').reduce((s,r)=>s+reimburseTotal(r),0);
+  const total=filtered.reduce((s,e)=>s+(e.total||e.amount||0),0) + totalReimburseRequests;
+  const approved=periodExpenses.filter(e=>e.status==='Approved').reduce((s,e)=>s+(e.total||e.amount||0),0) + approvedReimburseTotal;
   const pending=periodExpenses.filter(e=>e.status==='Submitted').reduce((s,e)=>s+(e.total||e.amount||0),0) + pendingReimburseTotal;
   const weeklyGroups=financeWeeklyGroups(filtered);
   const reimbursedTotal=weeklyGroups.filter(g=>g.paid).reduce((s,g)=>s+g.approved,0) + paidReimburseTotal;
@@ -5574,6 +5576,27 @@ function exportFinanceCsv(){
         e.desc || ''
       ]);
     });
+  const reimburseRows = (state.reimburseRequests || [])
+    .filter(r => !state.filterExpMonth || financeMonthKey(r.date) === state.filterExpMonth)
+    .slice()
+    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  rows.push([]);
+  rows.push(['PENGAJUAN REIMBURSE KARYAWAN']);
+  rows.push(['No','Kode','Tanggal','Pemohon','Role','Item','Total','Status','Struk','Bukti Pembayaran','Catatan Review','Catatan Bayar']);
+  reimburseRows.forEach((r,i) => rows.push([
+    i + 1,
+    r.code || r.id,
+    r.date,
+    r.applicantName || '',
+    r.applicantRole || '',
+    (r.items || []).map(item => `${item.category}: ${item.description} (${fmt$(item.amount)})`).join('; '),
+    reimburseTotal(r),
+    reimburseStatusLabel(r.status),
+    (r.receipts || []).map(file => file.name).join('; '),
+    (r.paymentProofs || []).map(file => file.name).join('; '),
+    r.reviewNote || '',
+    r.paidNote || ''
+  ]));
   const csv = rows.map(r => r.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(',')).join('\n');
   downloadTextFilePatch(`finance-operasional-${today()}.csv`, csv, 'text/csv;charset=utf-8;');
   toast('Export CSV berhasil diunduh', 'success');
@@ -7346,7 +7369,7 @@ if(state.user && !isProductionRuntime()){
       daily_progress: ['dailyProgresses'],
       schedule: ['schedules'],
       programs: ['programs'],
-      finance: ['expenses'],
+      finance: ['expenses','reimburseRequests'],
       reimburse: ['reimburseRequests'],
       documents: ['docs'],
       timeline: ['timelineEquity'],
