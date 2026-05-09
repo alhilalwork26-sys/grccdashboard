@@ -616,9 +616,16 @@ async function loadState() {
   delete state.accounts;
   delete state.permissions;
   delete state.roleColors;
-  for (const [stateKey, table] of Object.entries(MODULE_TABLES)) state[stateKey] = await moduleItems(table);
-  state.accounts = await listUsers();
-  const roles = await listRoles();
+  const moduleEntries = Object.entries(MODULE_TABLES);
+  const [moduleResults, users, roles] = await Promise.all([
+    Promise.all(moduleEntries.map(([stateKey, table]) => moduleItems(table).then(items => [stateKey, items]))),
+    listUsers(),
+    listRoles()
+  ]);
+  moduleResults.forEach(([stateKey, items]) => {
+    state[stateKey] = items;
+  });
+  state.accounts = users;
   state.permissions = roles.permissions;
   state.roleColors = roles.roleColors;
   return { state, updatedAt: appRows[0]?.updated_at || null };
