@@ -817,6 +817,18 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
 .rab-section-label.committee { color:#7C2D12; background:#FFF7ED; border-color:#FED7AA; }
 .rab-section-label.non_personnel { color:#065F46; background:#ECFDF5; border-color:#A7F3D0; }
 .rab-section-total { background:#F8FAFC !important; font-weight:950; color:var(--navy); }
+.rab-profit-card { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:9px; }
+.rab-profit-card div { border:1px solid var(--border); border-radius:10px; padding:9px; background:#fff; animation:rabFadeUp .34s ease both; }
+.rab-profit-card span { display:block; font-size:9px; font-weight:950; letter-spacing:.6px; text-transform:uppercase; color:var(--muted); }
+.rab-profit-card strong { display:block; margin-top:4px; font-size:13px; color:var(--text); }
+.rab-profit-card .profit strong { color:#047857; }
+.rab-profit-card .loss strong { color:#B91C1C; }
+.rab-income-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; padding:12px; border:1px solid #DBEAFE; border-radius:13px; background:linear-gradient(135deg, rgba(239,246,255,.92), rgba(255,255,255,.96)); margin-bottom:12px; }
+.rab-income-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:10px 0 4px; }
+.rab-income-summary div { padding:10px; border-radius:11px; border:1px solid var(--border); background:#fff; }
+.rab-income-summary span { display:block; font-size:9px; font-weight:950; letter-spacing:.6px; text-transform:uppercase; color:var(--muted); }
+.rab-income-summary strong { display:block; margin-top:3px; color:var(--navy); font-size:13px; }
+@keyframes rabFadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 @media (max-width: 900px) {
   .finance-toolbar { align-items:stretch; }
   .finance-filters { grid-template-columns:1fr; width:100%; }
@@ -829,6 +841,7 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   .rab-hero { flex-direction:column; }
   .rab-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .rab-form-row { grid-template-columns:1fr; }
+  .rab-profit-card, .rab-income-grid, .rab-income-summary { grid-template-columns:1fr; }
   .research-summary-grid, .research-status-picker { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 
@@ -4419,6 +4432,30 @@ function rabItems(rab){ return (rab.items || []).map(normalizeRabItem); }
 function rabItemSubtotal(item){ return (Number(item.qty) || 0) * (Number(item.price) || 0); }
 function rabTotal(rab){ return rabItems(rab).reduce((sum,item)=>sum + rabItemSubtotal(item), 0); }
 function rabCategoryTotal(rab, category){ return rabItems(rab).filter(item => item.category === category).reduce((sum,item)=>sum + rabItemSubtotal(item), 0); }
+function normalizeRabIncome(rab={}){
+  const income = rab.income || {};
+  return {
+    investment: Number(income.investment || 0),
+    grossRevenue: Number(income.grossRevenue || income.initialRevenue || 0),
+    sellingPrice: Number(income.sellingPrice || 0),
+    dpp: Number(income.dpp || 0),
+    ppnRate: Number(income.ppnRate === undefined ? 12 : income.ppnRate),
+    institutionalFee: Number(income.institutionalFee || 0)
+  };
+}
+function rabPpnAmount(rab){
+  const income = normalizeRabIncome(rab);
+  return Math.round((Number(income.dpp) || 0) * ((Number(income.ppnRate) || 0) / 100));
+}
+function rabActualIncome(rab){
+  const income = normalizeRabIncome(rab);
+  return Math.max(0, (Number(income.grossRevenue) || 0) - rabPpnAmount(rab) - (Number(income.institutionalFee) || 0));
+}
+function rabProfit(rab){ return rabActualIncome(rab) - rabTotal(rab); }
+function rabMargin(rab){
+  const actual = rabActualIncome(rab);
+  return actual > 0 ? (rabProfit(rab) / actual) * 100 : 0;
+}
 function rabStatusBadge(status){
   const cls = String(status || 'Draft').toLowerCase();
   return `<span class="rab-status ${cls}">${escHtml(status || 'Draft')}</span>`;
@@ -4437,16 +4474,16 @@ function renderRab(){
   ensureRabState();
   if(!canAccessRab()) return `<div class="empty"><div class="empty-text">Halaman RAB hanya untuk Super Admin.</div></div>`;
   const items = visibleRabItems();
-  const submitted = state.rabItems.filter(r => r.status === 'Submitted').reduce((s,r)=>s+rabTotal(r),0);
-  const approved = state.rabItems.filter(r => r.status === 'Approved').reduce((s,r)=>s+rabTotal(r),0);
+  const totalIncome = state.rabItems.reduce((s,r)=>s+rabActualIncome(r),0);
+  const totalExpense = state.rabItems.reduce((s,r)=>s+rabTotal(r),0);
+  const totalProfit = totalIncome - totalExpense;
   const draft = state.rabItems.filter(r => r.status === 'Draft').length;
-  const total = state.rabItems.reduce((s,r)=>s+rabTotal(r),0);
   return `<div class="rab-shell">
     <div class="rab-hero">
       <div>
         <div class="rab-kicker">Budget Planning</div>
         <div class="rab-title">Rencana Anggaran Biaya</div>
-        <div class="rab-sub">Susun anggaran per kategori: Honor Personel, Honor Kepanitiaan, dan Biaya Non-personel. Setiap item dihitung otomatis dari jumlah × satuan/jam × tarif.</div>
+        <div class="rab-sub">RAB dibagi menjadi Pemasukan dan Pengeluaran. Sistem otomatis menghitung penerimaan aktual, biaya operasional, profit/loss, dan margin kegiatan.</div>
       </div>
       <button class="btn btn-pri" onclick="openRabModal()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -4456,8 +4493,8 @@ function renderRab(){
     <div class="rab-stats">
       <div class="rab-stat"><span>Total RAB</span><strong>${state.rabItems.length}</strong></div>
       <div class="rab-stat"><span>Draft</span><strong>${draft}</strong></div>
-      <div class="rab-stat"><span>Submitted</span><strong>${fmt$(submitted)}</strong></div>
-      <div class="rab-stat"><span>Approved</span><strong>${fmt$(approved)}</strong></div>
+      <div class="rab-stat"><span>Pemasukan Aktual</span><strong>${fmt$(totalIncome)}</strong></div>
+      <div class="rab-stat"><span>Profit/Loss</span><strong style="color:${totalProfit >= 0 ? '#047857' : '#B91C1C'}">${fmt$(totalProfit)}</strong></div>
     </div>
     <div class="rab-toolbar">
       <select class="form-control" style="width:auto;height:38px" onchange="state.filterRabStatus=this.value;persistPatched();renderPage()">
@@ -4470,7 +4507,7 @@ function renderRab(){
     </div>
     <div class="rab-board"><div class="table-scroll">
       <table class="rab-table">
-        <thead><tr><th>Kode</th><th>Kegiatan</th><th>Periode</th><th>Rincian Anggaran</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+        <thead><tr><th>Kode</th><th>Kegiatan</th><th>Periode</th><th>Pemasukan & Pengeluaran</th><th>Profit/Loss</th><th>Status</th><th>Aksi</th></tr></thead>
         <tbody>
           ${items.length ? items.map(rab => renderRabRow(rab)).join('') : `<tr><td colspan="7"><div class="empty"><div class="empty-text">Belum ada RAB. Buat RAB pertama untuk mulai menyusun anggaran.</div></div></td></tr>`}
         </tbody>
@@ -4480,12 +4517,26 @@ function renderRab(){
 }
 function renderRabRow(rab){
   const budgetTable = renderRabBudgetPreview(rab);
+  const actualIncome = rabActualIncome(rab);
+  const expense = rabTotal(rab);
+  const profit = rabProfit(rab);
+  const margin = rabMargin(rab);
   return `<tr>
     <td><div class="rab-code">${escHtml(rab.code || rab.id)}</div><div style="font-size:10.5px;color:var(--muted)">${escHtml(new Date(rab.createdAt || Date.now()).toLocaleString('id-ID'))}</div></td>
     <td><strong>${escHtml(rab.name || '-')}</strong><div style="font-size:10.5px;color:var(--muted);margin-top:3px">${escHtml(rab.pic || 'Super Admin')}${rab.note?` · ${escHtml(rab.note)}`:''}</div></td>
     <td>${fmtD(rab.startDate)}${rab.endDate?` - ${fmtD(rab.endDate)}`:''}</td>
-    <td>${budgetTable}</td>
-    <td style="font-weight:950;white-space:nowrap">${fmt$(rabTotal(rab))}</td>
+    <td>
+      ${renderRabIncomePreview(rab)}
+      <div style="height:8px"></div>
+      ${budgetTable}
+    </td>
+    <td style="min-width:150px">
+      <div class="rab-profit-card" style="grid-template-columns:1fr">
+        <div><span>Pemasukan</span><strong>${fmt$(actualIncome)}</strong></div>
+        <div><span>Pengeluaran</span><strong>${fmt$(expense)}</strong></div>
+        <div class="${profit >= 0 ? 'profit' : 'loss'}"><span>${profit >= 0 ? 'Profit' : 'Loss'}</span><strong>${fmt$(profit)}</strong><span style="margin-top:3px">${margin.toFixed(1)}%</span></div>
+      </div>
+    </td>
     <td>${rabStatusBadge(rab.status)}</td>
     <td><div style="display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn btn-sec btn-sm" onclick="openRabModal('${rab.id}')">Edit</button>
@@ -4495,6 +4546,21 @@ function renderRabRow(rab){
       <button class="btn btn-sec btn-sm" onclick="deleteRab('${rab.id}')">Hapus</button>
     </div></td>
   </tr>`;
+}
+function renderRabIncomePreview(rab){
+  const income = normalizeRabIncome(rab);
+  return `<table class="rab-mini-table">
+    <thead><tr><th colspan="2">RAB Pemasukan</th></tr></thead>
+    <tbody>
+      <tr><td>Nilai Investasi</td><td style="font-weight:900;text-align:right">${fmt$(income.investment)}</td></tr>
+      <tr><td>Total Penerimaan Awal</td><td style="font-weight:900;text-align:right">${fmt$(income.grossRevenue)}</td></tr>
+      <tr><td>Harga Jual</td><td style="text-align:right">${fmt$(income.sellingPrice)}</td></tr>
+      <tr><td>DPP</td><td style="text-align:right">${fmt$(income.dpp)}</td></tr>
+      <tr><td>(-) PPN (${income.ppnRate || 0}%)</td><td style="text-align:right">${fmt$(rabPpnAmount(rab))}</td></tr>
+      <tr><td>(-) Institutional Fee</td><td style="text-align:right">${fmt$(income.institutionalFee)}</td></tr>
+      <tr><td class="rab-section-total">Total Penerimaan Aktual</td><td class="rab-section-total" style="text-align:right">${fmt$(rabActualIncome(rab))}</td></tr>
+    </tbody>
+  </table>`;
 }
 function renderRabBudgetPreview(rab){
   const items = rabItems(rab);
@@ -4535,6 +4601,7 @@ function openRabModal(editId=''){
   if(!canAccessRab()) return;
   ensureRabState();
   const rab = editId ? state.rabItems.find(r => r.id === editId) : null;
+  const income = normalizeRabIncome(rab || {});
   const rows = (rab?.items?.length ? rabItems(rab) : [
     {category:'personnel', name:'Honor Narasumber', qty:2, unit:'jam', price:''},
     {category:'committee', name:'Honor Panitia', qty:1, unit:'hari', price:''},
@@ -4549,10 +4616,27 @@ function openRabModal(editId=''){
       <div class="form-group"><label class="form-label">Tanggal Mulai <span>*</span></label><input id="rab-start" type="date" class="form-control" value="${escHtml(rab?.startDate || today())}"></div>
       <div class="form-group"><label class="form-label">Tanggal Selesai</label><input id="rab-end" type="date" class="form-control" value="${escHtml(rab?.endDate || '')}"></div>
     </div>
+    <div style="margin:12px 0 14px">
+      <div style="font-size:13px;font-weight:950;color:var(--text);margin-bottom:8px">RAB Pemasukan</div>
+      <div class="rab-income-grid">
+        <div class="form-group"><label class="form-label">Nilai Investasi</label><input id="rab-investment" class="form-control" type="number" min="0" value="${escHtml(income.investment || '')}" oninput="updateRabModalTotal()"></div>
+        <div class="form-group"><label class="form-label">Total Penerimaan Awal</label><input id="rab-gross" class="form-control" type="number" min="0" value="${escHtml(income.grossRevenue || '')}" oninput="updateRabModalTotal()"></div>
+        <div class="form-group"><label class="form-label">Harga Jual</label><input id="rab-selling" class="form-control" type="number" min="0" value="${escHtml(income.sellingPrice || '')}" oninput="updateRabModalTotal()"></div>
+        <div class="form-group"><label class="form-label">DPP</label><input id="rab-dpp" class="form-control" type="number" min="0" value="${escHtml(income.dpp || '')}" oninput="updateRabModalTotal()"></div>
+        <div class="form-group"><label class="form-label">PPN (%)</label><input id="rab-ppn-rate" class="form-control" type="number" min="0" step="0.1" value="${escHtml(income.ppnRate || 12)}" oninput="updateRabModalTotal()"></div>
+        <div class="form-group"><label class="form-label">Institutional Fee</label><input id="rab-institutional" class="form-control" type="number" min="0" value="${escHtml(income.institutionalFee || '')}" oninput="updateRabModalTotal()"></div>
+      </div>
+      <div class="rab-income-summary">
+        <div><span>PPN</span><strong id="rab-ppn-preview">${fmt$(rabPpnAmount({income}))}</strong></div>
+        <div><span>Penerimaan Aktual</span><strong id="rab-income-preview">${fmt$(rabActualIncome({income}))}</strong></div>
+        <div><span>Pengeluaran</span><strong id="rab-expense-preview">${fmt$(rab ? rabTotal(rab) : 0)}</strong></div>
+        <div><span>Profit/Loss</span><strong id="rab-profit-preview">${fmt$(rab ? rabProfit(rab) : rabActualIncome({income}))}</strong></div>
+      </div>
+    </div>
     <div class="form-group"><label class="form-label">Catatan</label><input id="rab-note" class="form-control" value="${escHtml(rab?.note || '')}" placeholder="Opsional"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 8px;gap:12px;flex-wrap:wrap">
       <div>
-        <div style="font-size:13px;font-weight:950;color:var(--text)">Item Anggaran</div>
+        <div style="font-size:13px;font-weight:950;color:var(--text)">RAB Pengeluaran</div>
         <div style="font-size:11px;color:var(--muted);margin-top:2px">Kategori + item + jumlah × satuan/jam × tarif akan dihitung otomatis.</div>
       </div>
       <button class="btn btn-sec btn-sm" onclick="addRabFormRow()">Tambah Item</button>
@@ -4593,6 +4677,30 @@ function updateRabModalTotal(){
   const total = readRabModalItems().reduce((s,item)=>s + item.qty * item.price, 0);
   const el = document.getElementById('rab-modal-total');
   if(el) el.textContent = fmt$(total);
+  const income = readRabModalIncome();
+  const temp = {income, items:readRabModalItems()};
+  const ppn = document.getElementById('rab-ppn-preview');
+  const actual = document.getElementById('rab-income-preview');
+  const expense = document.getElementById('rab-expense-preview');
+  const profit = document.getElementById('rab-profit-preview');
+  const profitValue = rabProfit(temp);
+  if(ppn) ppn.textContent = fmt$(rabPpnAmount(temp));
+  if(actual) actual.textContent = fmt$(rabActualIncome(temp));
+  if(expense) expense.textContent = fmt$(rabTotal(temp));
+  if(profit){
+    profit.textContent = fmt$(profitValue);
+    profit.style.color = profitValue >= 0 ? '#047857' : '#B91C1C';
+  }
+}
+function readRabModalIncome(){
+  return {
+    investment: Number(document.getElementById('rab-investment')?.value || 0),
+    grossRevenue: Number(document.getElementById('rab-gross')?.value || 0),
+    sellingPrice: Number(document.getElementById('rab-selling')?.value || 0),
+    dpp: Number(document.getElementById('rab-dpp')?.value || 0),
+    ppnRate: Number(document.getElementById('rab-ppn-rate')?.value || 0),
+    institutionalFee: Number(document.getElementById('rab-institutional')?.value || 0)
+  };
 }
 function saveRab(editId=''){
   if(!canAccessRab()) return;
@@ -4612,6 +4720,7 @@ function saveRab(editId=''){
     startDate,
     endDate: document.getElementById('rab-end')?.value || '',
     note: document.getElementById('rab-note')?.value.trim() || '',
+    income: readRabModalIncome(),
     items,
     status: existing?.status || 'Draft',
     createdAt: existing?.createdAt || now,
@@ -4642,8 +4751,16 @@ function deleteRab(id){
 }
 function exportRabCsv(){
   ensureRabState();
-  const rows = [['LAPORAN RAB GRCC'], ['Tanggal Export', new Date().toLocaleString('id-ID')], [], ['Kode','Kegiatan','PIC','Mulai','Selesai','Status','Kategori','Item','Jumlah','Satuan','Tarif','Subtotal','Catatan']];
+  const rows = [['LAPORAN RAB GRCC'], ['Tanggal Export', new Date().toLocaleString('id-ID')], [], ['Kode','Kegiatan','PIC','Mulai','Selesai','Status','Jenis','Keterangan','Jumlah','Satuan','Tarif','Subtotal','Catatan']];
   visibleRabItems().forEach(rab => {
+    const income = normalizeRabIncome(rab);
+    rows.push([rab.code || rab.id, rab.name || '', rab.pic || '', rab.startDate || '', rab.endDate || '', rab.status || '', 'PEMASUKAN', 'Nilai Investasi', '', '', '', income.investment, rab.note || '']);
+    rows.push([rab.code || rab.id, rab.name || '', rab.pic || '', rab.startDate || '', rab.endDate || '', rab.status || '', 'PEMASUKAN', 'Total Penerimaan Awal', '', '', '', income.grossRevenue, rab.note || '']);
+    rows.push([rab.code || rab.id, rab.name || '', rab.pic || '', rab.startDate || '', rab.endDate || '', rab.status || '', 'PEMASUKAN', 'Harga Jual', '', '', '', income.sellingPrice, rab.note || '']);
+    rows.push([rab.code || rab.id, rab.name || '', rab.pic || '', rab.startDate || '', rab.endDate || '', rab.status || '', 'PEMASUKAN', 'DPP', '', '', '', income.dpp, rab.note || '']);
+    rows.push([rab.code || rab.id, rab.name || '', rab.pic || '', rab.startDate || '', rab.endDate || '', rab.status || '', 'PEMASUKAN', `PPN ${income.ppnRate}%`, '', '', '', -rabPpnAmount(rab), rab.note || '']);
+    rows.push([rab.code || rab.id, rab.name || '', rab.pic || '', rab.startDate || '', rab.endDate || '', rab.status || '', 'PEMASUKAN', 'Institutional Fee', '', '', '', -income.institutionalFee, rab.note || '']);
+    rows.push([rab.code || rab.id, rab.name || '', rab.pic || '', rab.startDate || '', rab.endDate || '', rab.status || '', 'TOTAL PEMASUKAN AKTUAL', '', '', '', rabActualIncome(rab), rab.note || '']);
     rabItems(rab).forEach(item => rows.push([
       rab.code || rab.id,
       rab.name || '',
@@ -4651,7 +4768,7 @@ function exportRabCsv(){
       rab.startDate || '',
       rab.endDate || '',
       rab.status || '',
-      rabCategoryMeta(item.category).label,
+      `PENGELUARAN - ${rabCategoryMeta(item.category).label}`,
       item.name || '',
       item.qty || 0,
       item.unit || '',
@@ -4659,7 +4776,8 @@ function exportRabCsv(){
       rabItemSubtotal(item),
       rab.note || ''
     ]));
-    rows.push(['','','','','','','TOTAL RAB','','','','', rabTotal(rab),'']);
+    rows.push(['','','','','','','TOTAL PENGELUARAN','','','','', rabTotal(rab),'']);
+    rows.push(['','','','','','','PROFIT/LOSS','','','','', rabProfit(rab),'']);
     rows.push([]);
   });
   const csv = rows.map(r => r.map(v => `"${String(v || '').replace(/"/g,'""')}"`).join(',')).join('\n');
