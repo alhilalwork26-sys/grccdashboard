@@ -798,7 +798,7 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
 .rab-stat strong { display:block; margin-top:4px; font-size:18px; color:var(--text); }
 .rab-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
 .rab-board { border:1px solid var(--border); border-radius:14px; overflow:hidden; background:var(--surface); box-shadow:0 12px 32px rgba(15,23,42,.05); }
-.rab-table { width:100%; border-collapse:separate; border-spacing:0; min-width:980px; }
+.rab-table { width:100%; border-collapse:separate; border-spacing:0; min-width:1040px; }
 .rab-table th { padding:11px 12px; background:#F8FAFC; color:#64748B; font-size:10.5px; font-weight:950; text-align:left; text-transform:uppercase; letter-spacing:.8px; font-family:var(--mono); border-bottom:1px solid var(--border); }
 .rab-table td { padding:13px 12px; border-bottom:1px solid var(--border); font-size:12.5px; color:var(--text); vertical-align:top; background:rgba(255,255,255,.9); }
 .rab-table tr:hover td { background:rgba(91,141,246,.045); }
@@ -808,8 +808,15 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
 .rab-status.submitted { color:#1D4ED8; background:#DBEAFE; border:1px solid #BFDBFE; }
 .rab-status.approved { color:#047857; background:#D1FAE5; border:1px solid #A7F3D0; }
 .rab-status.rejected { color:#B91C1C; background:#FEE2E2; border:1px solid #FECACA; }
-.rab-form-row { display:grid; grid-template-columns:1.35fr .75fr .85fr 1fr 38px; gap:8px; margin-bottom:8px; align-items:start; }
-.rab-line-list { margin:0; padding-left:16px; color:var(--sub); line-height:1.55; }
+.rab-form-row { display:grid; grid-template-columns:1.1fr 1.5fr .55fr .7fr .85fr 38px; gap:8px; margin-bottom:8px; align-items:start; }
+.rab-mini-table { width:100%; border-collapse:separate; border-spacing:0; overflow:hidden; border:1px solid var(--border); border-radius:10px; background:#fff; }
+.rab-mini-table th { padding:7px 9px; background:#F8FAFC; color:#64748B; font-size:9.5px; font-weight:950; text-align:left; text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--border); }
+.rab-mini-table td { padding:7px 9px; border-bottom:1px solid #EEF2F7; font-size:11px; background:#fff; }
+.rab-mini-table tr:last-child td { border-bottom:0; }
+.rab-section-label { display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border-radius:999px; font-size:10px; font-weight:950; color:#1E3A8A; background:#EFF6FF; border:1px solid #DBEAFE; }
+.rab-section-label.committee { color:#7C2D12; background:#FFF7ED; border-color:#FED7AA; }
+.rab-section-label.non_personnel { color:#065F46; background:#ECFDF5; border-color:#A7F3D0; }
+.rab-section-total { background:#F8FAFC !important; font-weight:950; color:var(--navy); }
 @media (max-width: 900px) {
   .finance-toolbar { align-items:stretch; }
   .finance-filters { grid-template-columns:1fr; width:100%; }
@@ -4378,15 +4385,47 @@ async function submitReimbursePaid(id){
 
 /* ===== RAB ===== */
 const RAB_STATUSES = ['Draft','Submitted','Approved','Rejected'];
+const RAB_CATEGORIES = [
+  {key:'personnel', label:'Honor Personel', short:'A', className:'personnel'},
+  {key:'committee', label:'Honor Kepanitiaan', short:'B', className:'committee'},
+  {key:'non_personnel', label:'Biaya Non-personel', short:'C', className:'non_personnel'}
+];
 function ensureRabState(){
   if(!Array.isArray(state.rabItems)) state.rabItems = [];
   if(!state.filterRabStatus) state.filterRabStatus = 'Semua';
 }
 function canAccessRab(userOrRole=state.user){ return isSuperAdminRole(userOrRole); }
-function rabTotal(rab){ return (rab.items || []).reduce((sum,item)=>sum + ((Number(item.qty) || 0) * (Number(item.price) || 0)), 0); }
+function inferRabCategory(item={}){
+  if(item.category) return item.category;
+  const name = String(item.name || '').toLowerCase();
+  if(name.includes('panitia')) return 'committee';
+  if(name.includes('honor') || name.includes('narasumber')) return 'personnel';
+  return 'non_personnel';
+}
+function rabCategoryMeta(key){
+  return RAB_CATEGORIES.find(c => c.key === key) || RAB_CATEGORIES[2];
+}
+function normalizeRabItem(item={}){
+  return {
+    id: item.id || uid(),
+    category: inferRabCategory(item),
+    name: item.name || '',
+    qty: Number(item.qty || 0),
+    unit: item.unit || 'jam',
+    price: Number(item.price || item.rate || 0)
+  };
+}
+function rabItems(rab){ return (rab.items || []).map(normalizeRabItem); }
+function rabItemSubtotal(item){ return (Number(item.qty) || 0) * (Number(item.price) || 0); }
+function rabTotal(rab){ return rabItems(rab).reduce((sum,item)=>sum + rabItemSubtotal(item), 0); }
+function rabCategoryTotal(rab, category){ return rabItems(rab).filter(item => item.category === category).reduce((sum,item)=>sum + rabItemSubtotal(item), 0); }
 function rabStatusBadge(status){
   const cls = String(status || 'Draft').toLowerCase();
   return `<span class="rab-status ${cls}">${escHtml(status || 'Draft')}</span>`;
+}
+function rabCategoryBadge(category){
+  const meta = rabCategoryMeta(category);
+  return `<span class="rab-section-label ${meta.className}">${meta.short}. ${escHtml(meta.label)}</span>`;
 }
 function visibleRabItems(){
   ensureRabState();
@@ -4407,7 +4446,7 @@ function renderRab(){
       <div>
         <div class="rab-kicker">Budget Planning</div>
         <div class="rab-title">Rencana Anggaran Biaya</div>
-        <div class="rab-sub">Susun estimasi biaya kegiatan sebelum eksekusi. RAB ini khusus Super Admin agar anggaran tetap rapi sebelum masuk ke Finance Operasional.</div>
+        <div class="rab-sub">Susun anggaran per kategori: Honor Personel, Honor Kepanitiaan, dan Biaya Non-personel. Setiap item dihitung otomatis dari jumlah × satuan/jam × tarif.</div>
       </div>
       <button class="btn btn-pri" onclick="openRabModal()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -4431,7 +4470,7 @@ function renderRab(){
     </div>
     <div class="rab-board"><div class="table-scroll">
       <table class="rab-table">
-        <thead><tr><th>Kode</th><th>Kegiatan</th><th>Periode</th><th>Item Anggaran</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+        <thead><tr><th>Kode</th><th>Kegiatan</th><th>Periode</th><th>Rincian Anggaran</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
         <tbody>
           ${items.length ? items.map(rab => renderRabRow(rab)).join('') : `<tr><td colspan="7"><div class="empty"><div class="empty-text">Belum ada RAB. Buat RAB pertama untuk mulai menyusun anggaran.</div></div></td></tr>`}
         </tbody>
@@ -4440,13 +4479,12 @@ function renderRab(){
   </div>`;
 }
 function renderRabRow(rab){
-  const list = (rab.items || []).slice(0,3).map(item => `<li>${escHtml(item.name || '-')} · ${escHtml(item.qty || 0)} ${escHtml(item.unit || '')} × ${fmt$(item.price)}</li>`).join('');
-  const more = (rab.items || []).length > 3 ? `<li style="color:var(--muted)">+${(rab.items || []).length - 3} item lainnya</li>` : '';
+  const budgetTable = renderRabBudgetPreview(rab);
   return `<tr>
     <td><div class="rab-code">${escHtml(rab.code || rab.id)}</div><div style="font-size:10.5px;color:var(--muted)">${escHtml(new Date(rab.createdAt || Date.now()).toLocaleString('id-ID'))}</div></td>
     <td><strong>${escHtml(rab.name || '-')}</strong><div style="font-size:10.5px;color:var(--muted);margin-top:3px">${escHtml(rab.pic || 'Super Admin')}${rab.note?` · ${escHtml(rab.note)}`:''}</div></td>
     <td>${fmtD(rab.startDate)}${rab.endDate?` - ${fmtD(rab.endDate)}`:''}</td>
-    <td><ol class="rab-line-list">${list}${more}</ol></td>
+    <td>${budgetTable}</td>
     <td style="font-weight:950;white-space:nowrap">${fmt$(rabTotal(rab))}</td>
     <td>${rabStatusBadge(rab.status)}</td>
     <td><div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -4458,13 +4496,38 @@ function renderRabRow(rab){
     </div></td>
   </tr>`;
 }
+function renderRabBudgetPreview(rab){
+  const items = rabItems(rab);
+  if(!items.length) return `<div style="font-size:11px;color:var(--muted)">Belum ada item anggaran</div>`;
+  return `<table class="rab-mini-table">
+    <thead><tr><th>Kategori</th><th>Item</th><th>Volume</th><th>Tarif</th><th>Subtotal</th></tr></thead>
+    <tbody>
+      ${RAB_CATEGORIES.map(cat => {
+        const group = items.filter(item => item.category === cat.key);
+        if(!group.length) return '';
+        return `${group.map((item,idx) => `<tr>
+          <td>${idx === 0 ? rabCategoryBadge(cat.key) : ''}</td>
+          <td>${escHtml(item.name || '-')}</td>
+          <td>${escHtml(item.qty || 0)} ${escHtml(item.unit || '')}</td>
+          <td>${fmt$(item.price)}</td>
+          <td style="font-weight:900;white-space:nowrap">${fmt$(rabItemSubtotal(item))}</td>
+        </tr>`).join('')}
+        <tr><td colspan="4" class="rab-section-total">Total ${escHtml(cat.label)}</td><td class="rab-section-total">${fmt$(rabCategoryTotal(rab, cat.key))}</td></tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
 function rabFormRow(data={}){
   const rowId = uid();
+  const item = normalizeRabItem(data);
   return `<div class="rab-form-row" data-rab-row="${rowId}">
-    <input class="form-control rab-name" placeholder="Item biaya" value="${escHtml(data.name || '')}">
-    <input class="form-control rab-qty" type="number" min="0" placeholder="Qty" value="${escHtml(data.qty || '')}" oninput="updateRabModalTotal()">
-    <input class="form-control rab-unit" placeholder="Satuan" value="${escHtml(data.unit || '')}">
-    <input class="form-control rab-price" type="number" min="0" placeholder="Harga satuan" value="${escHtml(data.price || '')}" oninput="updateRabModalTotal()">
+    <select class="form-control rab-category">${RAB_CATEGORIES.map(cat => `<option value="${cat.key}"${item.category===cat.key?' selected':''}>${cat.label}</option>`).join('')}</select>
+    <input class="form-control rab-name" placeholder="Contoh: Honor Narasumber 1" value="${escHtml(item.name || '')}">
+    <input class="form-control rab-qty" type="number" min="0" step="0.5" placeholder="Jumlah" value="${escHtml(item.qty || '')}" oninput="updateRabModalTotal()">
+    <select class="form-control rab-unit">
+      ${['jam','hari','paket','orang','kali','unit'].map(unit => `<option value="${unit}"${item.unit===unit?' selected':''}>${unit}</option>`).join('')}
+    </select>
+    <input class="form-control rab-price" type="number" min="0" placeholder="Tarif" value="${escHtml(item.price || '')}" oninput="updateRabModalTotal()">
     <button class="btn btn-sec btn-sm" onclick="removeRabFormRow('${rowId}')" title="Hapus item">×</button>
   </div>`;
 }
@@ -4472,7 +4535,11 @@ function openRabModal(editId=''){
   if(!canAccessRab()) return;
   ensureRabState();
   const rab = editId ? state.rabItems.find(r => r.id === editId) : null;
-  const rows = (rab?.items?.length ? rab.items : [{name:'',qty:1,unit:'paket',price:''}]).map(rabFormRow).join('');
+  const rows = (rab?.items?.length ? rabItems(rab) : [
+    {category:'personnel', name:'Honor Narasumber', qty:2, unit:'jam', price:''},
+    {category:'committee', name:'Honor Panitia', qty:1, unit:'hari', price:''},
+    {category:'non_personnel', name:'Biaya Seminar Kit', qty:1, unit:'paket', price:''}
+  ]).map(rabFormRow).join('');
   const html = `
     <div class="form-row">
       <div class="form-group"><label class="form-label">Nama Kegiatan <span>*</span></label><input id="rab-name" class="form-control" value="${escHtml(rab?.name || '')}" placeholder="Contoh: Pelatihan Public Batch 1"></div>
@@ -4483,9 +4550,15 @@ function openRabModal(editId=''){
       <div class="form-group"><label class="form-label">Tanggal Selesai</label><input id="rab-end" type="date" class="form-control" value="${escHtml(rab?.endDate || '')}"></div>
     </div>
     <div class="form-group"><label class="form-label">Catatan</label><input id="rab-note" class="form-control" value="${escHtml(rab?.note || '')}" placeholder="Opsional"></div>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 8px">
-      <div style="font-size:13px;font-weight:950;color:var(--text)">Item Anggaran</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 8px;gap:12px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:13px;font-weight:950;color:var(--text)">Item Anggaran</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Kategori + item + jumlah × satuan/jam × tarif akan dihitung otomatis.</div>
+      </div>
       <button class="btn btn-sec btn-sm" onclick="addRabFormRow()">Tambah Item</button>
+    </div>
+    <div class="rab-form-row" style="margin-bottom:6px;color:var(--muted);font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.6px">
+      <div>Kategori</div><div>Item</div><div>Jumlah</div><div>Satuan</div><div>Tarif</div><div></div>
     </div>
     <div id="rab-rows">${rows}</div>
     <div style="display:flex;justify-content:flex-end;margin-top:10px;font-weight:950;color:var(--navy)">Total: <span id="rab-modal-total" style="margin-left:8px">${fmt$(rab ? rabTotal(rab) : 0)}</span></div>
@@ -4493,11 +4566,11 @@ function openRabModal(editId=''){
       <button class="btn btn-sec" onclick="closeModal()">Batal</button>
       <button class="btn btn-pri" onclick="saveRab('${editId}')">Simpan RAB</button>
     </div>`;
-  showModal(editId ? 'Edit RAB' : 'Buat RAB', html, 820);
+  showModal(editId ? 'Edit RAB' : 'Buat RAB', html, 980);
   setTimeout(updateRabModalTotal, 0);
 }
 function addRabFormRow(){
-  document.getElementById('rab-rows')?.insertAdjacentHTML('beforeend', rabFormRow({qty:1,unit:'paket'}));
+  document.getElementById('rab-rows')?.insertAdjacentHTML('beforeend', rabFormRow({category:'non_personnel', qty:1, unit:'paket'}));
   updateRabModalTotal();
 }
 function removeRabFormRow(id){
@@ -4509,6 +4582,7 @@ function removeRabFormRow(id){
 function readRabModalItems(){
   return [...document.querySelectorAll('[data-rab-row]')].map(row => ({
     id: uid(),
+    category: row.querySelector('.rab-category')?.value || 'non_personnel',
     name: row.querySelector('.rab-name')?.value.trim() || '',
     qty: Number(row.querySelector('.rab-qty')?.value || 0),
     unit: row.querySelector('.rab-unit')?.value.trim() || '',
@@ -4568,22 +4642,25 @@ function deleteRab(id){
 }
 function exportRabCsv(){
   ensureRabState();
-  const rows = [['LAPORAN RAB GRCC'], ['Tanggal Export', new Date().toLocaleString('id-ID')], [], ['Kode','Kegiatan','PIC','Mulai','Selesai','Status','Item','Qty','Satuan','Harga Satuan','Subtotal','Catatan']];
+  const rows = [['LAPORAN RAB GRCC'], ['Tanggal Export', new Date().toLocaleString('id-ID')], [], ['Kode','Kegiatan','PIC','Mulai','Selesai','Status','Kategori','Item','Jumlah','Satuan','Tarif','Subtotal','Catatan']];
   visibleRabItems().forEach(rab => {
-    (rab.items || []).forEach(item => rows.push([
+    rabItems(rab).forEach(item => rows.push([
       rab.code || rab.id,
       rab.name || '',
       rab.pic || '',
       rab.startDate || '',
       rab.endDate || '',
       rab.status || '',
+      rabCategoryMeta(item.category).label,
       item.name || '',
       item.qty || 0,
       item.unit || '',
       item.price || 0,
-      (Number(item.qty)||0) * (Number(item.price)||0),
+      rabItemSubtotal(item),
       rab.note || ''
     ]));
+    rows.push(['','','','','','','TOTAL RAB','','','','', rabTotal(rab),'']);
+    rows.push([]);
   });
   const csv = rows.map(r => r.map(v => `"${String(v || '').replace(/"/g,'""')}"`).join(',')).join('\n');
   downloadTextFilePatch(`rab-${today()}.csv`, csv, 'text/csv;charset=utf-8;');
