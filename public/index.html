@@ -4434,13 +4434,26 @@ function rabTotal(rab){ return rabItems(rab).reduce((sum,item)=>sum + rabItemSub
 function rabCategoryTotal(rab, category){ return rabItems(rab).filter(item => item.category === category).reduce((sum,item)=>sum + rabItemSubtotal(item), 0); }
 function normalizeRabIncome(rab={}){
   const income = rab.income || {};
+  const investment = Number(income.investment || 0);
+  const rawGrossRevenue = Number(income.grossRevenue || income.initialRevenue || 0);
+  const participants = Number(income.participants || income.people || (rawGrossRevenue && investment ? Math.round(rawGrossRevenue / investment) : 0));
+  const grossRevenue = participants && investment
+    ? participants * investment
+    : rawGrossRevenue;
+  const sellingPrice = grossRevenue ? Math.round(grossRevenue * 10 / 11.1) : Number(income.sellingPrice || 0);
+  const dpp = sellingPrice ? Math.round(sellingPrice * 11 / 12) : Number(income.dpp || 0);
+  const ppnRate = 12;
+  const institutionalFeeRate = 10;
+  const institutionalFee = grossRevenue ? Math.round(grossRevenue * institutionalFeeRate / 100) : Number(income.institutionalFee || 0);
   return {
-    investment: Number(income.investment || 0),
-    grossRevenue: Number(income.grossRevenue || income.initialRevenue || 0),
-    sellingPrice: Number(income.sellingPrice || 0),
-    dpp: Number(income.dpp || 0),
-    ppnRate: Number(income.ppnRate === undefined ? 12 : income.ppnRate),
-    institutionalFee: Number(income.institutionalFee || 0)
+    participants,
+    investment,
+    grossRevenue,
+    sellingPrice,
+    dpp,
+    ppnRate,
+    institutionalFeeRate,
+    institutionalFee
   };
 }
 function rabPpnAmount(rab){
@@ -4552,12 +4565,13 @@ function renderRabIncomePreview(rab){
   return `<table class="rab-mini-table">
     <thead><tr><th colspan="2">RAB Pemasukan</th></tr></thead>
     <tbody>
+      <tr><td>Jumlah Orang</td><td style="font-weight:900;text-align:right">${escHtml(income.participants || 0)} orang</td></tr>
       <tr><td>Nilai Investasi</td><td style="font-weight:900;text-align:right">${fmt$(income.investment)}</td></tr>
       <tr><td>Total Penerimaan Awal</td><td style="font-weight:900;text-align:right">${fmt$(income.grossRevenue)}</td></tr>
       <tr><td>Harga Jual</td><td style="text-align:right">${fmt$(income.sellingPrice)}</td></tr>
       <tr><td>DPP</td><td style="text-align:right">${fmt$(income.dpp)}</td></tr>
       <tr><td>(-) PPN (${income.ppnRate || 0}%)</td><td style="text-align:right">${fmt$(rabPpnAmount(rab))}</td></tr>
-      <tr><td>(-) Institutional Fee</td><td style="text-align:right">${fmt$(income.institutionalFee)}</td></tr>
+      <tr><td>(-) Institutional Fee (${income.institutionalFeeRate || 10}%)</td><td style="text-align:right">${fmt$(income.institutionalFee)}</td></tr>
       <tr><td class="rab-section-total">Total Penerimaan Aktual</td><td class="rab-section-total" style="text-align:right">${fmt$(rabActualIncome(rab))}</td></tr>
     </tbody>
   </table>`;
@@ -4619,12 +4633,13 @@ function openRabModal(editId=''){
     <div style="margin:12px 0 14px">
       <div style="font-size:13px;font-weight:950;color:var(--text);margin-bottom:8px">RAB Pemasukan</div>
       <div class="rab-income-grid">
+        <div class="form-group"><label class="form-label">Jumlah Orang</label><input id="rab-participants" class="form-control" type="number" min="0" value="${escHtml(income.participants || '')}" oninput="updateRabModalTotal()"></div>
         <div class="form-group"><label class="form-label">Nilai Investasi</label><input id="rab-investment" class="form-control" type="number" min="0" value="${escHtml(income.investment || '')}" oninput="updateRabModalTotal()"></div>
-        <div class="form-group"><label class="form-label">Total Penerimaan Awal</label><input id="rab-gross" class="form-control" type="number" min="0" value="${escHtml(income.grossRevenue || '')}" oninput="updateRabModalTotal()"></div>
-        <div class="form-group"><label class="form-label">Harga Jual</label><input id="rab-selling" class="form-control" type="number" min="0" value="${escHtml(income.sellingPrice || '')}" oninput="updateRabModalTotal()"></div>
-        <div class="form-group"><label class="form-label">DPP</label><input id="rab-dpp" class="form-control" type="number" min="0" value="${escHtml(income.dpp || '')}" oninput="updateRabModalTotal()"></div>
-        <div class="form-group"><label class="form-label">PPN (%)</label><input id="rab-ppn-rate" class="form-control" type="number" min="0" step="0.1" value="${escHtml(income.ppnRate || 12)}" oninput="updateRabModalTotal()"></div>
-        <div class="form-group"><label class="form-label">Institutional Fee</label><input id="rab-institutional" class="form-control" type="number" min="0" value="${escHtml(income.institutionalFee || '')}" oninput="updateRabModalTotal()"></div>
+        <div class="form-group"><label class="form-label">Total Penerimaan Awal</label><input id="rab-gross" class="form-control" type="text" value="${fmt$(income.grossRevenue)}" readonly></div>
+        <div class="form-group"><label class="form-label">Harga Jual</label><input id="rab-selling" class="form-control" type="text" value="${fmt$(income.sellingPrice)}" readonly></div>
+        <div class="form-group"><label class="form-label">DPP</label><input id="rab-dpp" class="form-control" type="text" value="${fmt$(income.dpp)}" readonly></div>
+        <div class="form-group"><label class="form-label">PPN 12%</label><input id="rab-ppn-readonly" class="form-control" type="text" value="${fmt$(rabPpnAmount({income}))}" readonly></div>
+        <div class="form-group"><label class="form-label">Institutional Fee 10%</label><input id="rab-institutional-readonly" class="form-control" type="text" value="${fmt$(income.institutionalFee)}" readonly></div>
       </div>
       <div class="rab-income-summary">
         <div><span>PPN</span><strong id="rab-ppn-preview">${fmt$(rabPpnAmount({income}))}</strong></div>
@@ -4683,7 +4698,17 @@ function updateRabModalTotal(){
   const actual = document.getElementById('rab-income-preview');
   const expense = document.getElementById('rab-expense-preview');
   const profit = document.getElementById('rab-profit-preview');
+  const grossInput = document.getElementById('rab-gross');
+  const sellingInput = document.getElementById('rab-selling');
+  const dppInput = document.getElementById('rab-dpp');
+  const ppnReadonly = document.getElementById('rab-ppn-readonly');
+  const institutionalReadonly = document.getElementById('rab-institutional-readonly');
   const profitValue = rabProfit(temp);
+  if(grossInput) grossInput.value = fmt$(income.grossRevenue);
+  if(sellingInput) sellingInput.value = fmt$(income.sellingPrice);
+  if(dppInput) dppInput.value = fmt$(income.dpp);
+  if(ppnReadonly) ppnReadonly.value = fmt$(rabPpnAmount(temp));
+  if(institutionalReadonly) institutionalReadonly.value = fmt$(income.institutionalFee);
   if(ppn) ppn.textContent = fmt$(rabPpnAmount(temp));
   if(actual) actual.textContent = fmt$(rabActualIncome(temp));
   if(expense) expense.textContent = fmt$(rabTotal(temp));
@@ -4693,14 +4718,10 @@ function updateRabModalTotal(){
   }
 }
 function readRabModalIncome(){
-  return {
+  return normalizeRabIncome({income:{
+    participants: Number(document.getElementById('rab-participants')?.value || 0),
     investment: Number(document.getElementById('rab-investment')?.value || 0),
-    grossRevenue: Number(document.getElementById('rab-gross')?.value || 0),
-    sellingPrice: Number(document.getElementById('rab-selling')?.value || 0),
-    dpp: Number(document.getElementById('rab-dpp')?.value || 0),
-    ppnRate: Number(document.getElementById('rab-ppn-rate')?.value || 0),
-    institutionalFee: Number(document.getElementById('rab-institutional')?.value || 0)
-  };
+  }});
 }
 function saveRab(editId=''){
   if(!canAccessRab()) return;
@@ -4754,6 +4775,7 @@ function exportRabCsv(){
   const rows = [['LAPORAN RAB GRCC'], ['Tanggal Export', new Date().toLocaleString('id-ID')], [], ['Kode','Kegiatan','PIC','Mulai','Selesai','Status','Jenis','Keterangan','Jumlah','Satuan','Tarif','Subtotal','Catatan']];
   visibleRabItems().forEach(rab => {
     const income = normalizeRabIncome(rab);
+    rows.push([rab.code || rab.id, rab.name || '', rab.pic || '', rab.startDate || '', rab.endDate || '', rab.status || '', 'PEMASUKAN', 'Jumlah Orang', income.participants || 0, 'orang', '', '', rab.note || '']);
     rows.push([rab.code || rab.id, rab.name || '', rab.pic || '', rab.startDate || '', rab.endDate || '', rab.status || '', 'PEMASUKAN', 'Nilai Investasi', '', '', '', income.investment, rab.note || '']);
     rows.push([rab.code || rab.id, rab.name || '', rab.pic || '', rab.startDate || '', rab.endDate || '', rab.status || '', 'PEMASUKAN', 'Total Penerimaan Awal', '', '', '', income.grossRevenue, rab.note || '']);
     rows.push([rab.code || rab.id, rab.name || '', rab.pic || '', rab.startDate || '', rab.endDate || '', rab.status || '', 'PEMASUKAN', 'Harga Jual', '', '', '', income.sellingPrice, rab.note || '']);
