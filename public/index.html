@@ -4533,9 +4533,13 @@ function rabCategoryBadge(category){
   const meta = rabCategoryMeta(category);
   return `<span class="rab-section-label ${meta.className}">${meta.short}. ${escHtml(meta.label)}</span>`;
 }
+function activeRabItems(){
+  ensureRabState();
+  return state.rabItems.filter(r => !r._deleted);
+}
 function visibleRabItems(){
   ensureRabState();
-  return [...state.rabItems]
+  return [...activeRabItems()]
     .filter(r => state.filterRabStatus === 'Semua' || r.status === state.filterRabStatus)
     .sort((a,b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
 }
@@ -4543,10 +4547,11 @@ function renderRab(){
   ensureRabState();
   if(!canAccessRab()) return `<div class="empty"><div class="empty-text">Halaman RAB hanya untuk Super Admin.</div></div>`;
   const items = visibleRabItems();
-  const totalIncome = state.rabItems.reduce((s,r)=>s+rabActualIncome(r),0);
-  const totalExpense = state.rabItems.reduce((s,r)=>s+rabTotal(r),0);
+  const activeItems = activeRabItems();
+  const totalIncome = activeItems.reduce((s,r)=>s+rabActualIncome(r),0);
+  const totalExpense = activeItems.reduce((s,r)=>s+rabTotal(r),0);
   const totalProfit = totalIncome - totalExpense;
-  const draft = state.rabItems.filter(r => r.status === 'Draft').length;
+  const draft = activeItems.filter(r => r.status === 'Draft').length;
   return `<div class="rab-shell">
     <div class="rab-hero">
       <div>
@@ -4560,7 +4565,7 @@ function renderRab(){
       </button>
     </div>
     <div class="rab-stats">
-      <div class="rab-stat"><span>Total RAB</span><strong>${state.rabItems.length}</strong></div>
+      <div class="rab-stat"><span>Total RAB</span><strong>${activeItems.length}</strong></div>
       <div class="rab-stat"><span>Draft</span><strong>${draft}</strong></div>
       <div class="rab-stat"><span>Pemasukan Aktual</span><strong>${fmt$(totalIncome)}</strong></div>
       <div class="rab-stat"><span>Profit/Loss</span><strong style="color:${totalProfit >= 0 ? '#047857' : '#B91C1C'}">${fmt$(totalProfit)}</strong></div>
@@ -4862,13 +4867,22 @@ function setRabStatus(id, status){
   renderPage();
   toast(`Status RAB menjadi ${status}`, status === 'Approved' ? 'success' : 'info');
 }
-function deleteRab(id){
+async function deleteRab(id){
   if(!canAccessRab()) return;
   if(!confirm('Hapus RAB ini?')) return;
-  state.rabItems = state.rabItems.filter(r => r.id !== id);
+  state.rabItems = state.rabItems.map(r => r.id === id ? {...r,_deleted:true,updatedAt:new Date().toISOString(),updatedBy:state.user?.name || ''} : r);
   persistPatched();
   renderPage();
-  toast('RAB dihapus', 'info');
+  if(typeof window.flushBackendSave === 'function'){
+    try {
+      await window.flushBackendSave();
+      toast('RAB dihapus dari server', 'success');
+    } catch(e) {
+      toast('RAB dihapus lokal, tetapi sinkron server belum selesai', 'warning');
+    }
+  } else {
+    toast('RAB dihapus', 'info');
+  }
 }
 function exportRabCsv(){
   ensureRabState();
@@ -7485,6 +7499,10 @@ if(state.user && !isProductionRuntime()){
   persistPatched = function(){
     localPersist();
     scheduleBackendSave();
+  };
+  window.flushBackendSave = function(){
+    clearTimeout(saveTimer);
+    return saveToBackend(true);
   };
 
   async function loadFromBackend(){
