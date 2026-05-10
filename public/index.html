@@ -829,6 +829,11 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
 .rab-income-summary div { padding:10px; border-radius:11px; border:1px solid var(--border); background:#fff; }
 .rab-income-summary span { display:block; font-size:9px; font-weight:950; letter-spacing:.6px; text-transform:uppercase; color:var(--muted); }
 .rab-income-summary strong { display:block; margin-top:3px; color:var(--navy); font-size:13px; }
+.rab-warning-box { border:1px solid #FCD34D; background:linear-gradient(135deg, rgba(254,243,199,.9), rgba(255,255,255,.96)); color:#92400E; border-radius:12px; padding:11px 12px; margin:10px 0; animation:rabFadeUp .28s ease both; }
+.rab-warning-box.danger { border-color:#FCA5A5; background:linear-gradient(135deg, rgba(254,226,226,.9), rgba(255,255,255,.96)); color:#991B1B; }
+.rab-warning-box.info { border-color:#BFDBFE; background:linear-gradient(135deg, rgba(219,234,254,.9), rgba(255,255,255,.96)); color:#1E40AF; }
+.rab-warning-title { font-size:11px; font-weight:950; letter-spacing:.6px; text-transform:uppercase; margin-bottom:5px; }
+.rab-warning-list { margin:0; padding-left:18px; font-size:11.5px; line-height:1.55; font-weight:750; }
 @keyframes rabFadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 @media (max-width: 900px) {
   .finance-toolbar { align-items:stretch; }
@@ -4489,6 +4494,37 @@ function rabMargin(rab){
   const actual = rabActualIncome(rab);
   return actual > 0 ? (rabProfit(rab) / actual) * 100 : 0;
 }
+function rabValidationWarnings(rab={}){
+  const income = normalizeRabIncome(rab);
+  const expense = rabTotal(rab);
+  const actual = rabActualIncome(rab);
+  const profit = actual - expense;
+  const autoDpp = income.sellingPrice ? Math.round(income.sellingPrice * 11 / 12) : 0;
+  const autoPpn = Math.round((Number(income.dpp) || 0) * 0.12);
+  const autoIf = income.grossRevenue ? Math.round(income.grossRevenue * 0.10) : 0;
+  const warnings = [];
+  if(actual > 0 && expense > actual) warnings.push({level:'danger', text:`Pengeluaran (${fmt$(expense)}) lebih besar dari pemasukan aktual (${fmt$(actual)}).`});
+  if(profit < 0) warnings.push({level:'danger', text:`RAB berada di posisi rugi/loss sebesar ${fmt$(Math.abs(profit))}.`});
+  if(income.grossRevenue <= 0) warnings.push({level:'warning', text:'Total penerimaan awal masih kosong. Isi minimal satu jenis harga dan jumlah orang.'});
+  if(income.dppManual !== '' && autoDpp > 0 && income.dpp > autoDpp * 1.25) warnings.push({level:'warning', text:`DPP manual ${fmt$(income.dpp)} jauh di atas estimasi auto ${fmt$(autoDpp)}.`});
+  if(income.dppManual !== '' && autoDpp > 0 && income.dpp > 0 && income.dpp < autoDpp * 0.5) warnings.push({level:'warning', text:`DPP manual ${fmt$(income.dpp)} jauh di bawah estimasi auto ${fmt$(autoDpp)}.`});
+  if(income.ppnManual !== '' && income.ppnAmount === 0) warnings.push({level:'info', text:'PPN manual diisi 0. Pastikan kegiatan memang bebas PPN.'});
+  if(income.ppnManual !== '' && income.dpp > 0 && income.ppnAmount > income.dpp * 0.2) warnings.push({level:'warning', text:`PPN manual ${fmt$(income.ppnAmount)} terlihat lebih besar dari 20% DPP.`});
+  if(income.ppnManual !== '' && autoPpn > 0 && income.ppnAmount > 0 && (income.ppnAmount < autoPpn * 0.5 || income.ppnAmount > autoPpn * 1.5)) warnings.push({level:'warning', text:`PPN manual berbeda jauh dari estimasi auto ${fmt$(autoPpn)}.`});
+  if(income.institutionalFeeManual !== '' && income.institutionalFee === 0) warnings.push({level:'info', text:'Institutional Fee manual diisi 0. Pastikan memang tidak dikenakan IF.'});
+  if(income.institutionalFeeManual !== '' && income.grossRevenue > 0 && income.institutionalFee > income.grossRevenue * 0.3) warnings.push({level:'warning', text:`Institutional Fee manual ${fmt$(income.institutionalFee)} terlihat lebih besar dari 30% penerimaan awal.`});
+  if(income.institutionalFeeManual !== '' && autoIf > 0 && income.institutionalFee > 0 && (income.institutionalFee < autoIf * 0.5 || income.institutionalFee > autoIf * 1.5)) warnings.push({level:'warning', text:`Institutional Fee manual berbeda jauh dari estimasi auto ${fmt$(autoIf)}.`});
+  return warnings;
+}
+function renderRabWarnings(rab={}){
+  const warnings = rabValidationWarnings(rab);
+  if(!warnings.length) return '';
+  const level = warnings.some(w => w.level === 'danger') ? 'danger' : warnings.some(w => w.level === 'warning') ? '' : 'info';
+  return `<div class="rab-warning-box ${level}">
+    <div class="rab-warning-title">${level === 'danger' ? 'Perlu Perhatian' : level === 'info' ? 'Catatan Validasi' : 'Warning Angka'}</div>
+    <ul class="rab-warning-list">${warnings.map(w => `<li>${escHtml(w.text)}</li>`).join('')}</ul>
+  </div>`;
+}
 function rabStatusBadge(status){
   const cls = String(status || 'Draft').toLowerCase();
   return `<span class="rab-status ${cls}">${escHtml(status || 'Draft')}</span>`;
@@ -4569,6 +4605,7 @@ function renderRabRow(rab){
         <div><span>Pengeluaran</span><strong>${fmt$(expense)}</strong></div>
         <div class="${profit >= 0 ? 'profit' : 'loss'}"><span>${profit >= 0 ? 'Profit' : 'Loss'}</span><strong>${fmt$(profit)}</strong><span style="margin-top:3px">${margin.toFixed(1)}%</span></div>
       </div>
+      ${renderRabWarnings(rab)}
     </td>
     <td>${rabStatusBadge(rab.status)}</td>
     <td><div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -4684,6 +4721,7 @@ function openRabModal(editId=''){
         <div><span>Pengeluaran</span><strong id="rab-expense-preview">${fmt$(rab ? rabTotal(rab) : 0)}</strong></div>
         <div><span>Profit/Loss</span><strong id="rab-profit-preview">${fmt$(rab ? rabProfit(rab) : rabActualIncome({income}))}</strong></div>
       </div>
+      <div id="rab-validation-preview">${renderRabWarnings(rab || {income, items:[]})}</div>
     </div>
     <div class="form-group"><label class="form-label">Catatan</label><input id="rab-note" class="form-control" value="${escHtml(rab?.note || '')}" placeholder="Opsional"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 8px;gap:12px;flex-wrap:wrap">
@@ -4750,6 +4788,7 @@ function updateRabModalTotal(){
   const dppManual = document.getElementById('rab-dpp-manual');
   const ppnManual = document.getElementById('rab-ppn-manual');
   const institutionalManual = document.getElementById('rab-if-manual');
+  const validationPreview = document.getElementById('rab-validation-preview');
   const profitValue = rabProfit(temp);
   if(grossInput) grossInput.value = fmt$(income.grossRevenue);
   if(sellingInput) sellingInput.value = fmt$(income.sellingPrice);
@@ -4763,6 +4802,7 @@ function updateRabModalTotal(){
     profit.textContent = fmt$(profitValue);
     profit.style.color = profitValue >= 0 ? '#047857' : '#B91C1C';
   }
+  if(validationPreview) validationPreview.innerHTML = renderRabWarnings(temp);
 }
 function readRabModalIncome(){
   const manualValue = id => {
@@ -4788,6 +4828,8 @@ function saveRab(editId=''){
   const items = readRabModalItems();
   if(!name || !startDate){ toast('Nama kegiatan dan tanggal mulai wajib diisi', 'error'); return; }
   if(!items.length || items.some(item => !item.name || item.qty <= 0 || item.price <= 0)){ toast('Setiap item wajib punya nama, qty, dan harga satuan', 'error'); return; }
+  const income = readRabModalIncome();
+  const warnings = rabValidationWarnings({income, items});
   const now = new Date().toISOString();
   const existing = editId ? state.rabItems.find(r => r.id === editId) : null;
   const id = editId || uid();
@@ -4799,7 +4841,7 @@ function saveRab(editId=''){
     startDate,
     endDate: document.getElementById('rab-end')?.value || '',
     note: document.getElementById('rab-note')?.value.trim() || '',
-    income: readRabModalIncome(),
+    income,
     items,
     status: existing?.status || 'Draft',
     createdAt: existing?.createdAt || now,
@@ -4811,7 +4853,7 @@ function saveRab(editId=''){
   persistPatched();
   closeModal();
   renderPage();
-  toast('RAB berhasil disimpan', 'success');
+  toast(warnings.length ? 'RAB tersimpan, tetapi ada warning angka yang perlu dicek' : 'RAB berhasil disimpan', warnings.length ? 'warning' : 'success');
 }
 function setRabStatus(id, status){
   if(!canAccessRab()) return;
