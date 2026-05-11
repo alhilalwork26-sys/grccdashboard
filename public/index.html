@@ -2215,7 +2215,7 @@ function runAutomaticReminders(){
     });
   }
 
-  state.expenses.forEach(e => {
+  activeExpenses().forEach(e => {
     const amount = e.total || e.amount || 0;
     if(e.status === 'Draft'){
       once(`finance_draft_${e.id}`, {title:'Draft pengeluaran belum disubmit', message:`${e.activity} senilai ${fmt$(amount)} masih Draft.`, type:'info', recipientUserIds:financeWatchers, linkPage:'finance'});
@@ -2374,7 +2374,7 @@ function renderDashboard(){
   const active = state.tasks.filter(t=>t.status!=='Done').length;
   const done   = state.tasks.filter(t=>t.status==='Done').length;
   const mSched = state.schedules.filter(s=>thisMonth(s.date)).length;
-  const mExp   = state.expenses.filter(e=>thisMonth(e.date)&&(e.status==='Approved'||e.status==='Submitted')).reduce((s,e)=>s+(e.total||e.amount||0),0);
+  const mExp   = activeExpenses().filter(e=>thisMonth(e.date)&&(e.status==='Approved'||e.status==='Submitted')).reduce((s,e)=>s+(e.total||e.amount||0),0);
   const programs = Array.isArray(state.programs) ? state.programs : [];
   const runningPrograms = programs.filter(p=>{
     const status = String(p.status || '').toLowerCase();
@@ -3512,26 +3512,41 @@ function financeExpenseTypeMeta(type){
 }
 function financeExpenseTypeLabel(type){ return financeExpenseTypeMeta(type).label; }
 function canManageFinanceReimburse(userOrRole){ return isSuperAdminRole(userOrRole) || isFinanceRole(userOrRole); }
+function activeExpenses(){
+  if(!Array.isArray(state.expenses)) state.expenses = [];
+  return state.expenses.filter(e => !e?._deleted);
+}
+function expenseDetailText(e){
+  if(!e) return '-';
+  if(e.type === 'makan') return `${e.people || e.qty || 0} orang · ${e.vendor || '-'}`;
+  const qty = Number(e.qty || 0) ? `${e.qty} ${e.unit || ''}`.trim() : '';
+  const vendor = e.vendor || '';
+  const category = e.cat || financeExpenseTypeLabel(e.type);
+  const note = e.desc || '';
+  return [qty, vendor, category, note].filter(Boolean).join(' · ') || '-';
+}
 function renderFinance(){
   const fs=state.filterExpStatus, ft=state.filterExpType, fm=state.filterExpMonth||'', fv=state.financeView||'detail';
   const monthLong = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  const expenses = activeExpenses();
+  const reimburseRequests = activeReimburseRequests();
   const periodOptions = [...new Set([
-    ...state.expenses.map(e => String(e.date||'').slice(0,7)),
-    ...(state.reimburseRequests || []).map(r => String(r.date||'').slice(0,7))
+    ...expenses.map(e => String(e.date||'').slice(0,7)),
+    ...reimburseRequests.map(r => String(r.date||'').slice(0,7))
   ].filter(v => /^\d{4}-\d{2}$/.test(v)))].sort().reverse();
   if(fm && !periodOptions.includes(fm)) periodOptions.unshift(fm);
   const periodLabel = fm ? (() => {
     const [y,m] = fm.split('-');
     return `${monthLong[Number(m)-1] || m} ${y}`;
   })() : 'Semua periode';
-  const filtered=state.expenses.filter(e=>{
+  const filtered=expenses.filter(e=>{
     if(fs!=='Semua'&&e.status!==fs) return false;
     if(ft!=='Semua'&&e.type!==ft) return false;
     if(fm&&String(e.date||'').slice(0,7)!==fm) return false;
     return true;
   });
-  const periodExpenses=state.expenses.filter(e=>!fm||String(e.date||'').slice(0,7)===fm);
-  const periodReimburseRequests = (state.reimburseRequests || []).filter(r => !fm || String(r.date || '').slice(0,7) === fm);
+  const periodExpenses=expenses.filter(e=>!fm||String(e.date||'').slice(0,7)===fm);
+  const periodReimburseRequests = reimburseRequests.filter(r => !fm || String(r.date || '').slice(0,7) === fm);
   const totalReimburseRequests = periodReimburseRequests.filter(r => r.status !== 'Rejected').reduce((s,r)=>s+reimburseTotal(r),0);
   const pendingReimburseTotal = periodReimburseRequests.filter(r => r.status === 'Submitted').reduce((s,r)=>s+reimburseTotal(r),0);
   const approvedReimburseTotal = periodReimburseRequests.filter(r => r.status === 'Approved').reduce((s,r)=>s+reimburseTotal(r),0);
@@ -3638,7 +3653,7 @@ function renderFinance(){
               <div style="color:var(--muted);font-size:11px">${escHtml(e.desc||'')}</div>
             </td>
             <td><span style="background:${typeMeta.tone==='purple'?'var(--purple-lt)':'var(--blue-lt)'};color:${typeMeta.tone==='purple'?'var(--purple)':'var(--navy-md)'};font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700">${escHtml(typeMeta.label)}</span></td>
-            <td style="font-size:11px;color:var(--sub)">${e.type==='makan'?`${e.people || 0} orang · ${escHtml(e.vendor||'')}`:escHtml(e.cat||e.desc||'-')}</td>
+            <td style="font-size:11px;color:var(--sub)">${escHtml(expenseDetailText(e))}</td>
             <td style="font-weight:700;white-space:nowrap">${fmt$(e.total||e.amount)}</td>
             <td style="font-size:12px;color:var(--sub)">${escHtml(e.pic)}</td>
             <td>${badge(e.status)}</td>
@@ -3733,8 +3748,29 @@ function renderFinanceReimbursePanel(requests=[]){
     </div>` : `<div style="font-size:12px;color:var(--muted)">Belum ada pengajuan reimburse pada periode ini.</div>`}
   </div>`;
 }
-function changeExpStatus(id,status){ state.expenses=state.expenses.map(e=>e.id===id?{...e,status,updatedAt:new Date().toISOString()}:e); toast(`Status diubah ke ${status}`); renderPage(); }
-function deleteExp(id){ state.expenses=state.expenses.filter(e=>e.id!==id); toast('Data dihapus','info'); renderPage(); }
+function changeExpStatus(id,status){ state.expenses=state.expenses.map(e=>e.id===id&&!e._deleted?{...e,status,updatedAt:new Date().toISOString()}:e); toast(`Status diubah ke ${status}`); renderPage(); }
+async function deleteExp(id){
+  const exp = activeExpenses().find(e => e.id === id);
+  if(!exp) return;
+  if(!confirm(`Hapus pengeluaran "${exp.activity || exp.id}"? Data ini juga akan dihapus dari server.`)) return;
+  const now = new Date().toISOString();
+  state.expenses = state.expenses.map(e => e.id === id ? {
+    ...e,
+    _deleted:true,
+    deletedAt:now,
+    deletedById:state.user?.id || '',
+    deletedByName:state.user?.name || '',
+    updatedAt:now
+  } : e);
+  persistPatched();
+  renderPage();
+  try {
+    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    toast('Pengeluaran berhasil dihapus dari server','success');
+  } catch(err) {
+    toast('Pengeluaran disembunyikan, tapi sinkron server belum selesai','warning');
+  }
+}
 function setFinancePeriodFilter(value=''){
   state.filterExpMonth = value || '';
   persistPatched();
@@ -3763,24 +3799,22 @@ function openExpModal(){
         <select id="ef-pic" class="form-control">${ACCOUNTS.map(a=>`<option>${escHtml(a.name)}</option>`).join('')}</select>
       </div>
     </div>
-    <div id="ef-makan">
+    <div id="ef-detail">
       <div class="form-row" style="margin-top:0">
-        <div class="form-group"><label class="form-label">Jumlah Orang</label>
+        <div class="form-group"><label class="form-label" id="ef-qty-label">Jumlah Orang</label>
           <input id="ef-people" type="number" class="form-control" placeholder="0">
         </div>
-        <div class="form-group"><label class="form-label">Vendor</label>
+        <div class="form-group" id="ef-unit-wrap" style="display:none"><label class="form-label">Satuan</label>
+          <select id="ef-unit" class="form-control">
+            ${['paket','unit','orang','hari','kali','bulan','lembar'].map(unit=>`<option value="${unit}">${unit}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label" id="ef-vendor-label">Vendor</label>
           <input id="ef-vendor" class="form-control" placeholder="Nama vendor/catering">
         </div>
       </div>
       <div class="form-group"><label class="form-label">Total Biaya (Rp)</label>
         <input id="ef-total" type="number" class="form-control" placeholder="0">
-      </div>
-    </div>
-    <div id="ef-kegiatan" style="display:none">
-      <div class="form-row">
-        <div class="form-group"><label class="form-label">Nominal (Rp)</label>
-          <input id="ef-amount" type="number" class="form-control" placeholder="0">
-        </div>
       </div>
     </div>
     <div class="form-group"><label class="form-label">Keterangan</label>
@@ -3793,12 +3827,22 @@ function openExpModal(){
       <button class="btn btn-sec" onclick="closeModal()">Batal</button>
       <button class="btn btn-pri" onclick="saveExp()">Simpan Draft</button>
     </div>`;
-  showModal('Tambah Pengeluaran', html, 560);
+  showModal('Tambah Pengeluaran', html, 680);
+  toggleExpForm();
 }
 function toggleExpForm(){
   const t=document.getElementById('ef-type').value;
-  document.getElementById('ef-makan').style.display=t==='makan'?'':'none';
-  document.getElementById('ef-kegiatan').style.display=t==='kegiatan'?'':'none';
+  const isMakan = t === 'makan';
+  const qtyLabel = document.getElementById('ef-qty-label');
+  const vendorLabel = document.getElementById('ef-vendor-label');
+  const qtyInput = document.getElementById('ef-people');
+  const vendorInput = document.getElementById('ef-vendor');
+  const unitWrap = document.getElementById('ef-unit-wrap');
+  if(qtyLabel) qtyLabel.textContent = isMakan ? 'Jumlah Orang' : 'Jumlah/Kuantitas';
+  if(vendorLabel) vendorLabel.textContent = isMakan ? 'Vendor' : 'Vendor/Penerima';
+  if(qtyInput) qtyInput.placeholder = isMakan ? '0 orang' : '0';
+  if(vendorInput) vendorInput.placeholder = isMakan ? 'Nama vendor/catering' : 'Nama toko, penerima, atau supplier';
+  if(unitWrap) unitWrap.style.display = isMakan ? 'none' : '';
 }
 function saveExp(){
   const activity=document.getElementById('ef-activity').value.trim();
@@ -3806,16 +3850,18 @@ function saveExp(){
   if(!activity||!date){toast('Kegiatan dan tanggal wajib diisi','error');return;}
   const type=document.getElementById('ef-type').value;
   const stamp = new Date().toISOString();
-  const data={id:uid(),type,activity,date,pic:document.getElementById('ef-pic').value,desc:document.getElementById('ef-desc').value,status:'Draft',createdAt:stamp,updatedAt:stamp,reimbursed:false};
-  if(type==='makan'){data.people=Number(document.getElementById('ef-people').value)||0;data.vendor=document.getElementById('ef-vendor').value;data.total=Number(document.getElementById('ef-total').value)||0;}
-  else{data.cat=financeExpenseTypeLabel(type);data.amount=Number(document.getElementById('ef-amount').value)||0;}
+  const qty = Number(document.getElementById('ef-people').value)||0;
+  const unit = type === 'makan' ? 'orang' : (document.getElementById('ef-unit')?.value || 'paket');
+  const total = Number(document.getElementById('ef-total').value)||0;
+  const data={id:uid(),type,activity,date,pic:document.getElementById('ef-pic').value,desc:document.getElementById('ef-desc').value,status:'Draft',createdAt:stamp,updatedAt:stamp,reimbursed:false,cat:financeExpenseTypeLabel(type),qty,unit,vendor:document.getElementById('ef-vendor').value,total,amount:total};
+  if(type==='makan') data.people = qty;
   state.expenses=[...state.expenses,data];
   toast('Pengeluaran berhasil disimpan');
   closeModal(); renderPage();
 }
 
 async function uploadExpenseInvoice(expenseId, file){
-  const exp = state.expenses.find(e => e.id === expenseId);
+  const exp = activeExpenses().find(e => e.id === expenseId);
   if(!exp || !file) return;
   const docId = `invoice_${expenseId}_${uid().replace(/^_/, '')}`;
   try {
@@ -3937,7 +3983,7 @@ function setFinanceView(view='detail'){
 }
 function markFinanceWeekReimbursed(key){
   if(!canManageFinanceReimburse(state.user)){toast('Hanya Super Admin/Finance yang bisa menandai reimburse','error');return;}
-  const groups = financeWeeklyGroups(state.expenses || []);
+  const groups = financeWeeklyGroups(activeExpenses());
   const group = groups.find(g => g.key === key);
   if(!group) return;
   const note = prompt('Keterangan pembayaran reimburse minggu ini wajib diisi:', group.paid?.note || '');
@@ -3982,6 +4028,10 @@ function ensureReimburseState(){
   if(!state.filterReimburseStatus) state.filterReimburseStatus = 'Semua';
 }
 function canReviewReimburse(userOrRole){ return isSuperAdminRole(userOrRole) || isFinanceRole(userOrRole); }
+function activeReimburseRequests(){
+  ensureReimburseState();
+  return state.reimburseRequests.filter(req => !req?._deleted);
+}
 function reimburseStatusLabel(status){
   return {Submitted:'Diajukan',Approved:'Disetujui',Rejected:'Ditolak',Paid:'Dibayar'}[status] || status || 'Diajukan';
 }
@@ -3995,7 +4045,7 @@ function reimburseTotal(req){
 function visibleReimburseRequests(){
   ensureReimburseState();
   const canReview = canReviewReimburse(state.user);
-  return [...state.reimburseRequests]
+  return [...activeReimburseRequests()]
     .filter(req => canReview || req.applicantId === state.user?.id)
     .filter(req => state.filterReimburseStatus === 'Semua' || req.status === state.filterReimburseStatus)
     .sort((a,b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
@@ -4045,11 +4095,12 @@ function closeReimburseFilePreview(){ document.getElementById('reimburse-preview
 function renderReimburse(){
   ensureReimburseState();
   const canReview = canReviewReimburse(state.user);
-  const own = state.reimburseRequests.filter(r => r.applicantId === state.user?.id);
+  const requests = activeReimburseRequests();
+  const own = requests.filter(r => r.applicantId === state.user?.id);
   const visible = visibleReimburseRequests();
-  const waiting = state.reimburseRequests.filter(r => r.status === 'Submitted').length;
-  const approved = state.reimburseRequests.filter(r => r.status === 'Approved').reduce((s,r)=>s+reimburseTotal(r),0);
-  const paid = state.reimburseRequests.filter(r => r.status === 'Paid').reduce((s,r)=>s+reimburseTotal(r),0);
+  const waiting = requests.filter(r => r.status === 'Submitted').length;
+  const approved = requests.filter(r => r.status === 'Approved').reduce((s,r)=>s+reimburseTotal(r),0);
+  const paid = requests.filter(r => r.status === 'Paid').reduce((s,r)=>s+reimburseTotal(r),0);
   return `
     <div class="reimburse-hero">
       <div class="reimburse-hero-row">
@@ -4065,7 +4116,7 @@ function renderReimburse(){
       </div>
     </div>
     <div class="reimburse-stat-grid">
-      <div class="reimburse-stat"><span>${canReview?'Total Pengajuan':'Pengajuan Saya'}</span><strong>${canReview ? state.reimburseRequests.length : own.length}</strong></div>
+      <div class="reimburse-stat"><span>${canReview?'Total Pengajuan':'Pengajuan Saya'}</span><strong>${canReview ? requests.length : own.length}</strong></div>
       <div class="reimburse-stat"><span>Menunggu Review</span><strong>${waiting}</strong></div>
       <div class="reimburse-stat"><span>Disetujui</span><strong>${fmt$(approved)}</strong></div>
       <div class="reimburse-stat"><span>Dibayar</span><strong>${fmt$(paid)}</strong></div>
@@ -4094,6 +4145,7 @@ function renderReimburseRow(req, canReview){
   window.__reimbursePreviewFiles[`payment_${req.id}`] = req.paymentProofs || [];
   const canAct = canReview && req.status === 'Submitted';
   const canPay = canReview && req.status === 'Approved';
+  const canDelete = canReview || (req.applicantId === state.user?.id && req.status === 'Submitted');
   const itemList = (req.items || []).map(item => `<li><strong>${escHtml(item.category)}</strong> - ${escHtml(item.description || '-')} (${fmt$(item.amount)})${item.note?`<br><span style="color:var(--muted)">${escHtml(item.note)}</span>`:''}</li>`).join('');
   const receipts = renderReimburseFilePreviews(req.receipts || [], `receipt_${req.id}`);
   return `<tr>
@@ -4108,6 +4160,7 @@ function renderReimburseRow(req, canReview){
       <button class="btn btn-sec btn-sm" onclick="openReimburseDetail('${req.id}')">Detail</button>
       ${canAct ? `<button class="btn btn-suc btn-sm" onclick="reviewReimburse('${req.id}','Approved')">Approve</button><button class="btn btn-dan btn-sm" onclick="reviewReimburse('${req.id}','Rejected')">Tolak</button>` : ''}
       ${canPay ? `<button class="btn btn-pri btn-sm" onclick="markReimbursePaid('${req.id}')">Sudah Dibayar</button>` : ''}
+      ${canDelete ? `<button class="btn btn-dan btn-sm" onclick="deleteReimburseRequest('${req.id}')">Hapus</button>` : ''}
     </div></td>
   </tr>`;
 }
@@ -4265,7 +4318,7 @@ async function submitReimburseRequest(){
   }
 }
 function openReimburseDetail(id){
-  const req = state.reimburseRequests.find(r => r.id === id);
+  const req = activeReimburseRequests().find(r => r.id === id);
   if(!req) return;
   window.__reimbursePreviewFiles = window.__reimbursePreviewFiles || {};
   window.__reimbursePreviewFiles[`detail_receipt_${req.id}`] = req.receipts || [];
@@ -4302,7 +4355,7 @@ function openReimburseDetail(id){
 }
 function reviewReimburse(id, status){
   if(!canReviewReimburse(state.user)){toast('Hanya Finance dan Super Admin yang bisa review reimburse','error');return;}
-  const req = state.reimburseRequests.find(r => r.id === id);
+  const req = activeReimburseRequests().find(r => r.id === id);
   if(!req) return;
   const note = prompt(status === 'Approved' ? 'Keterangan approval:' : 'Alasan penolakan wajib diisi:');
   if(note === null) return;
@@ -4331,7 +4384,7 @@ function reviewReimburse(id, status){
 }
 function markReimbursePaid(id){
   if(!canReviewReimburse(state.user)){toast('Hanya Finance dan Super Admin yang bisa menandai pembayaran','error');return;}
-  const req = state.reimburseRequests.find(r => r.id === id);
+  const req = activeReimburseRequests().find(r => r.id === id);
   if(!req) return;
   const html = `
     <div style="border:1px solid rgba(91,141,246,.18);border-radius:12px;padding:12px;background:rgba(239,246,255,.76);margin-bottom:12px">
@@ -4355,7 +4408,7 @@ function markReimbursePaid(id){
 }
 async function submitReimbursePaid(id){
   if(!canReviewReimburse(state.user)){toast('Hanya Finance dan Super Admin yang bisa menandai pembayaran','error');return;}
-  const req = state.reimburseRequests.find(r => r.id === id);
+  const req = activeReimburseRequests().find(r => r.id === id);
   if(!req) return;
   const note = document.getElementById('rp-note')?.value.trim() || '';
   const files = [...(document.getElementById('rp-files')?.files || [])];
@@ -4399,6 +4452,30 @@ async function submitReimbursePaid(id){
     toast(err.message || 'Upload bukti pembayaran gagal', 'error');
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = 'Simpan Pembayaran'; }
+  }
+}
+async function deleteReimburseRequest(id){
+  const req = activeReimburseRequests().find(r => r.id === id);
+  if(!req) return;
+  const allowed = canReviewReimburse(state.user) || (req.applicantId === state.user?.id && req.status === 'Submitted');
+  if(!allowed){toast('Anda tidak punya akses menghapus pengajuan ini','error');return;}
+  if(!confirm(`Hapus pengajuan reimburse ${req.code || req.id}? Data ini juga akan dihapus dari server.`)) return;
+  const now = new Date().toISOString();
+  state.reimburseRequests = state.reimburseRequests.map(r => r.id === id ? {
+    ...r,
+    _deleted:true,
+    deletedAt:now,
+    deletedById:state.user?.id || '',
+    deletedByName:state.user?.name || '',
+    updatedAt:now
+  } : r);
+  persistPatched();
+  renderPage();
+  try {
+    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    toast('Pengajuan reimburse berhasil dihapus dari server','success');
+  } catch(err) {
+    toast('Pengajuan disembunyikan, tapi sinkron server belum selesai','warning');
   }
 }
 
@@ -4920,7 +4997,7 @@ function exportRabCsv(){
   toast('Export RAB berhasil diunduh', 'success');
 }
 function openExpenseDetail(id){
-  const e = state.expenses.find(item => item.id === id);
+  const e = activeExpenses().find(item => item.id === id);
   if(!e) return;
   const typeMeta = financeExpenseTypeMeta(e.type);
   const {key, paid} = financeReimbursementInfoForExpense(e);
@@ -4936,6 +5013,7 @@ function openExpenseDetail(id){
         ['Tanggal', fmtD(e.date)],
         ['Minggu', `${financeWeekLabel(monthKey, weekNo)} (${financeWeekRangeLabel(monthKey, weekNo)})`],
         ['Tipe', typeMeta.label],
+        ['Detail', expenseDetailText(e)],
         ['Jumlah', fmt$(expenseAmount(e))],
         ['PIC', e.pic || '-'],
         ['Status Approval', e.status || '-']
@@ -6101,7 +6179,7 @@ function wrapPersist(fnName){
   };
 }
 function exportFinanceCsv(){
-  const filtered = state.expenses.filter(e => {
+  const filtered = activeExpenses().filter(e => {
     if(state.filterExpStatus !== 'Semua' && e.status !== state.filterExpStatus) return false;
     if(state.filterExpType !== 'Semua' && e.type !== state.filterExpType) return false;
     if(state.filterExpMonth && financeMonthKey(e.date) !== state.filterExpMonth) return false;
@@ -6148,7 +6226,7 @@ function exportFinanceCsv(){
         e.date,
         e.activity,
         financeExpenseTypeLabel(e.type),
-        e.type === 'makan' ? `${e.people || 0} orang - ${e.vendor || ''}` : (e.cat || ''),
+        expenseDetailText(e),
         expenseAmount(e),
         e.pic,
         e.status,
@@ -6157,7 +6235,7 @@ function exportFinanceCsv(){
         e.desc || ''
       ]);
     });
-  const reimburseRows = (state.reimburseRequests || [])
+  const reimburseRows = activeReimburseRequests()
     .filter(r => !state.filterExpMonth || financeMonthKey(r.date) === state.filterExpMonth)
     .slice()
     .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
@@ -7019,7 +7097,7 @@ if(state.user && !isProductionRuntime()){
     const originalChangeExpStatusNotif = changeExpStatus;
     changeExpStatus = function(id,status){
       originalChangeExpStatusNotif(id,status);
-      const exp = state.expenses.find(e => e.id === id);
+      const exp = activeExpenses().find(e => e.id === id);
       if(exp){
         const recipients = ACCOUNTS.filter(a => (PERMS[a.role] || []).includes('finance')).map(a => a.id);
         createAppNotification({ title:'Status pengeluaran berubah', message:`${exp.activity} sekarang ${status}.`, type: status === 'Approved' ? 'success' : status === 'Rejected' ? 'warning' : 'info', recipientUserIds: recipients, linkPage:'finance', dedupeKey:`exp_${id}_${status}` });
