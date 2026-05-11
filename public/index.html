@@ -2136,9 +2136,10 @@ function renderPage(){
   const p = state.page;
   const pageKey = `${p}:${state.taskDetail || ''}:${state.progDetail || ''}`;
   const isPageChange = pageKey !== lastRenderedPageKey;
+  const isSmoothSyncRender = Boolean(window.__grccSmoothSyncRendering);
   const savedScroll = isPageChange ? 0 : c.scrollTop;
 
-  if(isPageChange){
+  if(isPageChange && !isSmoothSyncRender){
     c.style.transition='none';
     c.style.opacity='1';
     c.style.animation='none';
@@ -8002,11 +8003,12 @@ if(state.user && !isProductionRuntime()){
 <script>
 /* ===== CROSS DEVICE AUTO SYNC ===== */
 (function(){
-  const AUTO_SYNC_INTERVAL_MS = 30000;
+  const AUTO_SYNC_INTERVAL_MS = 60000;
   let syncTimer = null;
   let syncInFlight = false;
   let lastSyncMarker = window.__grccLastServerMarker || '';
   let bootstrapped = false;
+  let smoothRenderTimer = null;
 
   function canAutoSync(){
     return location.protocol !== 'file:' && typeof state === 'object' && Boolean(state?.user) && !syncInFlight && !window.__grccSavingToBackend;
@@ -8060,6 +8062,47 @@ if(state.user && !isProductionRuntime()){
     return JSON.stringify(payload);
   }
 
+  function captureSmoothScrollState(){
+    const content = document.getElementById('content');
+    return {
+      contentTop: content?.scrollTop || 0,
+      tableScrolls: [...document.querySelectorAll('.table-scroll')].map((el, idx) => ({
+        idx,
+        left: el.scrollLeft || 0,
+        top: el.scrollTop || 0
+      }))
+    };
+  }
+
+  function restoreSmoothScrollState(saved){
+    const content = document.getElementById('content');
+    if(content) content.scrollTop = saved?.contentTop || 0;
+    (saved?.tableScrolls || []).forEach(item => {
+      const el = document.querySelectorAll('.table-scroll')[item.idx];
+      if(el){
+        el.scrollLeft = item.left || 0;
+        el.scrollTop = item.top || 0;
+      }
+    });
+  }
+
+  function scheduleSmoothSyncRender(reason='sync'){
+    if(typeof renderPage !== 'function') return;
+    if(modalIsOpen() || userIsTyping()) return;
+    const saved = captureSmoothScrollState();
+    clearTimeout(smoothRenderTimer);
+    smoothRenderTimer = setTimeout(() => {
+      if(modalIsOpen() || userIsTyping()) return;
+      window.__grccSmoothSyncRendering = true;
+      try {
+        renderPage();
+        restoreSmoothScrollState(saved);
+      } finally {
+        window.__grccSmoothSyncRendering = false;
+      }
+    }, reason === 'timer' ? 650 : 250);
+  }
+
   function applyAutoSyncPayload(payload, reason){
     const serverState = payload?.state || payload;
     if(!serverState || typeof serverState !== 'object') return false;
@@ -8095,11 +8138,7 @@ if(state.user && !isProductionRuntime()){
     const afterSignature = pageSyncSignature();
     const pageDataChanged = beforeSignature !== afterSignature;
     const canRenderNow = pageDataChanged && typeof renderPage === 'function' && !modalIsOpen() && !userIsTyping();
-    if(canRenderNow){
-      const c = document.getElementById('content');
-      if(c){ c.style.transition='opacity .15s ease'; c.style.opacity='.7'; requestAnimationFrame(()=>{ renderPage(); c.style.opacity='1'; }); }
-      else renderPage();
-    }
+    if(canRenderNow) scheduleSmoothSyncRender(reason);
     if(typeof safeRefreshNotifications === 'function') safeRefreshNotifications();
 
     /* intentionally silent — sync dot in header is the only indicator */
