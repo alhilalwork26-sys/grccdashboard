@@ -519,39 +519,94 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
 /* ═══════════════════════════════════════════════
    CALENDAR
 ═══════════════════════════════════════════════ */
-.cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
-.cal-day-label { text-align:center; font-size:10px; font-weight:700; color:var(--muted); padding:6px 0; font-family:var(--mono); letter-spacing:.5px; }
-.cal-cell {
-  min-height:68px; border:1px solid rgba(255,255,255,0.05);
-  border-radius:7px; padding:5px; background:rgba(255,255,255,0.02);
-  transition:background .15s;
-  position:relative; overflow:visible;
+.schedule-layout { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:16px; align-items:start; max-width:1180px; margin:0 auto; }
+.schedule-calendar-card {
+  overflow:hidden; border:1px solid rgba(148,163,184,.18);
+  background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(248,250,252,.86));
 }
-.cal-cell:hover { background:rgba(91,141,246,0.06); }
-.cal-cell.today { background:rgba(91,141,246,0.1); border-color:rgba(91,141,246,0.25); }
+.schedule-cal-head {
+  padding:16px 18px; display:grid; grid-template-columns:44px 1fr 44px;
+  align-items:center; border-bottom:1px solid var(--border);
+  background:linear-gradient(135deg,rgba(239,246,255,.94),rgba(255,255,255,.92));
+}
+.schedule-month-title { text-align:center; font-size:20px; font-weight:950; color:var(--text); letter-spacing:0; }
+.schedule-month-sub { text-align:center; margin-top:3px; font-size:11px; color:var(--muted); font-weight:800; }
+.schedule-nav-btn {
+  width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+  color:var(--sub); border:1px solid transparent; transition:all .16s ease;
+}
+.schedule-nav-btn:hover { color:var(--blue); background:rgba(91,141,246,.10); border-color:rgba(91,141,246,.18); transform:translateY(-1px); }
+.schedule-cal-body { padding:14px; overflow:hidden; }
+.cal-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:8px; width:100%; }
+.cal-day-label {
+  text-align:center; font-size:10.5px; font-weight:950; color:var(--muted);
+  padding:8px 0 6px; font-family:var(--mono); letter-spacing:.9px; text-transform:uppercase;
+}
+.cal-cell {
+  min-height:76px; border:1px solid rgba(148,163,184,.18);
+  border-radius:12px; padding:9px; background:rgba(255,255,255,.78);
+  transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease;
+  position:relative; overflow:visible; box-shadow:0 1px 0 rgba(15,23,42,.03);
+}
+.cal-cell:hover { background:#fff; border-color:rgba(91,141,246,.28); transform:translateY(-2px); box-shadow:0 12px 28px rgba(15,23,42,.08); z-index:5; }
+.cal-cell.today { background:linear-gradient(180deg,rgba(239,246,255,.96),rgba(255,255,255,.92)); border-color:rgba(91,141,246,.42); box-shadow:inset 0 0 0 1px rgba(91,141,246,.14); }
+.cal-cell.is-empty { background:rgba(248,250,252,.42); border-style:dashed; box-shadow:none; }
 .cal-cell-num {
-  font-size:11px; font-weight:500; color:var(--muted);
-  width:22px; height:22px; border-radius:50%;
+  font-size:12px; font-weight:850; color:var(--muted);
+  width:26px; height:26px; border-radius:9px;
   display:flex; align-items:center; justify-content:center; font-family:var(--mono);
 }
-.cal-cell.today .cal-cell-num { background:var(--blue); color:#fff; font-weight:700; }
+.cal-cell.today .cal-cell-num { background:var(--blue); color:#fff; font-weight:950; box-shadow:0 8px 20px rgba(91,141,246,.32); }
+.cal-events { margin-top:6px; display:flex; flex-direction:column; gap:4px; }
 .cal-event {
-  font-size:9px; padding:1px 5px; border-radius:4px; margin-top:2px;
-  font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-size:10px; padding:4px 7px 4px 8px; border-radius:8px;
+  font-weight:850; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  border-left:3px solid currentColor; box-shadow:0 1px 0 rgba(15,23,42,.04);
 }
+.cal-more { font-size:10px; color:var(--muted); font-weight:850; margin-top:2px; padding-left:2px; }
 .cal-event-wrap { position:relative; }
 .cal-tooltip {
-  position:absolute; left:0; top:calc(100% + 6px); z-index:30;
-  width:220px; padding:10px 11px; border-radius:10px;
-  background:rgba(12,17,33,.96); border:1px solid rgba(255,255,255,.13);
-  box-shadow:0 18px 44px rgba(0,0,0,.35);
-  opacity:0; pointer-events:none; transform:translateY(-4px);
+  position:absolute; left:0; top:calc(100% + 8px); z-index:40;
+  width:250px; padding:12px 13px; border-radius:12px;
+  background:rgba(12,17,33,.98); border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 22px 55px rgba(15,23,42,.34);
+  opacity:0; pointer-events:none; transform:translateY(-5px) scale(.98);
   transition:opacity .16s ease, transform .16s ease;
 }
-.cal-event-wrap:hover .cal-tooltip { opacity:1; transform:translateY(0); }
-.cal-tooltip-title { font-size:12px; font-weight:900; color:#fff; margin-bottom:6px; line-height:1.25; }
-.cal-tooltip-row { font-size:10px; color:rgba(255,255,255,.72); line-height:1.45; }
-.cal-tooltip-row strong { color:#fff; font-weight:800; }
+.cal-event-wrap:hover .cal-tooltip { opacity:1; transform:translateY(0) scale(1); }
+.cal-tooltip-title { font-size:12.5px; font-weight:950; color:#fff; margin-bottom:7px; line-height:1.3; }
+.cal-tooltip-row { font-size:10.5px; color:rgba(255,255,255,.72); line-height:1.55; }
+.cal-tooltip-row strong { color:#fff; font-weight:850; }
+.schedule-side { display:flex; flex-direction:column; gap:12px; position:sticky; top:14px; }
+.schedule-side-card { overflow:hidden; }
+.schedule-side-head { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:10px; align-items:center; }
+.schedule-side-title { font-size:14px; font-weight:950; color:var(--text); }
+.schedule-side-count { font-size:10px; color:var(--blue); background:var(--blue-lt); border-radius:999px; padding:3px 8px; font-weight:900; }
+.schedule-list { max-height:590px; overflow:auto; padding:6px; }
+.schedule-list-item {
+  padding:12px; border:1px solid transparent; border-radius:12px;
+  transition:background .15s ease, border-color .15s ease, transform .15s ease;
+}
+.schedule-list-item + .schedule-list-item { margin-top:6px; }
+.schedule-list-item:hover { background:rgba(91,141,246,.055); border-color:rgba(91,141,246,.16); transform:translateY(-1px); }
+.schedule-list-row { display:flex; gap:10px; align-items:flex-start; }
+.schedule-color-rail { width:4px; min-height:46px; border-radius:8px; flex-shrink:0; margin-top:2px; }
+.schedule-item-title { font-size:12.5px; font-weight:900; color:var(--text); line-height:1.35; }
+.schedule-item-meta { font-size:11px; color:var(--muted); margin-top:4px; line-height:1.45; }
+.schedule-item-foot { display:flex; justify-content:space-between; gap:8px; align-items:center; margin-top:10px; padding-left:14px; }
+.schedule-type-pill { font-size:10px; font-weight:900; padding:3px 8px; border-radius:999px; white-space:nowrap; }
+.schedule-icon-actions { display:flex; gap:4px; }
+.schedule-icon-btn { color:var(--muted); padding:5px; border-radius:7px; transition:color .15s ease, background .15s ease; }
+.schedule-icon-btn:hover { background:rgba(91,141,246,.08); color:var(--blue); }
+.schedule-icon-btn.danger:hover { background:rgba(248,113,113,.10); color:var(--red); }
+@media (max-width: 1100px) {
+  .schedule-layout { grid-template-columns:1fr; }
+  .schedule-side { position:static; }
+}
+@media (max-width: 760px) {
+  .schedule-cal-body { overflow-x:auto; }
+  .cal-grid { min-width:680px; }
+}
 
 /* ═══════════════════════════════════════════════
    PROGRESS BAR
@@ -1275,9 +1330,10 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
   background: #fff;
   border-color: rgba(59,130,246,0.3);
 }
-[data-theme="light"] .cal-cell { background: #fff; border-color: rgba(0,0,0,0.06); }
-[data-theme="light"] .cal-cell.today { background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.3); }
-[data-theme="light"] .cal-cell:hover { background: rgba(59,130,246,0.05); }
+[data-theme="light"] .schedule-calendar-card { background: linear-gradient(180deg,#fff,#F8FAFC); }
+[data-theme="light"] .cal-cell { background: #fff; border-color: rgba(15,23,42,0.08); }
+[data-theme="light"] .cal-cell.today { background: linear-gradient(180deg,#EFF6FF,#fff); border-color: rgba(59,130,246,0.34); }
+[data-theme="light"] .cal-cell:hover { background: #fff; border-color: rgba(59,130,246,0.28); }
 [data-theme="light"] .progress-bar { background: rgba(0,0,0,0.07); }
 [data-theme="light"] .progress-note-card { background: #fff; border-color: rgba(0,0,0,0.07); }
 [data-theme="light"] .daily-card-lite { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.07); }
@@ -3361,64 +3417,78 @@ function renderSchedule(){
     return visibleSchedules.filter(s=>s.date===ds||(s.date<=ds&&s.endDate>=ds));
   };
 
+  const monthSchedules = visibleSchedules.filter(s => {
+    const start = new Date(`${s.date}T00:00:00`);
+    const end = new Date(`${s.endDate || s.date}T00:00:00`);
+    const monthStart = new Date(year, mo, 1);
+    const monthEnd = new Date(year, mo + 1, 0, 23, 59, 59);
+    return start <= monthEnd && end >= monthStart;
+  });
+
   return `
-  <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:flex-start">
-    <div class="card">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-        <button onclick="prevMonth()" style="padding:4px;border-radius:6px;color:var(--sub);transition:background .15s" onmouseenter="this.style.background='var(--bg)'" onmouseleave="this.style.background='transparent'">
+  <div class="schedule-layout">
+    <div class="card schedule-calendar-card">
+      <div class="schedule-cal-head">
+        <button class="schedule-nav-btn" onclick="prevMonth()" title="Bulan sebelumnya">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
-        <div style="font-size:15px;font-weight:800">${MONTHS[mo]} ${year}</div>
-        <button onclick="nextMonth()" style="padding:4px;border-radius:6px;color:var(--sub);transition:background .15s" onmouseenter="this.style.background='var(--bg)'" onmouseleave="this.style.background='transparent'">
+        <div>
+          <div class="schedule-month-title">${MONTHS[mo]} ${year}</div>
+          <div class="schedule-month-sub">${monthSchedules.length} jadwal bulan ini</div>
+        </div>
+        <button class="schedule-nav-btn" onclick="nextMonth()" title="Bulan berikutnya">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
       </div>
-      <div style="padding:16px">
+      <div class="schedule-cal-body">
         <div class="cal-grid" style="margin-bottom:4px">
           ${DAYS.map(d=>`<div class="cal-day-label">${d}</div>`).join('')}
         </div>
         <div class="cal-grid">
-          ${Array(firstDay).fill(0).map(()=>'<div></div>').join('')}
+          ${Array(firstDay).fill(0).map(()=>'<div class="cal-cell is-empty"></div>').join('')}
           ${Array.from({length:daysInMonth},(_,i)=>{
             const d=i+1;
             const isToday=new Date(year,mo,d).toDateString()===new Date().toDateString();
             const events=schForDay(d);
             return `<div class="cal-cell${isToday?' today':''}">
               <div class="cal-cell-num">${d}</div>
-              ${events.slice(0,2).map(renderScheduleEvent).join('')}
-              ${events.length>2?`<div style="font-size:9px;color:var(--muted);margin-top:1px">+${events.length-2}</div>`:''}
+              <div class="cal-events">
+                ${events.slice(0,2).map(renderScheduleEvent).join('')}
+                ${events.length>2?`<div class="cal-more">+${events.length-2} jadwal lagi</div>`:''}
+              </div>
             </div>`;
           }).join('')}
         </div>
       </div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:16px">
+    <div class="schedule-side">
       ${canCreate?`<button class="btn btn-pri" style="width:100%;justify-content:center" onclick="openSchedModal()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Tambah Jadwal
       </button>`:''}
-      <div class="card">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700">Semua Jadwal</div>
-        <div style="max-height:480px;overflow-y:auto">
+      <div class="card schedule-side-card">
+        <div class="schedule-side-head">
+          <div class="schedule-side-title">Semua Jadwal</div>
+          <div class="schedule-side-count">${sorted.length} item</div>
+        </div>
+        <div class="schedule-list">
           ${sorted.length===0?'<div class="empty"><div class="empty-icon">📅</div><div class="empty-text">Belum ada jadwal</div></div>':
             sorted.map(s=>{const tm=scheduleTypeMeta(s.type); const canEditItem=canManage || scheduleOwnedByUser(s,u); return `
-            <div style="padding:12px 16px;border-bottom:1px solid var(--bg2)">
-              <div style="display:flex;gap:10px;align-items:flex-start">
-                <div style="width:3px;height:40px;border-radius:4px;background:${tm.dot};flex-shrink:0;margin-top:2px"></div>
+            <div class="schedule-list-item">
+              <div class="schedule-list-row">
+                <div class="schedule-color-rail" style="background:${tm.dot}"></div>
                 <div style="flex:1">
-                  <div style="font-size:12px;font-weight:700;margin-bottom:2px">${escHtml(s.name)}</div>
-                  <div style="font-size:11px;color:var(--muted);margin-bottom:2px">${fmtD(s.date)}${s.endDate&&s.endDate!==s.date?` – ${fmtD(s.endDate)}`:''}</div>
-                  <div style="font-size:11px;color:var(--muted)">${escHtml(s.loc || '-')}</div>
-                  <div style="font-size:10px;color:var(--muted);margin-top:3px">Dibuat oleh ${escHtml(scheduleCreatorName(s))} · ${escHtml(scheduleCreatorRole(s))}</div>
+                  <div class="schedule-item-title">${escHtml(s.name)}</div>
+                  <div class="schedule-item-meta">${fmtD(s.date)}${s.endDate&&s.endDate!==s.date?` - ${fmtD(s.endDate)}`:''}<br>${escHtml(s.loc || '-')}<br>Dibuat oleh ${escHtml(scheduleCreatorName(s))} · ${escHtml(scheduleCreatorRole(s))}</div>
                 </div>
               </div>
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-left:13px">
-                <span style="background:${tm.bg};color:${tm.c};font-size:10px;font-weight:700;padding:1px 7px;border-radius:8px">${s.type}</span>
-                ${canEditItem?`<div style="display:flex;gap:4px">
-                  <button onclick="openSchedModal('${s.id}')" style="color:var(--muted);padding:3px;border-radius:4px;transition:color .15s" onmouseenter="this.style.color='var(--blue)'" onmouseleave="this.style.color='var(--muted)'">
+              <div class="schedule-item-foot">
+                <span class="schedule-type-pill" style="background:${tm.bg};color:${tm.c}">${escHtml(s.type || '-')}</span>
+                ${canEditItem?`<div class="schedule-icon-actions">
+                  <button class="schedule-icon-btn" onclick="openSchedModal('${s.id}')" title="Edit jadwal">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   </button>
-                  <button onclick="deleteSchedule('${s.id}')" style="color:var(--muted);padding:3px;border-radius:4px;transition:color .15s" onmouseenter="this.style.color='var(--red)'" onmouseleave="this.style.color='var(--muted)'">
+                  <button class="schedule-icon-btn danger" onclick="deleteSchedule('${s.id}')" title="Hapus jadwal">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
                   </button>
                 </div>`:''}
