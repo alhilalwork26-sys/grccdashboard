@@ -7866,6 +7866,7 @@ if(state.user && !isProductionRuntime()){
   }
 
   let sessionCheckTimer = null;
+  let session401Count = 0;
   function setClientSessionExpiry(expiresAt){
     if(expiresAt) localStorage.setItem('grcc_session_expires_at', String(expiresAt));
   }
@@ -7882,6 +7883,15 @@ if(state.user && !isProductionRuntime()){
     if(pw) pw.value = '';
     toast(message, 'info');
   }
+  function handlePossibleSessionExpired(message='Sesi berakhir. Silakan login ulang.'){
+    session401Count += 1;
+    if(session401Count >= 2){
+      showLoginForExpiredSession(message);
+      return;
+    }
+    setSyncStatus('Mengecek ulang sesi...', 'info');
+    setTimeout(checkSessionAlive, 5000);
+  }
   async function checkSessionAlive(){
     if(location.protocol === 'file:' || !state.user) return;
     const expiresAt = Number(localStorage.getItem('grcc_session_expires_at') || 0);
@@ -7891,7 +7901,8 @@ if(state.user && !isProductionRuntime()){
     }
     try {
       const res = await fetch('/api/auth/me', {credentials:'same-origin', headers:{'Accept':'application/json'}});
-      if(res.status === 401) showLoginForExpiredSession();
+      if(res.status === 401) handlePossibleSessionExpired();
+      else if(res.ok) session401Count = 0;
     } catch(e) {}
   }
   function startSessionWatcher(){
@@ -7899,7 +7910,7 @@ if(state.user && !isProductionRuntime()){
     sessionCheckTimer = setInterval(checkSessionAlive, 60000);
     setTimeout(checkSessionAlive, 3000);
   }
-  window.forceSessionExpiredLogout = showLoginForExpiredSession;
+  window.forceSessionExpiredLogout = handlePossibleSessionExpired;
 
   window.doLogin = async function(){
     const identifier = document.getElementById('login-email').value.trim();
@@ -8009,18 +8020,22 @@ if(state.user && !isProductionRuntime()){
     if(!name){ toast('Nama role wajib diisi', 'error'); return; }
     const permissions = isSuperAdminRole(oldName) ? PERMS[oldName] : [...new Set(['dashboard', ...selected])];
     try {
-      await apiJson(oldName ? `${AUTH_API.roles}/${encodeURIComponent(oldName)}` : AUTH_API.roles, {
+      const data = await apiJson(oldName ? `${AUTH_API.roles}/${encodeURIComponent(oldName)}` : AUTH_API.roles, {
         method: oldName ? 'PUT' : 'POST',
         body: JSON.stringify({name, permissions, color})
       });
-      if(oldName && oldName !== name){
+      if(data.state){
+        applyServerState(data);
+      } else if(oldName && oldName !== name){
         delete PERMS[oldName];
         delete ROLE_COLORS[oldName];
         ACCOUNTS.forEach(a => { if(a.role === oldName) a.role = name; });
         if(state.user?.role === oldName) state.user.role = name;
       }
-      PERMS[name] = permissions;
-      ROLE_COLORS[name] = color;
+      if(!data.state){
+        PERMS[name] = permissions;
+        ROLE_COLORS[name] = color;
+      }
       closeModal();
       renderPage();
       toast('Role berhasil disimpan');
@@ -8033,9 +8048,12 @@ if(state.user && !isProductionRuntime()){
     if(isSuperAdminRole(roleName) || ACCOUNTS.some(a => a.role === roleName)) return;
     if(!confirm(`Hapus role ${roleName}?`)) return;
     try {
-      await apiJson(`${AUTH_API.roles}/${encodeURIComponent(roleName)}`, {method:'DELETE'});
-      delete PERMS[roleName];
-      delete ROLE_COLORS[roleName];
+      const data = await apiJson(`${AUTH_API.roles}/${encodeURIComponent(roleName)}`, {method:'DELETE'});
+      if(data.state) applyServerState(data);
+      else {
+        delete PERMS[roleName];
+        delete ROLE_COLORS[roleName];
+      }
       renderPage();
       toast('Role dihapus', 'info');
     } catch(err) {

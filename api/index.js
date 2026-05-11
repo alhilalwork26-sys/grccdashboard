@@ -478,7 +478,7 @@ async function summarizeWithGemini(filename, text) {
 
 async function summarizeWithCukAI(filename, text) {
   if (process.env.OPENAI_API_KEY) {
-    const model = process.env.OPENAI_SUMMARY_MODEL || 'gpt-5.4-mini';
+    const model = process.env.OPENAI_SUMMARY_MODEL || 'gpt-4o-mini';
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
@@ -524,7 +524,7 @@ async function ensureSchema() {
     await sql.query(`CREATE TABLE IF NOT EXISTS ${table} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
   }
   for (const [role, permissions] of Object.entries(DEFAULT_PERMS)) {
-    await sql`INSERT INTO roles (name, permissions, color) VALUES (${role}, ${JSON.stringify(permissions)}, ${DEFAULT_ROLE_COLORS[role] || '#6B7280'}) ON CONFLICT (name) DO UPDATE SET permissions = EXCLUDED.permissions, color = EXCLUDED.color, updated_at = now()`;
+    await sql`INSERT INTO roles (name, permissions, color) VALUES (${role}, ${JSON.stringify(permissions)}, ${DEFAULT_ROLE_COLORS[role] || '#6B7280'}) ON CONFLICT (name) DO NOTHING`;
   }
   await sql.query(`UPDATE roles SET permissions = permissions || '["schedule"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'schedule'`);
   await sql.query(`UPDATE roles SET permissions = permissions || '["reimburse"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'reimburse'`);
@@ -608,7 +608,8 @@ async function syncModuleTables(state) {
 
 async function moduleItems(table) {
   const sql = db();
-  return (await sql.query(`SELECT payload FROM ${table} ORDER BY updated_at DESC`)).map(row => row.payload);
+  const result = await sql.query(`SELECT payload FROM ${table} ORDER BY updated_at DESC`);
+  return (result.rows || result).map(row => row.payload);
 }
 
 async function loadState() {
@@ -777,6 +778,18 @@ function cleanState(state) {
   return cleaned;
 }
 
+async function touchAppStateMarker(sql) {
+  const savedAt = new Date().toISOString();
+  await sql.query(
+    `INSERT INTO app_state (id, payload, updated_at)
+     VALUES (1, $1::jsonb, now())
+     ON CONFLICT (id) DO UPDATE
+     SET payload = app_state.payload || $2::jsonb, updated_at = now()`,
+    [JSON.stringify({ ...EMPTY_STATE, serverSavedAt: savedAt }), JSON.stringify({ serverSavedAt: savedAt })]
+  );
+  return savedAt;
+}
+
 async function handle(req, res) {
   await ensureSchema();
   const url = new URL(req.url, 'https://local.invalid');
@@ -822,7 +835,9 @@ async function handle(req, res) {
     if (token) await sql`DELETE FROM sessions WHERE token = ${token}`;
     if (user) await audit(user, 'logout', 'session', user.id);
     setSessionCookie(res, '', 0);
-    return send(res, 200, { ok: true });
+    await touchAppStateMarker(sql);
+    const loaded = await loadState();
+    return send(res, 200, { ok: true, state: loaded.state, updatedAt: loaded.updatedAt });
   }
 
   if (path === '/auth/me' && method === 'GET') {
@@ -968,7 +983,9 @@ async function handle(req, res) {
     await sql`UPDATE users SET active=false, updated_at=now() WHERE id=${id}`;
     await sql`DELETE FROM sessions WHERE user_id=${id}`;
     await audit(actor, 'delete', 'user', id, { before: normalizedUser(beforeRows[0]) });
-    return send(res, 200, { ok: true });
+    await touchAppStateMarker(sql);
+    const loaded = await loadState();
+    return send(res, 200, { ok: true, state: loaded.state, updatedAt: loaded.updatedAt });
   }
 
   if (path === '/roles' && method === 'GET') {
@@ -1011,8 +1028,10 @@ async function handle(req, res) {
     if (used[0]) return send(res, 400, { error: 'Role masih dipakai user' });
     const beforeRows = await sql`SELECT name, permissions, color FROM roles WHERE name=${name}`;
     await sql`DELETE FROM roles WHERE name=${name}`;
+    await touchAppStateMarker(sql);
     await audit(actor, 'delete', 'role', name, { before: beforeRows[0] || { name } });
-    return send(res, 200, { ok: true });
+    const loaded = await loadState();
+    return send(res, 200, { ok: true, state: loaded.state, updatedAt: loaded.updatedAt });
   }
 
   if (path === '/documents/client-upload' && method === 'POST') {
