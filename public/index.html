@@ -1846,17 +1846,18 @@ const PERMS = {
   'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents'],
   'Staff Kreatif': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
   'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
-  'Finance': ['dashboard','daily_progress','schedule','finance','reimburse'],
-  'Staff Finance + Dokumen': ['dashboard','daily_progress','schedule','finance','reimburse','documents'],
-  'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','reimburse','documents'],
+  'Finance': ['dashboard','tasks','daily_progress','schedule','finance','reimburse'],
+  'Staff Finance + Dokumen': ['dashboard','tasks','daily_progress','schedule','finance','reimburse','documents'],
+  'Kepala Trainer': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents'],
   'Riset': ['dashboard','tasks','daily_progress','schedule','reimburse','documents','timeline'],
 };
 const REQUIRED_ROLE_PERMS = {
   'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','rab','documents','timeline','settings'],
   'Super Admin': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','rab','documents','timeline','settings'],
   'Staff Kreatif': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
-  'Finance': ['dashboard','daily_progress','schedule','finance','reimburse'],
-  'Staff Finance + Dokumen': ['dashboard','daily_progress','schedule','finance','reimburse','documents'],
+  'Finance': ['dashboard','tasks','daily_progress','schedule','finance','reimburse'],
+  'Staff Finance + Dokumen': ['dashboard','tasks','daily_progress','schedule','finance','reimburse','documents'],
+  'Kepala Trainer': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents'],
   'Riset': ['dashboard','tasks','daily_progress','schedule','reimburse','documents','timeline']
 };
 function ensureRequiredRolePerms(){
@@ -1939,6 +1940,9 @@ let state = {
   filterProgressUser:'Semua',
   filterProgressStatus:'Semua',
   filterProgressDate:'',
+  filterProgramStatus:'Semua',
+  filterProgramTrainer:'Semua',
+  notificationFilter:'all',
   filterEquityStatus:'Semua',
   filterEquityOwner:'Semua',
 };
@@ -1949,6 +1953,7 @@ const LOCAL_UI_STATE_KEYS = [
   'filterExpStatus','filterExpType','filterExpMonth','financeView',
   'searchDoc','folderDoc',
   'filterProgressUser','filterProgressStatus','filterProgressDate',
+  'filterProgramStatus','filterProgramTrainer','notificationFilter',
   'filterEquityStatus','filterEquityOwner','filterReimburseStatus','filterRabStatus'
 ];
 function cleanServerStateForClient(serverState={}){
@@ -1978,6 +1983,7 @@ const STATUS_M = {
   'Upcoming':   {bg:'rgba(91,141,246,0.12)',c:'#7AAAF7',bd:'rgba(91,141,246,0.25)'},
   'Completed':  {bg:'rgba(52,211,153,0.12)',c:'#34D399',bd:'rgba(52,211,153,0.25)'},
   'Ongoing':    {bg:'rgba(251,191,36,0.12)',c:'#FBBF24',bd:'rgba(251,191,36,0.25)'},
+  'Cancelled':  {bg:'rgba(248,113,113,0.12)',c:'#F87171',bd:'rgba(248,113,113,0.25)'},
   'Hadir':      {bg:'rgba(52,211,153,0.12)',c:'#34D399',bd:'rgba(52,211,153,0.25)'},
   'Tidak Hadir':{bg:'rgba(248,113,113,0.12)',c:'#F87171',bd:'rgba(248,113,113,0.25)'},
   'Belum Absen':{bg:'rgba(255,255,255,0.05)',c:'#8080A0',bd:'rgba(255,255,255,0.1)'},
@@ -2245,14 +2251,7 @@ function runAutomaticReminders(){
   }
 
   state.tasks.filter(t => t.status !== 'Done' && t.deadline).forEach(t => {
-    const due = new Date(t.deadline + 'T23:59:59');
-    const days = Math.ceil((due - now) / 86400000);
     const recipients = [...new Set([t.aId, ...admins].filter(Boolean))];
-    if(days < 0){
-      once(`task_overdue_${t.id}`, {title:'Task overdue', message:`${t.title} sudah melewati deadline ${fmtD(t.deadline)}.`, type:'warning', recipientUserIds:recipients, linkPage:'tasks', linkId:t.id});
-    } else if(days <= 3){
-      once(`task_due_${t.id}_${days}`, {title:days===0?'Deadline task hari ini':days===1?'Deadline task besok':`Deadline task ${days} hari lagi`, message:`${t.title} jatuh tempo pada ${fmtD(t.deadline)}.`, type:days===0?'warning':'info', recipientUserIds:recipients, linkPage:'tasks', linkId:t.id});
-    }
     if((t.requiredEvidence || []).length && !taskEvidenceComplete(t)){
       once(`task_evidence_missing_${t.id}`, {title:'Bukti kerja belum lengkap', message:`${t.title} masih kurang bukti: ${missingTaskEvidenceLabels(t).join(', ')}.`, type:'warning', recipientUserIds:recipients, linkPage:'tasks', linkId:t.id});
     }
@@ -2264,6 +2263,12 @@ function runAutomaticReminders(){
       if(!(PERMS[a.role] || []).includes('daily_progress')) return;
       const progress = state.dailyProgresses.find(p => p.userId === a.id && p.date === todayKey);
       const recipients = [...new Set([a.id, ...progressWatchers])];
+      if(progress?.morningPlan){
+        clearDailyProgressConflictNotifications(a.id, todayKey, 'morning');
+      }
+      if(progress?.eveningUpdate){
+        clearDailyProgressConflictNotifications(a.id, todayKey, 'evening');
+      }
       if(!progress && now.getHours() >= 9){
         once(`daily_progress_morning_missing_${a.id}`, {title:'Input pagi belum diisi', message:`${a.name} belum menyimpan input pagi tanggal ${fmtD(todayKey)}.`, type:a.id===state.user.id?'warning':'info', recipientUserIds:recipients, linkPage:'daily_progress'});
       } else if(progress?.morningPlan && !progress?.eveningUpdate && now.getHours() >= 16){
@@ -3302,6 +3307,21 @@ function resetDailyProgressSimpleForm(){
   document.getElementById('dp-morning-chip').textContent = 'Jam input: --:--';
   document.getElementById('dp-evening-chip').textContent = 'Jam update: --:--';
 }
+function clearDailyProgressConflictNotifications(userId, date, phase='morning'){
+  if(!state.reminderLog) state.reminderLog = {};
+  if(!Array.isArray(state.notifications)) return;
+  const phases = phase === 'evening' ? ['morning','evening'] : ['morning'];
+  const suffixes = phases.map(p => `daily_progress_${p}_missing_${userId}`);
+  suffixes.forEach(suffix => {
+    delete state.reminderLog[`${date}_${suffix}`];
+    delete state.reminderLog[`auto_${date}_${suffix}`];
+  });
+  state.notifications = state.notifications.filter(n => {
+    const key = String(n.dedupeKey || '');
+    if(!key.startsWith(`auto_${date}_daily_progress_`)) return true;
+    return !suffixes.some(suffix => key === `auto_${date}_${suffix}`);
+  });
+}
 function saveDailyProgress(phase='full'){
   const date = document.getElementById('dp-date')?.value;
   const progressStatus = document.getElementById('dp-status')?.value || 'On Track';
@@ -3353,6 +3373,7 @@ function saveDailyProgress(phase='full'){
   }
 
   if(isProgramAdminRole(state.user) || isFinanceRole(state.user) || isTrainerRole(state.user) || isStaffRole(state.user)){
+    clearDailyProgressConflictNotifications(state.user.id, date, shouldSaveEvening ? 'evening' : 'morning');
     const title = shouldSaveEvening ? 'Update sore dikirim' : 'Input pagi dikirim';
     const message = shouldSaveEvening
       ? `${state.user.name} mengirim update sore tanggal ${fmtD(date)}.`
@@ -5125,22 +5146,58 @@ function openExpenseDetail(id){
 }
 
 /* ===== PROGRAMS ===== */
+const PROGRAM_STATUSES = ['Upcoming','Ongoing','Completed','Cancelled'];
+function normalizePrograms(){
+  if(!Array.isArray(state.programs)) state.programs = [];
+  state.programs = state.programs.map(p => ({
+    ...p,
+    status: PROGRAM_STATUSES.includes(p.status) ? p.status : 'Upcoming',
+    pts: Array.isArray(p.pts) ? p.pts.map(pt => typeof pt === 'string' ? {id:uid(), name:pt, att:null} : {id:pt.id || uid(), name:pt.name || '', att:pt.att ?? null, email:pt.email || '', phone:pt.phone || '', note:pt.note || ''}) : [],
+    mats: Array.isArray(p.mats) ? p.mats : []
+  }));
+}
+function programCanEdit(program, user=state.user){
+  return isManagerRole(user) || (isTrainerRole(user) && (!program || program.tId === user.id));
+}
 function renderPrograms(){
+  normalizePrograms();
   if(state.progDetail) return renderProgDetail();
   const u=state.user;
   const canEdit=isManagerRole(u) || isTrainerRole(u);
-  const myProgs=isTrainerRole(u)?state.programs.filter(p=>p.tId===u.id):state.programs;
+  const statusFilter = state.filterProgramStatus || 'Semua';
+  const trainerFilter = state.filterProgramTrainer || 'Semua';
+  const trainerNames = ['Semua', ...new Set(state.programs.map(p => p.trainer).filter(Boolean))];
+  const myProgs=(isTrainerRole(u)?state.programs.filter(p=>p.tId===u.id):state.programs)
+    .filter(p => statusFilter === 'Semua' || p.status === statusFilter)
+    .filter(p => trainerFilter === 'Semua' || p.trainer === trainerFilter)
+    .sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
   return `
-  ${canEdit?`<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+  <div class="finance-toolbar" style="align-items:end">
+    <div class="finance-filters">
+      <div class="finance-filter-field">
+        <label>Status</label>
+        <select class="form-control" onchange="state.filterProgramStatus=this.value;persistPatched();renderPage()">
+          ${['Semua', ...PROGRAM_STATUSES].map(s=>`<option value="${s}"${statusFilter===s?' selected':''}>${s==='Semua'?'Semua Status':s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="finance-filter-field">
+        <label>Trainer</label>
+        <select class="form-control" onchange="state.filterProgramTrainer=this.value;persistPatched();renderPage()">
+          ${trainerNames.map(name=>`<option value="${escHtml(name)}"${trainerFilter===name?' selected':''}>${escHtml(name==='Semua'?'Semua Trainer':name)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    ${canEdit?`
     <button class="btn btn-pri" onclick="openProgModal()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Tambah Program
-    </button>
-  </div>`:''}
+    </button>`:''}
+  </div>
   <div class="prog-grid">
-    ${myProgs.map(p=>{
+    ${myProgs.length ? myProgs.map(p=>{
       const sc=STATUS_M[p.status]||STATUS_M.Upcoming;
-      const att=p.pts.filter(x=>x.att===true).length;
+      const pts = p.pts || [];
+      const att=pts.filter(x=>x.att===true).length;
       return `<div class="prog-card" onclick="state.progDetail='${p.id}';renderPage()">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
           <div style="width:40px;height:40px;border-radius:10px;background:var(--blue-lt);display:flex;align-items:center;justify-content:center">
@@ -5157,20 +5214,23 @@ function renderPrograms(){
         <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;justify-content:space-between;align-items:center">
           <div style="display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            ${p.pts.length} peserta
+            ${pts.length} peserta
           </div>
-          ${p.status==='Completed'?`<span style="font-size:11px;color:var(--green);font-weight:600">${att}/${p.pts.length} hadir</span>`:''}
+          <span style="font-size:11px;color:var(--green);font-weight:600">${att}/${pts.length} hadir</span>
         </div>
       </div>`;
-    }).join('')}
+    }).join('') : `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📚</div><div class="empty-text">Tidak ada program sesuai filter.</div></div>`}
   </div>`;
 }
 
 function renderProgDetail(){
+  normalizePrograms();
   const p=state.programs.find(x=>x.id===state.progDetail);
   if(!p) return renderPrograms();
   const u=state.user;
-  const canAtt=isManagerRole(u) || isTrainerRole(u);
+  const canAtt=programCanEdit(p,u);
+  const canEdit=programCanEdit(p,u);
+  const pts = p.pts || [];
   return `
   <button class="back-btn" onclick="state.progDetail=null;renderPage()">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -5183,24 +5243,33 @@ function renderProgDetail(){
           <h2 style="font-size:18px;font-weight:800;margin-bottom:6px">${escHtml(p.name)}</h2>
           <div style="font-size:13px;color:var(--muted)">${escHtml(p.batch)} · ${fmtD(p.date)}${p.end&&p.end!==p.date?` – ${fmtD(p.end)}`:''}</div>
         </div>
-        ${badge(p.status)}
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+          ${badge(p.status)}
+          ${canEdit?`<button class="btn btn-sec btn-sm" onclick="openProgModal('${p.id}')">Edit</button><button class="btn btn-dan btn-sm" onclick="deleteProgram('${p.id}')">Hapus</button>`:''}
+        </div>
       </div>
       <div class="detail-meta">
         <div><div class="detail-meta-label">TRAINER</div><div class="detail-meta-val">${escHtml(p.trainer)}</div></div>
-        <div><div class="detail-meta-label">PESERTA</div><div class="detail-meta-val">${p.pts.length} orang</div></div>
+        <div><div class="detail-meta-label">PESERTA</div><div class="detail-meta-val">${pts.length} orang</div></div>
       </div>
-      <div style="font-size:14px;font-weight:700;margin-bottom:12px">Daftar Peserta & Absensi</div>
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px">
+        <div style="font-size:14px;font-weight:700">Daftar Peserta & Absensi</div>
+        ${canEdit?`<button class="btn btn-pri btn-sm" onclick="openParticipantModal('${p.id}')">Tambah Peserta</button>`:''}
+      </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Nama</th><th>Kehadiran</th><th>Aksi</th></tr></thead>
+        <thead><tr><th>Nama</th><th>Kontak</th><th>Kehadiran</th><th>Aksi</th></tr></thead>
         <tbody>
-          ${p.pts.map((pt,i)=>`<tr>
+          ${pts.length ? pts.map((pt,i)=>`<tr>
             <td style="font-size:13px;font-weight:500">${escHtml(pt.name)}</td>
+            <td style="font-size:12px;color:var(--muted)">${escHtml([pt.email, pt.phone].filter(Boolean).join(' · ') || pt.note || '-')}</td>
             <td>${badge(pt.att===null?'Belum Absen':pt.att?'Hadir':'Tidak Hadir')}</td>
             <td>${canAtt?`<div style="display:flex;gap:6px">
-              <button class="btn btn-sm ${pt.att===true?'btn-suc':'btn-sec'}" onclick="setAtt('${p.id}','${escHtml(pt.name)}',true)">Hadir</button>
-              <button class="btn btn-sm ${pt.att===false?'btn-dan':'btn-sec'}" onclick="setAtt('${p.id}','${escHtml(pt.name)}',false)">Tidak</button>
+              <button class="btn btn-sm ${pt.att===true?'btn-suc':'btn-sec'}" onclick="setAtt('${p.id}','${pt.id}',true)">Hadir</button>
+              <button class="btn btn-sm ${pt.att===false?'btn-dan':'btn-sec'}" onclick="setAtt('${p.id}','${pt.id}',false)">Tidak</button>
+              <button class="btn btn-sec btn-sm" onclick="openParticipantModal('${p.id}','${pt.id}')">Edit</button>
+              <button class="btn btn-dan btn-sm" onclick="deleteParticipant('${p.id}','${pt.id}')">Hapus</button>
             </div>`:'—'}</td>
-          </tr>`).join('')}
+          </tr>`).join('') : `<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--muted)">Belum ada peserta.</td></tr>`}
         </tbody>
       </table></div>
     </div>
@@ -5217,7 +5286,7 @@ function renderProgDetail(){
       </button>
       <hr>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${[['Total Peserta',p.pts.length,'var(--text)'],['Hadir',p.pts.filter(x=>x.att===true).length,'var(--green)'],['Tidak Hadir',p.pts.filter(x=>x.att===false).length,'var(--red)'],['Belum Absen',p.pts.filter(x=>x.att===null).length,'var(--amber)']].map(([l,v,c])=>`
+        ${[['Total Peserta',pts.length,'var(--text)'],['Hadir',pts.filter(x=>x.att===true).length,'var(--green)'],['Tidak Hadir',pts.filter(x=>x.att===false).length,'var(--red)'],['Belum Absen',pts.filter(x=>x.att===null).length,'var(--amber)']].map(([l,v,c])=>`
         <div style="display:flex;justify-content:space-between">
           <span style="font-size:12px;color:var(--muted)">${l}</span>
           <span style="font-size:12px;font-weight:700;color:${c}">${v}</span>
@@ -5226,50 +5295,106 @@ function renderProgDetail(){
     </div>
   </div>`;
 }
-function setAtt(pid,name,val){
-  state.programs=state.programs.map(p=>p.id===pid?{...p,pts:p.pts.map(pt=>pt.name===name?{...pt,att:val}:pt)}:p);
+function setAtt(pid,participantId,val){
+  state.programs=state.programs.map(p=>p.id===pid?{...p,pts:(p.pts||[]).map(pt=>pt.id===participantId?{...pt,att:val}:pt),updatedAt:new Date().toISOString()}:p);
   renderPage();
 }
-function openProgModal(){
+function openProgModal(editId=''){
+  const current = editId ? state.programs.find(p=>p.id===editId) : null;
+  if(current && !programCanEdit(current)){toast('Kamu tidak punya akses edit program ini','error');return;}
   const trainers=ACCOUNTS.filter(a=>isTrainerRole(a) || isSuperAdminRole(a));
   const html=`
     <div class="form-group"><label class="form-label">Nama Program <span>*</span></label>
-      <input id="pf-name" class="form-control" placeholder="Nama program training...">
+      <input id="pf-name" class="form-control" placeholder="Nama program training..." value="${escHtml(current?.name || '')}">
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Batch</label>
-        <input id="pf-batch" class="form-control" placeholder="Batch 1">
+        <input id="pf-batch" class="form-control" placeholder="Batch 1" value="${escHtml(current?.batch || '')}">
       </div>
       <div class="form-group"><label class="form-label">Trainer</label>
-        <select id="pf-trainer" class="form-control">${trainers.map(a=>`<option value="${a.id}"${a.id===state.user?.id?' selected':''}>${escHtml(a.name)}</option>`).join('')}</select>
+        <select id="pf-trainer" class="form-control">${trainers.map(a=>`<option value="${a.id}"${(current?.tId || state.user?.id)===a.id?' selected':''}>${escHtml(a.name)}</option>`).join('')}</select>
       </div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Tanggal Mulai <span>*</span></label>
-        <input id="pf-date" type="date" class="form-control">
+        <input id="pf-date" type="date" class="form-control" value="${escHtml(current?.date || '')}">
       </div>
       <div class="form-group"><label class="form-label">Tanggal Selesai</label>
-        <input id="pf-end" type="date" class="form-control">
+        <input id="pf-end" type="date" class="form-control" value="${escHtml(current?.end || '')}">
       </div>
     </div>
     <div class="form-group"><label class="form-label">Status</label>
-      <select id="pf-status" class="form-control">${['Upcoming','Ongoing','Completed'].map(s=>`<option>${s}</option>`).join('')}</select>
+      <select id="pf-status" class="form-control">${PROGRAM_STATUSES.map(s=>`<option${(current?.status || 'Upcoming')===s?' selected':''}>${s}</option>`).join('')}</select>
     </div>
     <div class="modal-footer">
       <button class="btn btn-sec" onclick="closeModal()">Batal</button>
-      <button class="btn btn-pri" onclick="saveProg()">Simpan</button>
+      <button class="btn btn-pri" onclick="saveProg('${editId}')">Simpan</button>
     </div>`;
-  showModal('Tambah Program', html, 520);
+  showModal(current ? 'Edit Program' : 'Tambah Program', html, 520);
 }
-function saveProg(){
+function saveProg(editId=''){
   if(!isManagerRole(state.user) && !isTrainerRole(state.user)){toast('Role kamu belum bisa membuat program','error');return;}
   const name=document.getElementById('pf-name').value.trim();
   const date=document.getElementById('pf-date').value;
   if(!name||!date){toast('Nama dan tanggal wajib diisi','error');return;}
   const tId=document.getElementById('pf-trainer').value;
   const acc=ACCOUNTS.find(a=>a.id===tId);
-  state.programs=[...state.programs,{id:uid(),name,batch:document.getElementById('pf-batch').value,date,end:document.getElementById('pf-end').value,trainer:acc?.name||'',tId,status:document.getElementById('pf-status').value,pts:[],mats:[]}];
-  toast('Program ditambahkan'); closeModal(); renderPage();
+  const data={name,batch:document.getElementById('pf-batch').value,date,end:document.getElementById('pf-end').value,trainer:acc?.name||'',tId,status:document.getElementById('pf-status').value,updatedAt:new Date().toISOString()};
+  if(editId){
+    state.programs=state.programs.map(p=>p.id===editId?{...p,...data}:p);
+    toast('Program diperbarui');
+  } else {
+    state.programs=[...state.programs,{...data,id:uid(),pts:[],mats:[],createdAt:new Date().toISOString()}];
+    toast('Program ditambahkan');
+  }
+  closeModal(); renderPage();
+}
+function deleteProgram(id){
+  const prog = state.programs.find(p=>p.id===id);
+  if(!prog || !programCanEdit(prog)){toast('Kamu tidak punya akses hapus program ini','error');return;}
+  if(!confirm(`Hapus program "${prog.name}"?`)) return;
+  state.programs = state.programs.filter(p=>p.id!==id);
+  state.progDetail = null;
+  persistPatched();
+  renderPage();
+  toast('Program dihapus','info');
+}
+function openParticipantModal(programId, participantId=''){
+  const prog = state.programs.find(p=>p.id===programId);
+  if(!prog || !programCanEdit(prog)){toast('Kamu tidak punya akses mengubah peserta','error');return;}
+  const pt = (prog.pts || []).find(x=>x.id===participantId);
+  const html=`
+    <div class="form-group"><label class="form-label">Nama Peserta <span>*</span></label><input id="pp-name" class="form-control" value="${escHtml(pt?.name || '')}" placeholder="Nama peserta"></div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Email</label><input id="pp-email" class="form-control" value="${escHtml(pt?.email || '')}" placeholder="email@contoh.com"></div>
+      <div class="form-group"><label class="form-label">No. HP</label><input id="pp-phone" class="form-control" value="${escHtml(pt?.phone || '')}" placeholder="08..."></div>
+    </div>
+    <div class="form-group"><label class="form-label">Catatan</label><input id="pp-note" class="form-control" value="${escHtml(pt?.note || '')}" placeholder="Instansi/jabatan/catatan"></div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Batal</button>
+      <button class="btn btn-pri" onclick="saveParticipant('${programId}','${participantId}')">Simpan Peserta</button>
+    </div>`;
+  showModal(pt ? 'Edit Peserta' : 'Tambah Peserta', html, 560);
+}
+function saveParticipant(programId, participantId=''){
+  const name=document.getElementById('pp-name')?.value.trim();
+  if(!name){toast('Nama peserta wajib diisi','error');return;}
+  const item={id:participantId || uid(),name,email:document.getElementById('pp-email')?.value.trim()||'',phone:document.getElementById('pp-phone')?.value.trim()||'',note:document.getElementById('pp-note')?.value.trim()||'',att:null};
+  state.programs=state.programs.map(p=>{
+    if(p.id!==programId) return p;
+    const pts = p.pts || [];
+    return {...p,pts:participantId?pts.map(pt=>pt.id===participantId?{...pt,...item,att:pt.att}:pt):[...pts,item],updatedAt:new Date().toISOString()};
+  });
+  persistPatched();
+  closeModal(); renderPage(); toast(participantId?'Peserta diperbarui':'Peserta ditambahkan');
+}
+function deleteParticipant(programId, participantId){
+  const prog = state.programs.find(p=>p.id===programId);
+  const pt = prog?.pts?.find(x=>x.id===participantId);
+  if(!prog || !programCanEdit(prog) || !pt) return;
+  if(!confirm(`Hapus peserta ${pt.name}?`)) return;
+  state.programs=state.programs.map(p=>p.id===programId?{...p,pts:(p.pts||[]).filter(x=>x.id!==participantId),updatedAt:new Date().toISOString()}:p);
+  persistPatched(); renderPage(); toast('Peserta dihapus','info');
 }
 
 /* ===== DOCUMENTS ===== */
@@ -6223,6 +6348,9 @@ function restorePatched(){
     }
     if(state.filterExpMonth === undefined) state.filterExpMonth = '';
     if(state.financeView === undefined) state.financeView = 'detail';
+    if(state.filterProgramStatus === undefined) state.filterProgramStatus = 'Semua';
+    if(state.filterProgramTrainer === undefined) state.filterProgramTrainer = 'Semua';
+    if(state.notificationFilter === undefined) state.notificationFilter = 'all';
     if(!state.financeReimbursements || typeof state.financeReimbursements !== 'object') state.financeReimbursements = {};
     if(!Array.isArray(state.reimburseRequests)) state.reimburseRequests = [];
     if(!Array.isArray(state.rabItems)) state.rabItems = [];
@@ -6237,7 +6365,7 @@ function restorePatched(){
 }
 function hasAccessPatched(page){
   ensureRequiredRolePerms();
-  if(page === 'rab') return isSuperAdminRole(state.user);
+  if(page === 'rab' || page === 'settings') return isSuperAdminRole(state.user);
   return (PERMS[state.user?.role] || []).includes(page);
 }
 function wrapPersist(fnName){
@@ -6735,6 +6863,7 @@ if(state.user && !isProductionRuntime()){
     if(!Array.isArray(state.notifications)) state.notifications = [];
     if(!state.notificationSeen) state.notificationSeen = {};
     if(!state.deadlineReminderLog) state.deadlineReminderLog = {};
+    if(!state.notificationFilter) state.notificationFilter = 'all';
     if(!state.emailIntegration) state.emailIntegration = {
       enabled: false,
       provider: 'emailjs',
@@ -6756,7 +6885,16 @@ if(state.user && !isProductionRuntime()){
     .notif-panel.show{display:flex;flex-direction:column;animation:fadeUp .18s ease}
     .notif-head{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px}
     .notif-tabs{display:flex;gap:8px;align-items:center}
-    .notif-list{overflow-y:auto;max-height:calc(70vh - 62px);background:var(--bg2)}
+    .notif-filter-row{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;gap:7px;overflow-x:auto;background:var(--white)}
+    .notif-filter-btn{border:1px solid var(--border);background:var(--white);color:var(--sub);font-size:11px;font-weight:850;border-radius:999px;padding:6px 9px;white-space:nowrap;transition:.15s}
+    .notif-filter-btn:hover{transform:translateY(-1px);border-color:rgba(91,141,246,.42)}
+    .notif-filter-btn.active{background:var(--blue-lt);border-color:rgba(91,141,246,.42);color:var(--navy)}
+    .notif-type-pill{font-size:10px;font-weight:900;border-radius:999px;padding:3px 8px;border:1px solid transparent}
+    .notif-type-pill.info{background:rgba(91,141,246,.12);color:#2563EB;border-color:rgba(91,141,246,.22)}
+    .notif-type-pill.warning{background:rgba(245,158,11,.13);color:#B45309;border-color:rgba(245,158,11,.24)}
+    .notif-type-pill.success{background:rgba(16,185,129,.13);color:#047857;border-color:rgba(16,185,129,.24)}
+    .notif-type-pill.error{background:rgba(239,68,68,.13);color:#B91C1C;border-color:rgba(239,68,68,.24)}
+    .notif-list{overflow-y:auto;max-height:calc(70vh - 108px);background:var(--bg2)}
     .notif-item{padding:14px 16px;border-bottom:1px solid var(--border);background:var(--white);cursor:pointer;transition:background .15s}
     .notif-item:hover{background:var(--bg)}
     .notif-item.unread{background:#F8FBFF}
@@ -6946,7 +7084,7 @@ if(state.user && !isProductionRuntime()){
     panel = document.createElement('div');
     panel.id = 'notif-panel';
     panel.className = 'notif-panel';
-    panel.innerHTML = `<div class="notif-head"><div><div style="font-size:14px;font-weight:800">Notifikasi</div><div id="notif-subhead" style="font-size:11px;color:var(--muted)"></div></div><div class="notif-actions-row"><button class="notif-mini-btn" onclick="markAllNotificationsRead()">Tandai semua</button><button class="notif-mini-btn" onclick="clearReadNotifications()">Bersihkan</button></div></div><div class="notif-list" id="notif-list"></div>`;
+    panel.innerHTML = `<div class="notif-head"><div><div style="font-size:14px;font-weight:800">Notifikasi</div><div id="notif-subhead" style="font-size:11px;color:var(--muted)"></div></div><div class="notif-actions-row"><button class="notif-mini-btn" onclick="markAllNotificationsRead()">Tandai semua</button><button class="notif-mini-btn" onclick="clearReadNotifications()">Bersihkan</button></div></div><div class="notif-filter-row" id="notif-filter-row"></div><div class="notif-list" id="notif-list"></div>`;
     document.getElementById('main')?.appendChild(panel);
     document.addEventListener('click', e => {
       const bell = document.querySelector('.hdr-bell');
@@ -6964,15 +7102,51 @@ if(state.user && !isProductionRuntime()){
     if(show) renderNotificationPanel();
   };
 
+  function isTodayNotification(n){
+    if(!n?.createdAt) return false;
+    return new Date(n.createdAt).toDateString() === new Date().toDateString();
+  }
+  function notificationTypeLabel(type){
+    return ({info:'Info', warning:'Warning', success:'Success', error:'Error'}[type] || 'Info');
+  }
+  function notificationTypeBadge(type){
+    const safeType = ['info','warning','success','error'].includes(type) ? type : 'info';
+    return `<span class="notif-type-pill ${safeType}">${notificationTypeLabel(safeType)}</span>`;
+  }
+  function notificationFilterItems(items){
+    const filter = state.notificationFilter || 'all';
+    if(filter === 'unread') return items.filter(n => !isNotifRead(n));
+    if(filter === 'warning') return items.filter(n => (n.type || 'info') === 'warning' || (n.type || 'info') === 'error');
+    if(filter === 'success') return items.filter(n => (n.type || 'info') === 'success');
+    if(filter === 'today') return items.filter(isTodayNotification);
+    return items;
+  }
+  window.setNotificationFilter = function(filter){
+    state.notificationFilter = filter || 'all';
+    persistPatched();
+    renderNotificationPanel();
+  };
+
   function renderNotificationPanel(){
     const list = document.getElementById('notif-list');
     const sub = document.getElementById('notif-subhead');
-    if(!list || !sub || !state.user) return;
-    const items = getUserNotifications();
-    const unread = items.filter(n => !isNotifRead(n)).length;
+    const filterRow = document.getElementById('notif-filter-row');
+    if(!list || !sub || !filterRow || !state.user) return;
+    const allItems = getUserNotifications();
+    const items = notificationFilterItems(allItems);
+    const unread = allItems.filter(n => !isNotifRead(n)).length;
     sub.textContent = unread ? `${unread} belum dibaca` : 'Semua notifikasi sudah dibaca';
+    const activeFilter = state.notificationFilter || 'all';
+    const filterOptions = [
+      ['all','Semua',allItems.length],
+      ['unread','Unread',allItems.filter(n => !isNotifRead(n)).length],
+      ['warning','Warning',allItems.filter(n => ['warning','error'].includes(n.type || 'info')).length],
+      ['success','Success',allItems.filter(n => (n.type || 'info') === 'success').length],
+      ['today','Hari ini',allItems.filter(isTodayNotification).length]
+    ];
+    filterRow.innerHTML = filterOptions.map(([id,label,count]) => `<button class="notif-filter-btn ${activeFilter===id?'active':''}" onclick="setNotificationFilter('${id}')">${label} · ${count}</button>`).join('');
     if(!items.length){
-      list.innerHTML = `<div class="notif-empty">Belum ada notifikasi untuk akun ini.</div>`;
+      list.innerHTML = `<div class="notif-empty">Belum ada notifikasi pada filter ini.</div>`;
       return;
     }
     list.innerHTML = items.map(n => `
@@ -6983,7 +7157,7 @@ if(state.user && !isProductionRuntime()){
             <div style="flex:1;min-width:0">
               <div class="notif-item-title">${escHtml(n.title)}</div>
               <div class="notif-item-msg">${escHtml(n.message)}</div>
-              <div class="notif-item-tags">${badge((n.type||'info').toUpperCase())}${n.sentEmailAt?'<span class="badge" style="background:#ECFDF5;color:#065F46;border-color:#A7F3D0">Email terkirim</span>':''}</div>
+              <div class="notif-item-tags">${notificationTypeBadge(n.type||'info')}${isTodayNotification(n)?'<span class="badge" style="background:#EEF2FF;color:#3730A3;border-color:#C7D2FE">Hari ini</span>':''}${n.sentEmailAt?'<span class="badge" style="background:#ECFDF5;color:#065F46;border-color:#A7F3D0">Email terkirim</span>':''}</div>
             </div>
           </div>
           <div class="notif-item-meta">${relTime(n.createdAt)}</div>
@@ -7027,15 +7201,15 @@ if(state.user && !isProductionRuntime()){
     state.tasks.filter(t => t.status !== 'Done' && t.deadline).forEach(t => {
       const due = new Date(t.deadline + 'T23:59:59');
       const days = Math.ceil((due - now) / 86400000);
-      if(days < 0 || days > 3) return;
-      const key = `${t.id}_${days}`;
+      if(days > 3) return;
+      const key = days < 0 ? `${t.id}_overdue` : `${t.id}_${days}`;
       if(state.deadlineReminderLog[key]) return;
       const recipientIds = [...new Set([t.aId, ...admins].filter(Boolean))];
-      const title = days === 0 ? 'Deadline task hari ini' : days === 1 ? 'Deadline task besok' : `Deadline task ${days} hari lagi`;
+      const title = days < 0 ? 'Task overdue' : days === 0 ? 'Deadline task hari ini' : days === 1 ? 'Deadline task besok' : `Deadline task ${days} hari lagi`;
       createAppNotification({
         title,
-        message: `${t.title} jatuh tempo pada ${fmtD(t.deadline)}.`,
-        type: days === 0 ? 'warning' : 'info',
+        message: days < 0 ? `${t.title} sudah melewati deadline ${fmtD(t.deadline)}.` : `${t.title} jatuh tempo pada ${fmtD(t.deadline)}.`,
+        type: days <= 0 ? 'warning' : 'info',
         recipientUserIds: recipientIds,
         linkPage: 'tasks',
         linkId: t.id,
@@ -7447,12 +7621,16 @@ if(state.user && !isProductionRuntime()){
         <div class="form-group">
           <label class="form-label">Akses Halaman</label>
           <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
-            ${NAV.map(n => `
+            ${NAV.map(n => {
+              const adminOnlyPage = ['rab','settings'].includes(n.id);
+              const locked = isSuperAdminRole(roleName) || adminOnlyPage;
+              const checked = isSuperAdminRole(roleName) || (!adminOnlyPage && perms.has(n.id));
+              return `
               <label style="display:flex;align-items:center;gap:8px;font-size:12px;padding:9px;border:1px solid var(--border);border-radius:9px;background:rgba(255,255,255,0.025)">
-                <input type="checkbox" class="rm-perm" value="${escHtml(n.id)}" ${n.id === 'rab' && !isSuperAdminRole(roleName) ? '' : (perms.has(n.id) || isSuperAdminRole(roleName) ? 'checked' : '')} ${isSuperAdminRole(roleName) || n.id === 'rab' ? 'disabled' : ''}>
+                <input type="checkbox" class="rm-perm" value="${escHtml(n.id)}" ${checked ? 'checked' : ''} ${locked ? 'disabled' : ''}>
                 ${escHtml(n.label)}
               </label>
-            `).join('')}
+            `}).join('')}
           </div>
         </div>
         <div class="inline-help">Role menentukan menu apa saja yang bisa dibuka oleh user.</div>
@@ -7471,7 +7649,7 @@ if(state.user && !isProductionRuntime()){
     if(!/^[A-Za-z0-9 _.-]{3,40}$/.test(name)){ toast('Nama role minimal 3 karakter', 'error'); return; }
     if(oldName && oldName !== name && PERMS[name]){ toast('Nama role sudah ada', 'error'); return; }
     const selected = [...document.querySelectorAll('.rm-perm:checked')].map(el => el.value);
-    const allowedSelected = isSuperAdminRole(name) || isSuperAdminRole(oldName) ? selected : selected.filter(page => page !== 'rab');
+    const allowedSelected = isSuperAdminRole(name) || isSuperAdminRole(oldName) ? selected : selected.filter(page => !['rab','settings'].includes(page));
     const perms = isSuperAdminRole(oldName) ? PERMS[oldName] : [...new Set(['dashboard', ...allowedSelected])];
     if(oldName && oldName !== name){
       delete PERMS[oldName];
@@ -8018,7 +8196,8 @@ if(state.user && !isProductionRuntime()){
     const color = document.getElementById('rm-color')?.value || '#6B7280';
     const selected = [...document.querySelectorAll('.rm-perm:checked')].map(el => el.value);
     if(!name){ toast('Nama role wajib diisi', 'error'); return; }
-    const permissions = isSuperAdminRole(oldName) ? PERMS[oldName] : [...new Set(['dashboard', ...selected])];
+    const selectedAllowed = isSuperAdminRole(name) || isSuperAdminRole(oldName) ? selected : selected.filter(page => !['rab','settings'].includes(page));
+    const permissions = isSuperAdminRole(oldName) ? PERMS[oldName] : [...new Set(['dashboard', ...selectedAllowed])];
     try {
       const data = await apiJson(oldName ? `${AUTH_API.roles}/${encodeURIComponent(oldName)}` : AUTH_API.roles, {
         method: oldName ? 'PUT' : 'POST',

@@ -23,9 +23,9 @@ const DEFAULT_PERMS = {
   'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents'],
   'Staff Kreatif': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
   'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
-  Finance: ['dashboard','daily_progress','schedule','finance','reimburse'],
-  'Staff Finance + Dokumen': ['dashboard','daily_progress','schedule','finance','reimburse','documents'],
-  'Kepala Trainer': ['dashboard','daily_progress','schedule','programs','reimburse','documents'],
+  Finance: ['dashboard','tasks','daily_progress','schedule','finance','reimburse'],
+  'Staff Finance + Dokumen': ['dashboard','tasks','daily_progress','schedule','finance','reimburse','documents'],
+  'Kepala Trainer': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents'],
   Riset: ['dashboard','tasks','daily_progress','schedule','reimburse','documents','timeline']
 };
 const DEFAULT_ROLE_COLORS = {
@@ -39,6 +39,7 @@ const DEFAULT_ROLE_COLORS = {
   Riset: '#2563EB'
 };
 const SUPER_ADMIN_ROLES = new Set(['Super Admin', 'Super Admin + Manager']);
+const ADMIN_ONLY_PAGES = new Set(['rab', 'settings']);
 const IMPORTANT_DOC_ROLES = new Set(['Super Admin', 'Super Admin + Manager', 'Program Admin', 'Program Admin + Kepala Marketing/Kreatif']);
 const LEGACY_ROLE_MIGRATIONS = {
   'Super Admin': 'Super Admin + Manager',
@@ -67,6 +68,9 @@ const EMPTY_STATE = {
   filterProgressUser: 'Semua',
   filterProgressStatus: 'Semua',
   filterProgressDate: '',
+  filterProgramStatus: 'Semua',
+  filterProgramTrainer: 'Semua',
+  notificationFilter: 'all',
   researchItems: [],
   timelineEquity: [],
   reimburseRequests: [],
@@ -528,6 +532,8 @@ async function ensureSchema() {
   }
   await sql.query(`UPDATE roles SET permissions = permissions || '["schedule"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'schedule'`);
   await sql.query(`UPDATE roles SET permissions = permissions || '["reimburse"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'reimburse'`);
+  await sql.query(`UPDATE roles SET permissions = permissions || '["tasks"]'::jsonb, updated_at = now() WHERE name IN ('Finance','Staff Finance + Dokumen','Kepala Trainer') AND NOT permissions ? 'tasks'`);
+  await sql.query(`UPDATE roles SET permissions = permissions - 'rab' - 'settings', updated_at = now() WHERE name NOT IN ('Super Admin','Super Admin + Manager') AND (permissions ? 'rab' OR permissions ? 'settings')`);
   for (const [oldRole, newRole] of Object.entries(LEGACY_ROLE_MIGRATIONS)) {
     await sql`UPDATE users SET role = ${newRole}, updated_at = now() WHERE role = ${oldRole}`;
     await sql`DELETE FROM roles WHERE name = ${oldRole} AND NOT EXISTS (SELECT 1 FROM users WHERE role = ${oldRole})`;
@@ -999,7 +1005,9 @@ async function handle(req, res) {
     const oldName = method === 'PUT' ? decodeURIComponent(path.split('/').pop()) : null;
     const body = await readBody(req);
     const name = String(body.name || '').trim();
-    const permissions = Array.isArray(body.permissions) ? [...new Set(['dashboard', ...body.permissions.map(String)])] : ['dashboard'];
+    const rawPermissions = Array.isArray(body.permissions) ? body.permissions.map(String) : [];
+    const adminRoleTarget = SUPER_ADMIN_ROLES.has(name) || (oldName && SUPER_ADMIN_ROLES.has(oldName));
+    const permissions = [...new Set(['dashboard', ...rawPermissions.filter(page => adminRoleTarget || !ADMIN_ONLY_PAGES.has(page))])];
     const color = String(body.color || '#6B7280');
     if (!name) return send(res, 400, { error: 'Nama role wajib diisi' });
     if (oldName && oldName !== name) {
