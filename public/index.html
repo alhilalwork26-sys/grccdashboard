@@ -1701,6 +1701,235 @@ select:focus {
   animation: numberPop .25s ease;
 }
 
+/* ===== GLOBAL INTERACTION POLISH ===== */
+:root {
+  --motion-soft: cubic-bezier(.16, 1, .3, 1);
+}
+
+@keyframes pageSoftIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes panelGlowIn {
+  0% { opacity: 0; transform: translateY(10px) scale(.985); filter: saturate(.9); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: saturate(1); }
+}
+@keyframes chipPulseIn {
+  0% { opacity: 0; transform: translateY(4px) scale(.94); }
+  70% { transform: translateY(-1px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes overlayFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.page-header,
+.finance-toolbar,
+.filter-bar,
+.detail-grid,
+.settings-grid,
+.doc-grid,
+.timeline-shell,
+.timeline-grid,
+.rab-shell,
+.reimburse-hero,
+.calendar-layout,
+.program-toolbar,
+.program-filter-bar,
+.research-toolbar,
+.equity-toolbar {
+  animation: pageSoftIn .26s var(--motion-soft) both;
+}
+
+.card,
+.stat-card,
+.prog-card,
+.kan-card,
+.table-wrap,
+.modal-box,
+.calendar-card,
+.calendar-side-card,
+.reimburse-card,
+.rab-card,
+.research-card,
+.timeline-card {
+  transition:
+    transform .2s var(--motion-soft),
+    box-shadow .2s var(--motion-soft),
+    border-color .2s var(--motion-soft),
+    background-color .2s var(--motion-soft),
+    filter .2s var(--motion-soft);
+}
+
+.card:hover,
+.stat-card:hover,
+.prog-card:hover,
+.kan-card:hover,
+.table-wrap:hover,
+.calendar-card:hover,
+.calendar-side-card:hover,
+.reimburse-card:hover,
+.rab-card:hover,
+.research-card:hover,
+.timeline-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(91,141,246,.22);
+  box-shadow: 0 18px 38px rgba(0,0,0,.14);
+}
+[data-theme="light"] .card:hover,
+[data-theme="light"] .stat-card:hover,
+[data-theme="light"] .prog-card:hover,
+[data-theme="light"] .kan-card:hover,
+[data-theme="light"] .table-wrap:hover,
+[data-theme="light"] .calendar-card:hover,
+[data-theme="light"] .calendar-side-card:hover,
+[data-theme="light"] .reimburse-card:hover,
+[data-theme="light"] .rab-card:hover,
+[data-theme="light"] .research-card:hover,
+[data-theme="light"] .timeline-card:hover {
+  box-shadow: 0 18px 38px rgba(15,23,42,.08);
+}
+
+tbody tr {
+  transition: background-color .16s var(--motion-soft), transform .16s var(--motion-soft);
+}
+tbody tr:hover {
+  background: rgba(91,141,246,.055);
+}
+[data-theme="light"] tbody tr:hover {
+  background: rgba(59,130,246,.045);
+}
+
+.btn,
+.print-btn,
+.finance-view-btn,
+.notif-filter-btn,
+.opening-start-btn,
+.fab,
+.icon-btn,
+.cal-nav,
+.link-btn,
+.btn-icon {
+  transition:
+    transform .16s var(--motion-soft),
+    box-shadow .16s var(--motion-soft),
+    border-color .16s var(--motion-soft),
+    background-color .16s var(--motion-soft),
+    color .16s var(--motion-soft),
+    filter .16s var(--motion-soft);
+}
+.btn:hover,
+.print-btn:hover,
+.finance-view-btn:hover,
+.notif-filter-btn:hover,
+.opening-start-btn:hover,
+.fab:hover,
+.icon-btn:hover,
+.cal-nav:hover,
+.link-btn:hover,
+.btn-icon:hover {
+  transform: translateY(-1px);
+}
+.btn:active,
+.print-btn:active,
+.finance-view-btn:active,
+.notif-filter-btn:active,
+.opening-start-btn:active,
+.fab:active,
+.icon-btn:active,
+.cal-nav:active,
+.link-btn:active,
+.btn-icon:active {
+  transform: translateY(0) scale(.985);
+}
+
+.badge,
+.folder-pill,
+.status-pill,
+.finance-type-pill,
+.doc-access-pill,
+.daily-time-chip,
+.progress-status-pill,
+.equity-status-pill,
+.reimburse-pill,
+.tpl-chip,
+.accent-swatch,
+.notif-tag {
+  transition:
+    transform .15s var(--motion-soft),
+    filter .15s var(--motion-soft),
+    box-shadow .15s var(--motion-soft),
+    border-color .15s var(--motion-soft);
+}
+.badge:hover,
+.folder-pill:hover,
+.status-pill:hover,
+.finance-type-pill:hover,
+.doc-access-pill:hover,
+.daily-time-chip:hover,
+.progress-status-pill:hover,
+.equity-status-pill:hover,
+.reimburse-pill:hover,
+.tpl-chip:hover,
+.accent-swatch:hover,
+.notif-tag:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.form-control,
+.f-inp,
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  transition:
+    border-color .16s var(--motion-soft),
+    box-shadow .16s var(--motion-soft),
+    background-color .16s var(--motion-soft),
+    transform .16s var(--motion-soft);
+}
+.form-control:focus,
+.f-inp:focus,
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  box-shadow: 0 0 0 4px rgba(91,141,246,.14);
+}
+
+.dropdown-menu,
+.profile-menu,
+.notif-panel,
+.context-menu {
+  animation: panelGlowIn .2s var(--motion-soft) both;
+  transform-origin: top right;
+}
+
+.modal-overlay {
+  animation: overlayFade .18s ease both;
+}
+.modal-box {
+  animation: panelGlowIn .24s var(--motion-soft) both;
+}
+
+.notif-filter-btn,
+.tpl-chip,
+.folder-pill,
+.finance-view-btn {
+  animation: chipPulseIn .22s var(--motion-soft) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}
+
 </style>
 </head>
 <body>
