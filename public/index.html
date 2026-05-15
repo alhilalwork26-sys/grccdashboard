@@ -2239,9 +2239,10 @@ function runAutomaticReminders(){
   const admins = ACCOUNTS.filter(a => isManagerRole(a)).map(a => a.id);
   const financeWatchers = getReminderRecipientsByPage('finance');
   const progressWatchers = getReminderRecipientsByPage('daily_progress');
+  const activeStableReminderKeys = new Set();
 
-  function once(key, payload){
-    const fullKey = `${todayKey}_${key}`;
+  function once(key, payload, options={}){
+    const fullKey = options.daily === false ? key : `${todayKey}_${key}`;
     if(state.reminderLog[fullKey]) return;
     const notif = createAppNotification({...payload, dedupeKey: `auto_${fullKey}`});
     if(notif) {
@@ -2253,7 +2254,8 @@ function runAutomaticReminders(){
   state.tasks.filter(t => t.status !== 'Done' && t.deadline).forEach(t => {
     const recipients = [...new Set([t.aId, ...admins].filter(Boolean))];
     if((t.requiredEvidence || []).length && !taskEvidenceComplete(t)){
-      once(`task_evidence_missing_${t.id}`, {title:'Bukti kerja belum lengkap', message:`${t.title} masih kurang bukti: ${missingTaskEvidenceLabels(t).join(', ')}.`, type:'warning', recipientUserIds:recipients, linkPage:'tasks', linkId:t.id});
+      activeStableReminderKeys.add(`auto_task_evidence_missing_${t.id}`);
+      once(`task_evidence_missing_${t.id}`, {title:'Bukti kerja belum lengkap', message:`${t.title} masih kurang bukti: ${missingTaskEvidenceLabels(t).join(', ')}.`, type:'warning', recipientUserIds:recipients, linkPage:'tasks', linkId:t.id}, {daily:false});
     }
   });
 
@@ -2280,12 +2282,22 @@ function runAutomaticReminders(){
   activeExpenses().forEach(e => {
     const amount = e.total || e.amount || 0;
     if(e.status === 'Draft'){
-      once(`finance_draft_${e.id}`, {title:'Draft pengeluaran belum disubmit', message:`${e.activity} senilai ${fmt$(amount)} masih Draft.`, type:'info', recipientUserIds:financeWatchers, linkPage:'finance'});
+      activeStableReminderKeys.add(`auto_finance_draft_${e.id}`);
+      once(`finance_draft_${e.id}`, {title:'Draft pengeluaran belum disubmit', message:`${e.activity} senilai ${fmt$(amount)} masih Draft.`, type:'info', recipientUserIds:financeWatchers, linkPage:'finance'}, {daily:false});
     }
     if(!e.invoices || e.invoices.length === 0){
-      once(`finance_invoice_missing_${e.id}`, {title:'Invoice pengeluaran belum diupload', message:`${e.activity} belum memiliki invoice/nota.`, type:'warning', recipientUserIds:financeWatchers, linkPage:'finance'});
+      activeStableReminderKeys.add(`auto_finance_invoice_missing_${e.id}`);
+      once(`finance_invoice_missing_${e.id}`, {title:'Invoice pengeluaran belum diupload', message:`${e.activity} belum memiliki invoice/nota.`, type:'warning', recipientUserIds:financeWatchers, linkPage:'finance'}, {daily:false});
     }
   });
+
+  const beforeNotifCount = Array.isArray(state.notifications) ? state.notifications.length : 0;
+  state.notifications = (state.notifications || []).filter(n => {
+    const key = String(n.dedupeKey || '');
+    if(!/^auto_(finance_(?:draft|invoice_missing)|task_evidence_missing)_/.test(key)) return true;
+    return activeStableReminderKeys.has(key);
+  });
+  if(state.notifications.length !== beforeNotifCount) changed = true;
 
   const keepFrom = new Date(now.getTime() - 14 * 86400000).toISOString().slice(0,10);
   Object.keys(state.reminderLog).forEach(key => {
@@ -6858,6 +6870,7 @@ if(state.user && !isProductionRuntime()){
 (function(){
   const NOTIF_STORAGE_KEY = 'grcc_dashboard_notif_patch_v1';
   const bc = ('BroadcastChannel' in window) ? new BroadcastChannel('grcc_dashboard_notifications_channel_v1') : null;
+  let notificationCompactedOnce = false;
 
   function ensureNotifState(){
     if(!Array.isArray(state.notifications)) state.notifications = [];
@@ -6873,6 +6886,10 @@ if(state.user && !isProductionRuntime()){
       fromName: 'GRCC Dashboard',
       fallbackTo: ''
     };
+    if(!notificationCompactedOnce){
+      notificationCompactedOnce = true;
+      if(compactNotificationState()) setTimeout(() => persistPatched(), 0);
+    }
   }
   ensureNotifState();
 
@@ -6954,6 +6971,46 @@ if(state.user && !isProductionRuntime()){
   }
   function unreadNotificationCount(){ return getUserNotifications().filter(n => !isNotifRead(n)).length; }
 
+  function canonicalNotificationKey(n){
+    const raw = String(n?.dedupeKey || '');
+    if(raw){
+      const stableAuto = raw.match(/^auto_\d{4}-\d{2}-\d{2}_(finance_(?:draft|invoice_missing)_.+|task_evidence_missing_.+)$/);
+      if(stableAuto) return `auto_${stableAuto[1]}`;
+      return raw;
+    }
+    return [
+      n?.type || 'info',
+      n?.title || '',
+      n?.message || '',
+      n?.linkPage || '',
+      n?.linkId || ''
+    ].join('|');
+  }
+  function compactNotificationState(){
+    if(!Array.isArray(state.notifications)) return false;
+    const before = state.notifications.length;
+    let changed = false;
+    const merged = new Map();
+    state.notifications
+      .slice()
+      .sort((a,b)=>new Date(b.createdAt || 0)-new Date(a.createdAt || 0))
+      .forEach(n => {
+        const key = canonicalNotificationKey(n);
+        if(key && key !== n.dedupeKey) changed = true;
+        if(!merged.has(key)){
+          merged.set(key, {...n, dedupeKey: key || n.dedupeKey});
+          return;
+        }
+        changed = true;
+        const existing = merged.get(key);
+        existing.recipientUserIds = [...new Set([...(existing.recipientUserIds || []), ...(n.recipientUserIds || [])])];
+        existing.readBy = {...(n.readBy || {}), ...(existing.readBy || {})};
+        existing.sentEmailAt = existing.sentEmailAt || n.sentEmailAt || null;
+      });
+    state.notifications = [...merged.values()].slice(0, 160);
+    return changed || state.notifications.length !== before;
+  }
+
   function requestBrowserNotificationPermission(){
     try {
       if(!state.notifDeadline && !state.notifEmail) return;
@@ -7007,7 +7064,15 @@ if(state.user && !isProductionRuntime()){
     const recipients = resolveRecipientUserIds(opts);
     if(!recipients.length) return null;
     const dedupeKey = opts.dedupeKey || null;
-    if(dedupeKey && state.notifications.some(n => n.dedupeKey === dedupeKey)) return null;
+    const candidateKey = canonicalNotificationKey({
+      dedupeKey,
+      title: opts.title || 'Notifikasi Baru',
+      message: opts.message || '',
+      type: opts.type || 'info',
+      linkPage: opts.linkPage || null,
+      linkId: opts.linkId || null
+    });
+    if(candidateKey && state.notifications.some(n => canonicalNotificationKey(n) === candidateKey)) return null;
     const n = {
       id: uid(),
       title: opts.title || 'Notifikasi Baru',
@@ -7019,10 +7084,10 @@ if(state.user && !isProductionRuntime()){
       readBy: opts.readBy || {},
       linkPage: opts.linkPage || null,
       linkId: opts.linkId || null,
-      dedupeKey,
+      dedupeKey: candidateKey || dedupeKey,
       sentEmailAt: null
     };
-    state.notifications = [n, ...state.notifications].slice(0, 300);
+    state.notifications = [n, ...state.notifications].slice(0, 160);
     persistPatched();
     refreshNotificationUi();
     maybeShowBrowserNotification(n);
