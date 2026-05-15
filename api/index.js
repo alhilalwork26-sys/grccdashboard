@@ -600,6 +600,7 @@ async function syncModuleTables(state) {
     if (!Object.prototype.hasOwnProperty.call(state, stateKey)) continue;
     if (!Array.isArray(state[stateKey])) continue;
     const items = state[stateKey];
+    const activeIds = [];
     for (const item of items) {
       const id = String(item.id || crypto.randomBytes(8).toString('hex'));
       item.id = id;
@@ -607,7 +608,15 @@ async function syncModuleTables(state) {
         await sql.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
         continue;
       }
+      activeIds.push(id);
       await sql.query(`INSERT INTO ${table} (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`, [id, JSON.stringify(item)]);
+    }
+    if (stateKey === 'notifications') {
+      if (activeIds.length) {
+        await sql.query(`DELETE FROM ${table} WHERE NOT (id = ANY($1::text[]))`, [activeIds]);
+      } else {
+        await sql.query(`DELETE FROM ${table}`);
+      }
     }
   }
 }

@@ -2234,6 +2234,7 @@ function runAutomaticReminders(){
   if(!state.user || !state.notifDeadline) return;
   if(!state.reminderLog) state.reminderLog = {};
   let changed = false;
+  if(typeof window.compactNotificationState === 'function' && window.compactNotificationState()) changed = true;
   const todayKey = today();
   const now = new Date();
   const admins = ACCOUNTS.filter(a => isManagerRole(a)).map(a => a.id);
@@ -7010,6 +7011,7 @@ if(state.user && !isProductionRuntime()){
     state.notifications = [...merged.values()].slice(0, 160);
     return changed || state.notifications.length !== before;
   }
+  window.compactNotificationState = compactNotificationState;
 
   function requestBrowserNotificationPermission(){
     try {
@@ -7124,6 +7126,22 @@ if(state.user && !isProductionRuntime()){
     refreshNotificationUi();
     toast('Notifikasi yang sudah dibaca dibersihkan', 'info');
   };
+  window.clearVisibleNotifications = function(){
+    const uid = currentUserId();
+    if(!uid) return;
+    const visibleIds = new Set(notificationFilterItems(getUserNotifications()).map(n => n.id));
+    if(!visibleIds.size){ toast('Tidak ada notifikasi pada filter ini', 'info'); return; }
+    state.notifications = state.notifications.map(n => {
+      if(!visibleIds.has(n.id)) return n;
+      const recipients = (n.recipientUserIds || []).filter(id => id !== uid);
+      return recipients.length
+        ? {...n, recipientUserIds: recipients, readBy: {...(n.readBy || {}), [uid]: true}}
+        : {...n, _deleted: true, recipientUserIds: []};
+    }).filter(n => !n._deleted);
+    persistPatched();
+    refreshNotificationUi();
+    toast('Notifikasi pada filter ini dibersihkan', 'success');
+  };
   window.openNotificationTarget = function(id){
     const n = state.notifications.find(x => x.id === id);
     if(!n) return;
@@ -7149,7 +7167,7 @@ if(state.user && !isProductionRuntime()){
     panel = document.createElement('div');
     panel.id = 'notif-panel';
     panel.className = 'notif-panel';
-    panel.innerHTML = `<div class="notif-head"><div><div style="font-size:14px;font-weight:800">Notifikasi</div><div id="notif-subhead" style="font-size:11px;color:var(--muted)"></div></div><div class="notif-actions-row"><button class="notif-mini-btn" onclick="markAllNotificationsRead()">Tandai semua</button><button class="notif-mini-btn" onclick="clearReadNotifications()">Bersihkan</button></div></div><div class="notif-filter-row" id="notif-filter-row"></div><div class="notif-list" id="notif-list"></div>`;
+    panel.innerHTML = `<div class="notif-head"><div><div style="font-size:14px;font-weight:800">Notifikasi</div><div id="notif-subhead" style="font-size:11px;color:var(--muted)"></div></div><div class="notif-actions-row"><button class="notif-mini-btn" onclick="markAllNotificationsRead()">Tandai semua</button><button class="notif-mini-btn" onclick="clearVisibleNotifications()">Bersihkan filter</button></div></div><div class="notif-filter-row" id="notif-filter-row"></div><div class="notif-list" id="notif-list"></div>`;
     document.getElementById('main')?.appendChild(panel);
     document.addEventListener('click', e => {
       const bell = document.querySelector('.hdr-bell');
@@ -7932,6 +7950,7 @@ if(state.user && !isProductionRuntime()){
       } catch(e) {}
       const sessionId = sessionUser?.id || '';
       Object.assign(state, cleanServerStateForClient(payload.state));
+      if(typeof window.compactNotificationState === 'function' && window.compactNotificationState()) setTimeout(() => persistPatched(), 0);
       delete state.accounts;
       delete state.permissions;
       delete state.roleColors;
@@ -8090,6 +8109,7 @@ if(state.user && !isProductionRuntime()){
       Object.assign(ROLE_COLORS, serverState.roleColors);
     }
     Object.assign(state, cleanServerStateForClient(serverState));
+    if(typeof window.compactNotificationState === 'function' && window.compactNotificationState()) setTimeout(() => persistPatched(), 0);
     delete state.accounts;
     delete state.permissions;
     delete state.roleColors;
