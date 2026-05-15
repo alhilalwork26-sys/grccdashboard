@@ -1175,6 +1175,10 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
   box-shadow:0 24px 60px rgba(0,0,0,0.6) !important;
 }
 .notif-head   { border-color:rgba(255,255,255,0.07) !important; }
+.notif-filter-row { background:var(--surface) !important; border-color:rgba(255,255,255,0.07) !important; }
+.notif-filter-btn { background:rgba(255,255,255,0.035) !important; border-color:rgba(255,255,255,0.08) !important; }
+.notif-filter-btn.active { background:rgba(91,141,246,0.16) !important; border-color:rgba(91,141,246,0.38) !important; color:#AFC7FF !important; }
+.notif-filter-count { background:rgba(255,255,255,0.09) !important; }
 .notif-item   { background:transparent !important; border-color:rgba(255,255,255,0.05) !important; }
 .notif-item:hover { background:rgba(255,255,255,0.04) !important; }
 .notif-item.unread { background:rgba(91,141,246,0.06) !important; }
@@ -1359,6 +1363,10 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
 [data-theme="light"] .login-right { background: rgba(255,255,255,0.97); }
 /* Light notif panel */
 [data-theme="light"] .notif-panel { background: #fff !important; border-color: rgba(0,0,0,0.1) !important; }
+[data-theme="light"] .notif-filter-row { background:#fff !important; border-color:rgba(0,0,0,0.08) !important; }
+[data-theme="light"] .notif-filter-btn { background:#fff !important; border-color:rgba(15,23,42,0.12) !important; }
+[data-theme="light"] .notif-filter-btn.active { background:#EFF6FF !important; border-color:#BFDBFE !important; color:#1E3A8A !important; }
+[data-theme="light"] .notif-filter-count { background:#EAF1FF !important; }
 [data-theme="light"] .notif-item:hover { background: rgba(0,0,0,0.03) !important; }
 [data-theme="light"] .notif-item.unread { background: rgba(59,130,246,0.04) !important; }
 [data-theme="light"] .notif-list { background: #F8FAFC !important; }
@@ -6899,20 +6907,23 @@ if(state.user && !isProductionRuntime()){
     .hdr-bell.has-unread{color:var(--navy);background:var(--blue-lt)}
     .hdr-bell.is-ringing svg{animation:ringBell .9s ease-in-out}
     @keyframes ringBell{0%,100%{transform:rotate(0)}20%{transform:rotate(18deg)}40%{transform:rotate(-12deg)}60%{transform:rotate(8deg)}80%{transform:rotate(-4deg)}}
-    .notif-panel{position:absolute;top:56px;right:24px;width:min(420px,calc(100vw - 32px));max-height:70vh;background:var(--white);border:1px solid var(--border);border-radius:16px;box-shadow:0 18px 48px rgba(15,23,42,.16);z-index:1200;overflow:hidden;display:none}
+    .notif-panel{position:absolute;top:56px;right:18px;width:min(560px,calc(100vw - 28px));max-height:min(76vh,720px);background:var(--white);border:1px solid var(--border);border-radius:18px;box-shadow:0 18px 48px rgba(15,23,42,.16);z-index:1200;overflow:hidden;display:none}
     .notif-panel.show{display:flex;flex-direction:column;animation:fadeUp .18s ease}
-    .notif-head{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px}
-    .notif-tabs{display:flex;gap:8px;align-items:center}
-    .notif-filter-row{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;gap:7px;overflow-x:auto;background:var(--white)}
-    .notif-filter-btn{border:1px solid var(--border);background:var(--white);color:var(--sub);font-size:11px;font-weight:850;border-radius:999px;padding:6px 9px;white-space:nowrap;transition:.15s}
-    .notif-filter-btn:hover{transform:translateY(-1px);border-color:rgba(91,141,246,.42)}
-    .notif-filter-btn.active{background:var(--blue-lt);border-color:rgba(91,141,246,.42);color:var(--navy)}
+    .notif-head{padding:14px 16px 12px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .notif-title{font-size:15px;font-weight:900;color:var(--text);line-height:1.1}
+    .notif-subtitle{font-size:11px;color:var(--muted);margin-top:4px}
+    .notif-filter-row{padding:10px 12px 12px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;background:var(--white)}
+    .notif-filter-btn{min-width:0;border:1px solid var(--border);background:rgba(255,255,255,.72);color:var(--sub);font-size:11px;font-weight:850;border-radius:12px;padding:8px 8px;white-space:normal;line-height:1.15;transition:.15s;display:flex;align-items:center;justify-content:center;gap:5px}
+    .notif-filter-btn:hover{transform:translateY(-1px);border-color:rgba(91,141,246,.42);box-shadow:0 8px 18px rgba(15,23,42,.08)}
+    .notif-filter-btn.active{background:var(--blue-lt);border-color:rgba(91,141,246,.5);color:var(--navy);box-shadow:inset 0 0 0 1px rgba(91,141,246,.16)}
+    .notif-filter-label{overflow:hidden;text-overflow:ellipsis}
+    .notif-filter-count{font-family:var(--mono);font-size:10px;font-weight:900;padding:2px 6px;border-radius:999px;background:rgba(148,163,184,.14);color:inherit;flex-shrink:0}
     .notif-type-pill{font-size:10px;font-weight:900;border-radius:999px;padding:3px 8px;border:1px solid transparent}
     .notif-type-pill.info{background:rgba(91,141,246,.12);color:#2563EB;border-color:rgba(91,141,246,.22)}
     .notif-type-pill.warning{background:rgba(245,158,11,.13);color:#B45309;border-color:rgba(245,158,11,.24)}
     .notif-type-pill.success{background:rgba(16,185,129,.13);color:#047857;border-color:rgba(16,185,129,.24)}
     .notif-type-pill.error{background:rgba(239,68,68,.13);color:#B91C1C;border-color:rgba(239,68,68,.24)}
-    .notif-list{overflow-y:auto;max-height:calc(70vh - 108px);background:var(--bg2)}
+    .notif-list{overflow-y:auto;max-height:calc(min(76vh,720px) - 126px);background:var(--bg2)}
     .notif-item{padding:14px 16px;border-bottom:1px solid var(--border);background:var(--white);cursor:pointer;transition:background .15s}
     .notif-item:hover{background:var(--bg)}
     .notif-item.unread{background:#F8FBFF}
@@ -6924,9 +6935,17 @@ if(state.user && !isProductionRuntime()){
     .notif-empty{padding:30px 20px;text-align:center;color:var(--muted);font-size:13px}
     .notif-dot{width:8px;height:8px;border-radius:50%;background:var(--blue);flex-shrink:0;margin-top:5px}
     .notif-item.unread .notif-item-title{color:var(--navy)}
-    .notif-actions-row{display:flex;gap:8px;align-items:center}
-    .notif-mini-btn{font-size:11px;font-weight:700;color:var(--blue);padding:4px 6px;border-radius:6px}
+    .notif-actions-row{display:flex;gap:7px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+    .notif-mini-btn{font-size:11px;font-weight:850;color:var(--blue);padding:6px 8px;border:1px solid transparent;border-radius:9px;white-space:nowrap}
     .notif-mini-btn:hover{background:var(--blue-lt)}
+    .notif-mini-btn.danger{color:#B91C1C}
+    .notif-mini-btn.danger:hover{background:rgba(239,68,68,.09)}
+    @media(max-width:640px){
+      .notif-panel{position:fixed;top:72px;left:10px;right:10px;width:auto;max-height:78vh}
+      .notif-head{flex-direction:column;align-items:stretch}
+      .notif-actions-row{justify-content:flex-start}
+      .notif-filter-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
     .inline-help{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5}
   `;
   document.head.appendChild(notifStyle);
@@ -7167,7 +7186,7 @@ if(state.user && !isProductionRuntime()){
     panel = document.createElement('div');
     panel.id = 'notif-panel';
     panel.className = 'notif-panel';
-    panel.innerHTML = `<div class="notif-head"><div><div style="font-size:14px;font-weight:800">Notifikasi</div><div id="notif-subhead" style="font-size:11px;color:var(--muted)"></div></div><div class="notif-actions-row"><button class="notif-mini-btn" onclick="markAllNotificationsRead()">Tandai semua</button><button class="notif-mini-btn" onclick="clearVisibleNotifications()">Bersihkan filter</button></div></div><div class="notif-filter-row" id="notif-filter-row"></div><div class="notif-list" id="notif-list"></div>`;
+    panel.innerHTML = `<div class="notif-head"><div><div class="notif-title">Notifikasi</div><div id="notif-subhead" class="notif-subtitle"></div></div><div class="notif-actions-row"><button class="notif-mini-btn" onclick="markAllNotificationsRead()">Tandai dibaca</button><button class="notif-mini-btn danger" onclick="clearVisibleNotifications()">Hapus filter aktif</button></div></div><div class="notif-filter-row" id="notif-filter-row"></div><div class="notif-list" id="notif-list"></div>`;
     document.getElementById('main')?.appendChild(panel);
     document.addEventListener('click', e => {
       const bell = document.querySelector('.hdr-bell');
@@ -7227,7 +7246,7 @@ if(state.user && !isProductionRuntime()){
       ['success','Success',allItems.filter(n => (n.type || 'info') === 'success').length],
       ['today','Hari ini',allItems.filter(isTodayNotification).length]
     ];
-    filterRow.innerHTML = filterOptions.map(([id,label,count]) => `<button class="notif-filter-btn ${activeFilter===id?'active':''}" onclick="setNotificationFilter('${id}')">${label} · ${count}</button>`).join('');
+    filterRow.innerHTML = filterOptions.map(([id,label,count]) => `<button class="notif-filter-btn ${activeFilter===id?'active':''}" onclick="setNotificationFilter('${id}')" title="${label} (${count})"><span class="notif-filter-label">${label}</span><span class="notif-filter-count">${count > 99 ? '99+' : count}</span></button>`).join('');
     if(!items.length){
       list.innerHTML = `<div class="notif-empty">Belum ada notifikasi pada filter ini.</div>`;
       return;
