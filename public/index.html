@@ -4536,9 +4536,10 @@ function renderReimburse(){
   const requests = activeReimburseRequests();
   const own = requests.filter(r => r.applicantId === state.user?.id);
   const visible = visibleReimburseRequests();
-  const waiting = requests.filter(r => r.status === 'Submitted').length;
-  const approved = requests.filter(r => r.status === 'Approved').reduce((s,r)=>s+reimburseTotal(r),0);
-  const paid = requests.filter(r => r.status === 'Paid').reduce((s,r)=>s+reimburseTotal(r),0);
+  const statRequests = canReview ? requests : own;
+  const waiting = statRequests.filter(r => r.status === 'Submitted').length;
+  const approved = statRequests.filter(r => r.status === 'Approved').reduce((s,r)=>s+reimburseTotal(r),0);
+  const paid = statRequests.filter(r => r.status === 'Paid').reduce((s,r)=>s+reimburseTotal(r),0);
   return `
     <div class="reimburse-hero">
       <div class="reimburse-hero-row">
@@ -4554,10 +4555,10 @@ function renderReimburse(){
       </div>
     </div>
     <div class="reimburse-stat-grid">
-      <div class="reimburse-stat"><span>${canReview?'Total Pengajuan':'Pengajuan Saya'}</span><strong>${canReview ? requests.length : own.length}</strong></div>
-      <div class="reimburse-stat"><span>Menunggu Review</span><strong>${waiting}</strong></div>
-      <div class="reimburse-stat"><span>Disetujui</span><strong>${fmt$(approved)}</strong></div>
-      <div class="reimburse-stat"><span>Dibayar</span><strong>${fmt$(paid)}</strong></div>
+      <div class="reimburse-stat"><span>${canReview?'Total Pengajuan':'Pengajuan Saya'}</span><strong>${statRequests.length}</strong></div>
+      <div class="reimburse-stat"><span>${canReview?'Menunggu Review':'Menunggu Saya'}</span><strong>${waiting}</strong></div>
+      <div class="reimburse-stat"><span>${canReview?'Disetujui':'Disetujui Saya'}</span><strong>${fmt$(approved)}</strong></div>
+      <div class="reimburse-stat"><span>${canReview?'Dibayar':'Dibayar Saya'}</span><strong>${fmt$(paid)}</strong></div>
     </div>
     <div class="reimburse-toolbar">
       <div class="finance-filter-field" style="min-width:180px">
