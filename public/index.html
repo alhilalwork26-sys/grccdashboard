@@ -182,6 +182,51 @@ a { text-decoration: none; }
 #sync-dot[data-sync="saving"] { opacity:1; animation:pulse .9s ease-in-out infinite; }
 #sync-dot[data-sync="error"]  { opacity:1; background:var(--red); box-shadow:0 0 6px rgba(248,113,113,0.8); animation:none; }
 #sync-dot[data-sync="success"]{ opacity:0.6; animation:none; }
+.sync-countdown {
+  display:none;
+  align-items:center;
+  gap:7px;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(91,141,246,.18);
+  background:rgba(91,141,246,.08);
+  color:var(--sub);
+  font-size:10px;
+  font-weight:850;
+  letter-spacing:.01em;
+  white-space:nowrap;
+  box-shadow:0 8px 22px rgba(0,0,0,.08);
+  transition:transform .18s var(--motion-soft), border-color .18s var(--motion-soft), background .18s var(--motion-soft), color .18s var(--motion-soft);
+}
+.sync-countdown:hover {
+  transform:translateY(-1px);
+  border-color:rgba(91,141,246,.34);
+  color:var(--text);
+}
+.sync-countdown-dot {
+  width:7px;
+  height:7px;
+  border-radius:999px;
+  background:var(--blue);
+  box-shadow:0 0 0 4px rgba(91,141,246,.12);
+}
+.sync-countdown[data-state="syncing"] .sync-countdown-dot {
+  animation:pulse .8s ease-in-out infinite;
+}
+.sync-countdown[data-state="fresh"] .sync-countdown-dot {
+  background:var(--green);
+  box-shadow:0 0 0 4px rgba(52,211,153,.13);
+}
+.sync-countdown[data-state="error"] .sync-countdown-dot {
+  background:var(--red);
+  box-shadow:0 0 0 4px rgba(248,113,113,.13);
+}
+.sync-countdown-seconds {
+  min-width:24px;
+  text-align:center;
+  color:var(--blue);
+  font-variant-numeric:tabular-nums;
+}
 
 /* ═══════════════════════════════════════════════
    SIDEBAR
@@ -2045,6 +2090,11 @@ textarea:focus {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span class="hdr-badge" style="display:none">0</span>
         </button>
+        <div class="sync-countdown" id="sync-countdown" title="Tarik data server otomatis setiap 15 detik">
+          <span class="sync-countdown-dot"></span>
+          <span>Sync</span>
+          <span class="sync-countdown-seconds" id="sync-countdown-seconds">15d</span>
+        </div>
         <div id="sync-dot" title="Menyinkronkan..."></div>
         <div style="display:flex;align-items:center;gap:8px">
           <div class="av" id="hdr-av" style="width:32px;height:32px;font-size:11px"></div>
@@ -8211,6 +8261,7 @@ if(state.user && !isProductionRuntime()){
         document.getElementById('login-page').style.display='none';
         document.getElementById('app').style.display='flex';
         initApp();
+        if(typeof window.startCrossDeviceAutoSync === 'function') window.startCrossDeviceAutoSync();
       } else {
         document.getElementById('app').style.display='none';
         document.getElementById('login-page').style.display='flex';
@@ -8446,6 +8497,7 @@ if(state.user && !isProductionRuntime()){
       document.getElementById('app').style.display='flex';
       initApp();
       startSessionWatcher();
+      if(typeof window.startCrossDeviceAutoSync === 'function') window.startCrossDeviceAutoSync();
       toast(`Selamat datang, ${state.user.name}!`);
     } catch(err) {
       toast(err.message || 'Login gagal', 'error');
@@ -8466,6 +8518,7 @@ if(state.user && !isProductionRuntime()){
     document.getElementById('login-pw').value='';
     document.getElementById('login-btn').disabled=false;
     document.getElementById('login-btn').textContent='Masuk';
+    if(typeof window.updateSyncCountdown === 'function') window.updateSyncCountdown();
     toast('Anda sudah keluar', 'info');
   };
 
@@ -8607,12 +8660,33 @@ if(state.user && !isProductionRuntime()){
 <script>
 /* ===== CROSS DEVICE AUTO SYNC ===== */
 (function(){
-  const AUTO_SYNC_INTERVAL_MS = 60000;
+  const AUTO_SYNC_INTERVAL_MS = 15000;
+  const AUTO_SYNC_SECONDS = Math.round(AUTO_SYNC_INTERVAL_MS / 1000);
   let syncTimer = null;
+  let countdownTimer = null;
+  let nextSyncAt = 0;
   let syncInFlight = false;
   let lastSyncMarker = window.__grccLastServerMarker || '';
   let bootstrapped = false;
   let smoothRenderTimer = null;
+
+  function updateSyncCountdown(stateName=''){
+    const wrap = document.getElementById('sync-countdown');
+    const secs = document.getElementById('sync-countdown-seconds');
+    if(!wrap || !secs) return;
+    const shouldShow = location.protocol !== 'file:' && Boolean(state?.user);
+    wrap.style.display = shouldShow ? 'inline-flex' : 'none';
+    if(!shouldShow) return;
+    if(stateName) wrap.dataset.state = stateName;
+    if(!nextSyncAt) nextSyncAt = Date.now() + AUTO_SYNC_INTERVAL_MS;
+    const remaining = Math.max(0, Math.ceil((nextSyncAt - Date.now()) / 1000));
+    secs.textContent = `${remaining || AUTO_SYNC_SECONDS}d`;
+  }
+
+  function resetSyncCountdown(stateName='idle'){
+    nextSyncAt = Date.now() + AUTO_SYNC_INTERVAL_MS;
+    updateSyncCountdown(stateName);
+  }
 
   function canAutoSync(){
     return location.protocol !== 'file:' && typeof state === 'object' && Boolean(state?.user) && !syncInFlight && !window.__grccSavingToBackend;
@@ -8756,6 +8830,7 @@ if(state.user && !isProductionRuntime()){
     if((modalIsOpen() || userIsTyping()) && reason === 'timer') return false;
 
     syncInFlight = true;
+    updateSyncCountdown('syncing');
     try {
       const res = await fetch('/api/state', {
         method: 'GET',
@@ -8764,13 +8839,24 @@ if(state.user && !isProductionRuntime()){
       });
       if(res.status === 401) {
         if(typeof window.forceSessionExpiredLogout === 'function') window.forceSessionExpiredLogout();
+        updateSyncCountdown('error');
         return false;
       }
       const payload = await res.json().catch(() => ({}));
-      if(!res.ok || !payload.state) return false;
-      return applyAutoSyncPayload(payload, reason);
+      if(!res.ok){
+        updateSyncCountdown('error');
+        return false;
+      }
+      if(!payload.state){
+        updateSyncCountdown('idle');
+        return false;
+      }
+      const applied = applyAutoSyncPayload(payload, reason);
+      updateSyncCountdown(applied ? 'fresh' : 'idle');
+      return applied;
     } catch(err) {
       console.warn('auto sync gagal', err);
+      updateSyncCountdown('error');
       return false;
     } finally {
       syncInFlight = false;
@@ -8779,12 +8865,21 @@ if(state.user && !isProductionRuntime()){
 
   function startCrossDeviceAutoSync(){
     if(syncTimer) clearInterval(syncTimer);
+    if(countdownTimer) clearInterval(countdownTimer);
+    resetSyncCountdown('idle');
+    countdownTimer = setInterval(() => updateSyncCountdown(), 1000);
     setTimeout(() => autoSyncFromServer('silent'), 2500);
-    syncTimer = setInterval(() => autoSyncFromServer('timer'), AUTO_SYNC_INTERVAL_MS);
+    syncTimer = setInterval(() => {
+      resetSyncCountdown('idle');
+      autoSyncFromServer('timer').then(changed => {
+        if(!changed) updateSyncCountdown('idle');
+      });
+    }, AUTO_SYNC_INTERVAL_MS);
   }
 
   window.autoSyncFromServer = autoSyncFromServer;
   window.startCrossDeviceAutoSync = startCrossDeviceAutoSync;
+  window.updateSyncCountdown = updateSyncCountdown;
 
   document.addEventListener('visibilitychange', () => {
     if(document.visibilityState === 'visible') autoSyncFromServer('tab-active');
