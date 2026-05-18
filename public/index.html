@@ -2336,6 +2336,19 @@ function setAvatar(el, user, sz=36, bg='var(--navy)'){
 function btn(label,cls,onclick,extra=''){
   return `<button class="btn ${cls}" onclick="${onclick}" ${extra}>${label}</button>`;
 }
+async function persistDeleteToServer(successMessage='Data dihapus dari server', warningMessage='Data dihapus lokal, tetapi sinkron server belum selesai'){
+  persistPatched();
+  if(typeof window.flushBackendSave === 'function'){
+    try {
+      await window.flushBackendSave();
+      toast(successMessage, 'success');
+    } catch(e) {
+      toast(warningMessage, 'warning');
+    }
+  } else {
+    toast(successMessage.replace(' dari server', ''), 'info');
+  }
+}
 const AUDIT_ACTION_LABELS = {login:'Login',logout:'Logout',create:'Membuat',update:'Mengubah',rename:'Mengganti nama',delete:'Menghapus',upload:'Upload',replace:'Mengganti file',download:'Download',denied:'Akses ditolak',ai_summary:'Ringkasan AI'};
 const AUDIT_ENTITY_LABELS = {session:'Sesi',profile:'Profil',user:'Akun',role:'Role',document:'Dokumen',document_ai_summary:'CUK AI',app_state:'Data Website'};
 const AUDIT_FIELD_LABELS = {name:'Nama',username:'Username',email:'Email',role:'Role',dept:'Departemen',av:'Inisial',avatarUrl:'Foto profil',active:'Status aktif',permissions:'Akses modul',color:'Warna',filename:'Nama file',contentType:'Tipe file',size:'Ukuran',blobAccess:'Akses file',visibility:'Level dokumen',pinProtected:'PIN aktif'};
@@ -2959,14 +2972,13 @@ function saveResearchItem(editId=''){
   closeModal();
   renderPage();
 }
-function deleteResearchItem(id){
+async function deleteResearchItem(id){
   const item = (state.researchItems || []).find(x => x.id === id);
   if(!item) return;
   if(!confirm(`Hapus data riset "${item.title}"?`)) return;
   state.researchItems = state.researchItems.filter(x => x.id !== id);
-  persistPatched();
   renderPage();
-  toast('Data riset dihapus', 'info');
+  await persistDeleteToServer('Data riset dihapus dari server', 'Data riset dihapus lokal, tetapi sync server belum selesai');
 }
 
 /* ===== TASKS ===== */
@@ -3147,15 +3159,18 @@ function updateTaskStatus(id,status){
     toast(`Bukti wajib belum lengkap: ${missingTaskEvidenceLabels(task).join(', ')}`, 'error');
     return;
   }
-  state.tasks=state.tasks.map(t=>t.id===id?{...t,status}:t);
+  state.tasks=state.tasks.map(t=>t.id===id?{...t,status,updatedAt:new Date().toISOString()}:t);
+  persistPatched();
   toast(`Status diubah ke ${status}`);
   renderPage();
 }
-function deleteTask(id){
+async function deleteTask(id){
+  const task = state.tasks.find(t=>t.id===id);
+  if(task && !confirm(`Hapus task "${task.title}"?`)) return;
   state.tasks=state.tasks.filter(t=>t.id!==id);
   state.taskDetail=null;
-  toast('Task dihapus','info');
   renderPage();
+  await persistDeleteToServer('Task dihapus dari server', 'Task dihapus lokal, tetapi sync server belum selesai');
 }
 function addComment(id){
   const inp=document.getElementById('comment-inp');
@@ -3337,6 +3352,7 @@ function saveTask(editId){
     }
     const data={title,status,priority,assignee:acc?.name||'',aId,deadline,desc,requiredEvidence};
     state.tasks=state.tasks.map(t=>t.id===editId?{...t,...data}:t);
+    persistPatched();
     toast('Task berhasil diperbarui');
     closeModal(); renderPage();
     return;
@@ -3374,6 +3390,7 @@ function saveTask(editId){
   });
 
   state.tasks=[...state.tasks, ...newTasks];
+  persistPatched();
   toast(newTasks.length > 1 ? `${newTasks.length} task baru berhasil ditambahkan` : 'Task baru ditambahkan');
   closeModal(); renderPage();
 }
@@ -3849,11 +3866,12 @@ function renderSchedule(){
 }
 function prevMonth(){ const m=state.calMonth; state.calMonth=new Date(m.getFullYear(),m.getMonth()-1,1); renderPage(); }
 function nextMonth(){ const m=state.calMonth; state.calMonth=new Date(m.getFullYear(),m.getMonth()+1,1); renderPage(); }
-function deleteSchedule(id){
+async function deleteSchedule(id){
   const sched = state.schedules.find(s=>s.id===id);
   if(sched && !isManagerRole(state.user) && !scheduleOwnedByUser(sched,state.user)){toast('Kamu hanya bisa menghapus jadwal yang kamu buat','error');return;}
   state.schedules=state.schedules.map(s=>s.id===id?{...s,_deleted:true,deletedAt:new Date().toISOString(),deletedBy:state.user?.id||''}:s);
-  toast('Jadwal dihapus','info'); renderPage();
+  renderPage();
+  await persistDeleteToServer('Jadwal dihapus dari server', 'Jadwal dihapus lokal, tetapi sync server belum selesai');
 }
 function openSchedModal(editId){
   if(!(PERMS[state.user?.role]||[]).includes('schedule')){toast('Role kamu belum punya akses jadwal','error');return;}
@@ -3913,6 +3931,7 @@ function saveSchedule(editId){
   };
   if(editId){state.schedules=state.schedules.map(s=>s.id===editId?{...s,...data}:s);toast('Jadwal diperbarui');}
   else{state.schedules=[...state.schedules,{...data,id:uid(),createdAt:new Date().toISOString()}];toast('Jadwal ditambahkan');}
+  persistPatched();
   closeModal(); renderPage();
 }
 
@@ -4167,7 +4186,7 @@ function renderFinanceReimbursePanel(requests=[]){
     </div>` : `<div style="font-size:12px;color:var(--muted)">Belum ada pengajuan reimburse pada periode ini.</div>`}
   </div>`;
 }
-function changeExpStatus(id,status){ state.expenses=state.expenses.map(e=>e.id===id&&!e._deleted?{...e,status,updatedAt:new Date().toISOString()}:e); toast(`Status diubah ke ${status}`); renderPage(); }
+function changeExpStatus(id,status){ state.expenses=state.expenses.map(e=>e.id===id&&!e._deleted?{...e,status,updatedAt:new Date().toISOString()}:e); persistPatched(); toast(`Status diubah ke ${status}`); renderPage(); }
 async function deleteExp(id){
   const exp = activeExpenses().find(e => e.id === id);
   if(!exp) return;
@@ -5630,6 +5649,7 @@ function renderProgDetail(){
 }
 function setAtt(pid,participantId,val){
   state.programs=state.programs.map(p=>p.id===pid?{...p,pts:(p.pts||[]).map(pt=>pt.id===participantId?{...pt,att:val}:pt),updatedAt:new Date().toISOString()}:p);
+  persistPatched();
   renderPage();
 }
 function openProgModal(editId=''){
@@ -5680,17 +5700,17 @@ function saveProg(editId=''){
     state.programs=[...state.programs,{...data,id:uid(),pts:[],mats:[],createdAt:new Date().toISOString()}];
     toast('Program ditambahkan');
   }
+  persistPatched();
   closeModal(); renderPage();
 }
-function deleteProgram(id){
+async function deleteProgram(id){
   const prog = state.programs.find(p=>p.id===id);
   if(!prog || !programCanEdit(prog)){toast('Kamu tidak punya akses hapus program ini','error');return;}
   if(!confirm(`Hapus program "${prog.name}"?`)) return;
   state.programs = state.programs.filter(p=>p.id!==id);
   state.progDetail = null;
-  persistPatched();
   renderPage();
-  toast('Program dihapus','info');
+  await persistDeleteToServer('Program dihapus dari server', 'Program dihapus lokal, tetapi sync server belum selesai');
 }
 function openParticipantModal(programId, participantId=''){
   const prog = state.programs.find(p=>p.id===programId);
@@ -5721,13 +5741,14 @@ function saveParticipant(programId, participantId=''){
   persistPatched();
   closeModal(); renderPage(); toast(participantId?'Peserta diperbarui':'Peserta ditambahkan');
 }
-function deleteParticipant(programId, participantId){
+async function deleteParticipant(programId, participantId){
   const prog = state.programs.find(p=>p.id===programId);
   const pt = prog?.pts?.find(x=>x.id===participantId);
   if(!prog || !programCanEdit(prog) || !pt) return;
   if(!confirm(`Hapus peserta ${pt.name}?`)) return;
   state.programs=state.programs.map(p=>p.id===programId?{...p,pts:(p.pts||[]).filter(x=>x.id!==participantId),updatedAt:new Date().toISOString()}:p);
-  persistPatched(); renderPage(); toast('Peserta dihapus','info');
+  renderPage();
+  await persistDeleteToServer('Peserta dihapus dari server', 'Peserta dihapus lokal, tetapi sync server belum selesai');
 }
 
 /* ===== DOCUMENTS ===== */
@@ -5807,7 +5828,13 @@ function renderDocuments(){
     </table>
   </div></div>`;
 }
-function deleteDoc(id){ state.docs=state.docs.filter(d=>d.id!==id); toast('Dokumen dihapus','info'); renderPage(); }
+async function deleteDoc(id){
+  const doc = state.docs.find(d=>d.id===id);
+  if(doc && !confirm(`Hapus dokumen "${doc.name}"?`)) return;
+  state.docs=state.docs.filter(d=>d.id!==id);
+  renderPage();
+  await persistDeleteToServer('Dokumen dihapus dari server', 'Dokumen dihapus lokal, tetapi sync server belum selesai');
+}
 async function loadDocumentDriveStatus(){
   const textEl = document.getElementById('drive-status-text');
   const pillEl = document.getElementById('drive-status-pill');
@@ -6086,15 +6113,14 @@ function saveEquityItem(editId=''){
   renderPage();
   toast(editId ? 'Timeline diperbarui' : 'Aktivitas timeline ditambahkan');
 }
-function deleteEquityItem(id){
+async function deleteEquityItem(id){
   const item = (state.timelineEquity || []).find(x => x.id === id);
   if(!item) return;
   if(!confirm(`Hapus aktivitas "${item.activity}"?`)) return;
   state.timelineEquity = state.timelineEquity.filter(x => x.id !== id);
   state.timelineEquitySeeded = true;
-  persistPatched();
   renderPage();
-  toast('Aktivitas timeline dihapus', 'info');
+  await persistDeleteToServer('Aktivitas timeline dihapus dari server', 'Aktivitas timeline dihapus lokal, tetapi sync server belum selesai');
 }
 function exportEquityCsv(){
   normalizeTimelineEquity();

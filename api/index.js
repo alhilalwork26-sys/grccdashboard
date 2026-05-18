@@ -611,12 +611,10 @@ async function syncModuleTables(state) {
       activeIds.push(id);
       await sql.query(`INSERT INTO ${table} (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`, [id, JSON.stringify(item)]);
     }
-    if (stateKey === 'notifications') {
-      if (activeIds.length) {
-        await sql.query(`DELETE FROM ${table} WHERE NOT (id = ANY($1::text[]))`, [activeIds]);
-      } else {
-        await sql.query(`DELETE FROM ${table}`);
-      }
+    if (activeIds.length) {
+      await sql.query(`DELETE FROM ${table} WHERE NOT (id = ANY($1::text[]))`, [activeIds]);
+    } else {
+      await sql.query(`DELETE FROM ${table}`);
     }
   }
 }
@@ -624,7 +622,7 @@ async function syncModuleTables(state) {
 async function moduleItems(table) {
   const sql = db();
   const result = await sql.query(`SELECT payload FROM ${table} ORDER BY updated_at DESC`);
-  return (result.rows || result).map(row => row.payload);
+  return (result.rows || result).map(row => row.payload).filter(item => !item?._deleted);
 }
 
 async function loadState() {
