@@ -152,8 +152,14 @@ a { text-decoration: none; }
 .doc-status-pill { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border-radius:999px; font-size:10px; font-weight:900; border:1px solid transparent; white-space:nowrap; }
 .doc-status-pill.saved { color:#047857; background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.24); }
 .doc-status-pill.pending { color:#B45309; background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.24); }
+.doc-status-pill.uploading { color:#1D4ED8; background:rgba(59,130,246,.12); border-color:rgba(59,130,246,.24); }
+.doc-status-pill.failed { color:#B91C1C; background:rgba(239,68,68,.1); border-color:rgba(239,68,68,.24); }
 .doc-status-pill.roles { color:#1D4ED8; background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.2); }
 .doc-status-pill.restricted { color:#92400E; background:rgba(251,191,36,.12); border-color:rgba(251,191,36,.24); }
+.doc-upload-progress { width:150px; max-width:100%; height:6px; border-radius:999px; background:rgba(148,163,184,.18); overflow:hidden; }
+.doc-upload-progress span { display:block; height:100%; border-radius:999px; background:linear-gradient(90deg,#3B82F6,#8B5CF6,#22C55E); background-size:220% 100%; animation:shimmer 1.15s linear infinite; transition:width .28s ease; }
+.doc-upload-note { font-size:9.5px; color:var(--muted); font-weight:800; line-height:1.25; }
+.doc-upload-note.failed { color:#B91C1C; }
 
 /* ═══════════════════════════════════════════════
    LAYOUT
@@ -5812,6 +5818,25 @@ function docServerSaved(doc){
 function renderDocStatus(doc){
   const saved = docServerSaved(doc);
   const publicDoc = doc?.visibility !== 'important';
+  const uploadStatus = doc?.uploadStatus || '';
+  if(uploadStatus === 'uploading'){
+    const pct = Math.max(1, Math.min(99, Math.round(Number(doc?.uploadProgress) || 1)));
+    const started = doc?.uploadStartedAt ? new Date(doc.uploadStartedAt).getTime() : Date.now();
+    const elapsed = Math.max(0, Math.round((Date.now() - started) / 1000));
+    return `<div class="doc-status-stack">
+      <span class="doc-status-pill uploading">Mengupload ${pct}%</span>
+      <div class="doc-upload-progress" aria-label="Progress upload ${pct}%"><span style="width:${pct}%"></span></div>
+      <div class="doc-upload-note">${escHtml(doc?.uploadStep || 'Mengirim file')} • ${elapsed} detik</div>
+      <span class="doc-status-pill ${publicDoc ? 'roles' : 'restricted'}">${publicDoc ? 'Semua role bisa lihat' : 'Admin/Superadmin saja'}</span>
+    </div>`;
+  }
+  if(uploadStatus === 'failed'){
+    return `<div class="doc-status-stack">
+      <span class="doc-status-pill failed">Upload gagal</span>
+      <div class="doc-upload-note failed">${escHtml(doc?.uploadStep || 'Coba upload ulang')}</div>
+      <span class="doc-status-pill ${publicDoc ? 'roles' : 'restricted'}">${publicDoc ? 'Semua role bisa lihat' : 'Admin/Superadmin saja'}</span>
+    </div>`;
+  }
   return `<div class="doc-status-stack">
     <span class="doc-status-pill ${saved ? 'saved' : 'pending'}">${saved ? '✓ Tersimpan database' : '⏳ Menunggu server'}</span>
     <span class="doc-status-pill ${publicDoc ? 'roles' : 'restricted'}">${publicDoc ? 'Semua role bisa lihat' : 'Admin/Superadmin saja'}</span>
@@ -5830,7 +5855,10 @@ function renderDocuments(){
     if(sf&&!d.name.toLowerCase().includes(sf.toLowerCase())) return false;
     return true;
   });
-  if(isSuperAdminRole(state.user) && location.protocol !== 'file:') setTimeout(loadDocumentDriveStatus, 0);
+  if(isSuperAdminRole(state.user) && location.protocol !== 'file:' && (!window.__lastDriveStatusLoad || Date.now() - window.__lastDriveStatusLoad > 30000)){
+    window.__lastDriveStatusLoad = Date.now();
+    setTimeout(loadDocumentDriveStatus, 0);
+  }
 
   return `
   <div class="page-header">
@@ -5973,7 +6001,7 @@ function saveDoc(){
   if(visibility === 'important' && !canManageImportantDocs(state.user)){toast('Hanya Super Admin/Admin yang boleh membuat dokumen penting','error');return;}
   if(visibility === 'important' && pin.length < 4){toast('PIN dokumen penting minimal 4 digit/karakter','error');return;}
   const ext=name.split('.').pop().toLowerCase();
-  const doc={id:uid(),name,folder:document.getElementById('df-folder').value,size:fmtFileSizePatch(file.size),by:state.user.name,date:today(),ext,visibility,pinProtected:visibility==='important',isLocal:true};
+  const doc={id:uid(),name,folder:document.getElementById('df-folder').value,size:fmtFileSizePatch(file.size),by:state.user.name,date:today(),ext,visibility,pinProtected:visibility==='important',isLocal:true,uploadStatus:location.protocol === 'file:' ? '' : 'uploading',uploadProgress:location.protocol === 'file:' ? 0 : 2,uploadStep:'Menyiapkan file',uploadStartedAt:new Date().toISOString()};
   if(location.protocol === 'file:') doc.downloadUrl = URL.createObjectURL(file);
   state.docs=[...state.docs,doc];
   closeModal(); renderPage();
@@ -8410,12 +8438,19 @@ if(state.user && !isProductionRuntime()){
   }
 
   async function uploadDocumentToServer(file, doc, options={}){
+    const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
     try {
       const { upload } = await import('https://esm.sh/@vercel/blob@2.3.0/client');
       const safeName = String(doc.name || file.name).replace(/[^A-Za-z0-9._-]+/g, '_');
+      if(onProgress) onProgress(12, 'Menghubungi storage');
       await upload(`grcc/${doc.id}_${safeName}`, file, {
         access: 'public',
         handleUploadUrl: '/api/documents/client-upload',
+        onUploadProgress: event => {
+          const loaded = Number(event?.loaded || event?.loadedBytes || 0);
+          const total = Number(event?.total || event?.totalBytes || file.size || 0);
+          if(onProgress && total) onProgress(Math.min(88, Math.max(12, Math.round((loaded / total) * 80))), 'Mengirim file');
+        },
         clientPayload: JSON.stringify({
           id: doc.id,
           filename: doc.name || file.name,
@@ -8426,12 +8461,15 @@ if(state.user && !isProductionRuntime()){
           pin: options.pin || ''
         })
       });
+      if(onProgress) onProgress(94, 'Menyimpan metadata');
       return {downloadUrl: `/api/documents/${encodeURIComponent(doc.id)}/download`, size: file.size};
     } catch(err) {
       if(file.size > 3.5 * 1024 * 1024) {
         throw new Error(`Upload file besar gagal: ${err.message || 'koneksi Blob gagal'}. Coba refresh lalu upload ulang dari production.`);
       }
+      if(onProgress) onProgress(18, 'Membaca file lokal');
       const dataUrl = await readFileAsDataUrl(file);
+      if(onProgress) onProgress(62, 'Mengirim ke API dokumen');
       const res = await fetch(API.documents, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -8439,22 +8477,49 @@ if(state.user && !isProductionRuntime()){
       });
       const saved = await res.json().catch(()=>({}));
       if(!res.ok) throw new Error(saved.error || 'HTTP ' + res.status);
+      if(onProgress) onProgress(94, 'Menyimpan metadata');
       return saved;
     }
   }
   window.uploadDocumentToServer = uploadDocumentToServer;
 
+  function updateDocUploadProgress(id, progress, step=''){
+    const pct = Math.max(1, Math.min(99, Math.round(Number(progress) || 1)));
+    state.docs = (state.docs || []).map(item => item.id === id ? {
+      ...item,
+      uploadStatus: 'uploading',
+      uploadProgress: Math.max(Number(item.uploadProgress) || 0, pct),
+      uploadStep: step || item.uploadStep || 'Mengupload',
+      uploadStartedAt: item.uploadStartedAt || new Date().toISOString()
+    } : item);
+    renderPage();
+  }
+
   async function uploadDocumentFile(file, docRecord=null, options={}){
     if(location.protocol === 'file:') return;
+    let progressTimer = null;
+    let doc = docRecord;
     try {
-      let doc = docRecord;
       if(!doc){
         const ext = (file.name.split('.').pop() || '').toLowerCase();
-        doc = {id: uid(), name: file.name, folder: state.folderDoc !== 'Semua' ? state.folderDoc : 'Dokumen Resmi', size: fmtFileSizePatch(file.size), by: state.user?.name || '', date: today(), ext, visibility:'public', isLocal:true};
+        doc = {id: uid(), name: file.name, folder: state.folderDoc !== 'Semua' ? state.folderDoc : 'Dokumen Resmi', size: fmtFileSizePatch(file.size), by: state.user?.name || '', date: today(), ext, visibility:'public', isLocal:true, uploadStatus:'uploading', uploadProgress:2, uploadStep:'Menyiapkan file', uploadStartedAt:new Date().toISOString()};
         state.docs = [...state.docs, doc];
         renderPage();
       }
-      const saved = await uploadDocumentToServer(file, doc, options);
+      updateDocUploadProgress(doc.id, 8, 'Menyiapkan file');
+      progressTimer = setInterval(() => {
+        const current = (state.docs || []).find(item => item.id === doc.id);
+        if(!current || current.uploadStatus !== 'uploading') return;
+        const currentProgress = Number(current.uploadProgress || 8);
+        const step = currentProgress < 35 ? 'Mengirim file' : currentProgress < 75 ? 'Menyimpan ke server' : 'Finalisasi database';
+        const increment = file.size > 8 * 1024 * 1024 ? 3 : 6;
+        updateDocUploadProgress(doc.id, Math.min(92, currentProgress + increment), step);
+      }, 850);
+      const saved = await uploadDocumentToServer(file, doc, {
+        ...options,
+        onProgress: (pct, step) => updateDocUploadProgress(doc.id, pct, step)
+      });
+      if(progressTimer) clearInterval(progressTimer);
       state.docs = state.docs.map(item => item.id === doc.id ? {
         ...item,
         downloadUrl: saved.downloadUrl,
@@ -8463,6 +8528,10 @@ if(state.user && !isProductionRuntime()){
         size: saved.size ? fmtFileSizePatch(saved.size) : item.size,
         isLocal: false,
         serverStored: true,
+        uploadStatus: 'saved',
+        uploadProgress: 100,
+        uploadStep: 'Tersimpan database',
+        uploadFinishedAt: new Date().toISOString(),
         visibility: options.visibility || item.visibility || 'public',
         pinProtected: (options.visibility || item.visibility) === 'important',
         aiSummary: isCukAiPreview(item) ? '' : item.aiSummary,
@@ -8471,11 +8540,19 @@ if(state.user && !isProductionRuntime()){
       } : item);
       persistPatched();
       renderPage();
+      if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+      if(typeof window.autoSyncFromServer === 'function') setTimeout(() => window.autoSyncFromServer('upload-complete'), 300);
       setSyncStatus('Dokumen tersimpan ke server', 'success');
     } catch(err) {
+      if(progressTimer) clearInterval(progressTimer);
       console.warn('upload dokumen gagal', err);
-      if(docRecord){
-        state.docs = state.docs.filter(d => d.id !== docRecord.id);
+      if(doc){
+        state.docs = state.docs.map(d => d.id === doc.id ? {
+          ...d,
+          uploadStatus: 'failed',
+          uploadStep: err.message || 'Upload dokumen gagal',
+          uploadProgress: 0
+        } : d);
         persistPatched();
         renderPage();
       }
