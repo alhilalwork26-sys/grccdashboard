@@ -2144,10 +2144,10 @@ textarea:focus {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           <span class="hdr-badge" style="display:none">0</span>
         </button>
-        <div class="sync-countdown" id="sync-countdown" title="Tarik data server otomatis setiap 15 detik">
+        <div class="sync-countdown" id="sync-countdown" title="Tarik data server otomatis setiap 5 detik">
           <span class="sync-countdown-dot"></span>
           <span>Sync</span>
-          <span class="sync-countdown-seconds" id="sync-countdown-seconds">15d</span>
+          <span class="sync-countdown-seconds" id="sync-countdown-seconds">5d</span>
         </div>
         <div id="sync-dot" title="Menyinkronkan..."></div>
         <div style="display:flex;align-items:center;gap:8px">
@@ -2800,8 +2800,9 @@ function renderDashboard(){
   const u = state.user;
   const now = new Date();
   const thisMonth = d=>{ const dt=new Date(d); return dt.getMonth()===now.getMonth()&&dt.getFullYear()===now.getFullYear(); };
-  const active = state.tasks.filter(t=>t.status!=='Done').length;
-  const done   = state.tasks.filter(t=>t.status==='Done').length;
+  const taskItems = activeTaskItems();
+  const active = taskItems.filter(t=>t.status!=='Done').length;
+  const done   = taskItems.filter(t=>t.status==='Done').length;
   const mSched = state.schedules.filter(s=>thisMonth(s.date)).length;
   const mExp   = activeExpenses().filter(e=>thisMonth(e.date)&&(e.status==='Approved'||e.status==='Submitted')).reduce((s,e)=>s+(e.total||e.amount||0),0);
   const programs = Array.isArray(state.programs) ? state.programs : [];
@@ -2810,7 +2811,7 @@ function renderDashboard(){
     return status.includes('progress') || status.includes('berjalan') || status.includes('ongoing') || status.includes('aktif');
   }).length;
   const upcoming = [...state.schedules].sort((a,b)=>new Date(a.date)-new Date(b.date)).filter(s=>new Date(s.date)>=now).slice(0,4);
-  const activeTasks = state.tasks.filter(t=>t.status!=='Done').slice(0,4);
+  const activeTasks = taskItems.filter(t=>t.status!=='Done').slice(0,4);
   const COLS = ['To Do','On Progress','Review','Done'];
 
   return `
@@ -2910,13 +2911,13 @@ function renderDashboard(){
   <div class="card" style="padding:16px 20px">
     <div style="font-size:14px;font-weight:700;margin-bottom:14px">Progres Task Keseluruhan</div>
     <div class="progress-bar" style="margin-bottom:14px">
-      ${COLS.map(st=>{ const cnt=state.tasks.filter(t=>t.status===st).length; const pct=state.tasks.length?cnt/state.tasks.length*100:0; return pct>0?`<div class="progress-seg" style="width:${pct}%;background:${COL_MAP[st]}"></div>`:''; }).join('')}
+      ${COLS.map(st=>{ const cnt=taskItems.filter(t=>t.status===st).length; const pct=taskItems.length?cnt/taskItems.length*100:0; return pct>0?`<div class="progress-seg" style="width:${pct}%;background:${COL_MAP[st]}"></div>`:''; }).join('')}
     </div>
     <div class="progress-legend">
       ${[['To Do','#3B82F6'],['On Progress','#D97706'],['Review','#7C3AED'],['Done','#059669']].map(([st,col])=>`
       <div style="display:flex;align-items:center;gap:6px">
         <div class="progress-dot" style="background:${col}"></div>
-        <span style="font-size:12px;color:var(--sub)">${st}: <strong style="color:var(--text)">${state.tasks.filter(t=>t.status===st).length}</strong></span>
+        <span style="font-size:12px;color:var(--sub)">${st}: <strong style="color:var(--text)">${taskItems.filter(t=>t.status===st).length}</strong></span>
       </div>`).join('')}
     </div>
   </div>`;
@@ -3028,6 +3029,9 @@ function taskEvidenceComplete(t){
   normalizeTaskEvidence(t);
   return (t.requiredEvidence || []).every(type => (t.evidence?.[type] || []).length > 0);
 }
+function activeTaskItems(){
+  return (state.tasks || []).filter(t => !t._deleted);
+}
 function missingTaskEvidenceLabels(t){
   normalizeTaskEvidence(t);
   return (t.requiredEvidence || [])
@@ -3039,14 +3043,15 @@ function renderTasks(){
   const u=state.user;
   const canEdit = isManagerRole(u);
   const fs=state.filterTaskStatus, fu=state.filterTaskUser, ss=state.searchTask;
-  const filtered = state.tasks.filter(t=>{
+  const taskItems = activeTaskItems();
+  const filtered = taskItems.filter(t=>{
     if(fs!=='Semua'&&t.status!==fs) return false;
     if(fu!=='Semua'&&t.assignee!==fu) return false;
     if(ss&&!t.title.toLowerCase().includes(ss.toLowerCase())) return false;
     if((isStaffRole(u) || isResearchRole(u)) && t.aId!==u.id) return false;
     return true;
   });
-  const users=['Semua',...new Set(state.tasks.map(t=>t.assignee))];
+  const users=['Semua',...new Set(taskItems.map(t=>t.assignee))];
   const STATUSES=['Semua','To Do','On Progress','Review','Done'];
   const COLS=['To Do','On Progress','Review','Done'];
 
@@ -3100,7 +3105,7 @@ function renderTasks(){
 }
 
 function renderTaskDetail(){
-  const t = state.tasks.find(x=>x.id===state.taskDetail);
+  const t = activeTaskItems().find(x=>x.id===state.taskDetail);
   if(!t) return renderTasks();
   normalizeTaskEvidence(t);
   const u=state.user;
@@ -3194,7 +3199,7 @@ function updateTaskStatus(id,status){
 async function deleteTask(id){
   const task = state.tasks.find(t=>t.id===id);
   if(task && !confirm(`Hapus task "${task.title}"?`)) return;
-  state.tasks=state.tasks.filter(t=>t.id!==id);
+  state.tasks=state.tasks.map(t=>t.id===id?{...t,_deleted:true,updatedAt:new Date().toISOString(),updatedBy:state.user?.name || ''}:t);
   state.taskDetail=null;
   renderPage();
   await persistDeleteToServer('Task dihapus dari server', 'Task dihapus lokal, tetapi sync server belum selesai');
@@ -3203,8 +3208,10 @@ function addComment(id){
   const inp=document.getElementById('comment-inp');
   if(!inp||!inp.value.trim()) return;
   const now=new Date();
-  state.tasks=state.tasks.map(t=>t.id===id?{...t,comments:[...t.comments,{id:uid(),by:state.user.name,text:inp.value.trim(),ts:now.toLocaleDateString('id-ID',{day:'2-digit',month:'short'})}]}:t);
+  state.tasks=state.tasks.map(t=>t.id===id?{...t,comments:[...(t.comments || []),{id:uid(),by:state.user.name,text:inp.value.trim(),ts:now.toLocaleDateString('id-ID',{day:'2-digit',month:'short'}),createdAt:new Date().toISOString()}],updatedAt:new Date().toISOString()}:t);
   inp.value='';
+  persistPatched();
+  if(typeof window.flushBackendSave === 'function') window.flushBackendSave();
   renderPage();
 }
 async function uploadTaskEvidence(taskId, typeId, file){
@@ -8756,7 +8763,7 @@ if(state.user && !isProductionRuntime()){
 <script>
 /* ===== CROSS DEVICE AUTO SYNC ===== */
 (function(){
-  const AUTO_SYNC_INTERVAL_MS = 15000;
+  const AUTO_SYNC_INTERVAL_MS = 5000;
   const AUTO_SYNC_SECONDS = Math.round(AUTO_SYNC_INTERVAL_MS / 1000);
   let syncTimer = null;
   let countdownTimer = null;

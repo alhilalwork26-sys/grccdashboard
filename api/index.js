@@ -609,7 +609,15 @@ async function syncModuleTables(state) {
         continue;
       }
       activeIds.push(id);
-      await sql.query(`INSERT INTO ${table} (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`, [id, JSON.stringify(item)]);
+      let payload = item;
+      if (stateKey === 'tasks') {
+        const existingRows = await sql.query(`SELECT payload FROM ${table} WHERE id = $1`, [id]);
+        payload = mergeTaskPayload(existingRows.rows?.[0]?.payload || existingRows[0]?.payload || null, item);
+      }
+      await sql.query(`INSERT INTO ${table} (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`, [id, JSON.stringify(payload)]);
+    }
+    if (stateKey === 'tasks') {
+      continue;
     }
     if (activeIds.length) {
       await sql.query(`DELETE FROM ${table} WHERE NOT (id = ANY($1::text[]))`, [activeIds]);
@@ -617,6 +625,31 @@ async function syncModuleTables(state) {
       await sql.query(`DELETE FROM ${table}`);
     }
   }
+}
+
+function mergeByIdOrSignature(existing = [], incoming = []) {
+  const map = new Map();
+  const keyOf = item => String(item?.id || item?.url || item?.downloadUrl || `${item?.by || item?.uploadedBy || ''}|${item?.text || item?.name || ''}|${item?.ts || item?.uploadedAt || ''}`);
+  [...existing, ...incoming].forEach(item => {
+    if (!item || typeof item !== 'object') return;
+    map.set(keyOf(item), { ...(map.get(keyOf(item)) || {}), ...item });
+  });
+  return [...map.values()];
+}
+
+function mergeTaskPayload(existing, incoming) {
+  if (!existing || typeof existing !== 'object') return incoming;
+  const merged = { ...existing, ...incoming };
+  merged.comments = mergeByIdOrSignature(existing.comments || [], incoming.comments || []);
+  const evidenceTypes = new Set([
+    ...Object.keys(existing.evidence || {}),
+    ...Object.keys(incoming.evidence || {})
+  ]);
+  merged.evidence = {};
+  evidenceTypes.forEach(type => {
+    merged.evidence[type] = mergeByIdOrSignature(existing.evidence?.[type] || [], incoming.evidence?.[type] || []);
+  });
+  return merged;
 }
 
 async function moduleItems(table) {
