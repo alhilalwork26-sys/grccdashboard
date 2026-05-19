@@ -3290,8 +3290,8 @@ function saveTaskEvidenceLink(taskId){
 }
 function openTaskModal(editId){
   const t = editId?state.tasks.find(x=>x.id===editId):null;
-  const isSuperAdminCreate = isSuperAdminRole(state.user) && !editId;
-  const assigneeBlock = isSuperAdminCreate
+  const canCreateMultiAssigneeTask = isManagerRole(state.user) && !editId;
+  const assigneeBlock = canCreateMultiAssigneeTask
     ? `<div class="form-group">
         <label class="form-label">Assign ke beberapa orang</label>
         <div class="assignee-checklist">
@@ -3385,10 +3385,10 @@ function saveTask(editId){
     return;
   }
 
-  const isSuperAdminCreate = isSuperAdminRole(state.user);
+  const canCreateMultiAssigneeTask = isManagerRole(state.user);
   let selectedIds = [];
 
-  if(isSuperAdminCreate){
+  if(canCreateMultiAssigneeTask){
     selectedIds = Array.from(document.querySelectorAll('.tf-assignee-multi:checked')).map(el => el.value);
     if(selectedIds.length === 0){
       toast('Pilih minimal satu assignee','error');
