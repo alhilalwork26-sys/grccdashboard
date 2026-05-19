@@ -824,6 +824,38 @@ function cleanState(state) {
   return cleaned;
 }
 
+function mergeStateItems(existing = [], incoming = []) {
+  const map = new Map();
+  existing.forEach(item => {
+    if (item?.id && !item._deleted) map.set(String(item.id), item);
+  });
+  incoming.forEach(item => {
+    if (!item?.id) return;
+    const id = String(item.id);
+    if (item._deleted) {
+      map.delete(id);
+      return;
+    }
+    map.set(id, { ...(map.get(id) || {}), ...item });
+  });
+  return [...map.values()];
+}
+
+async function mergeAppStatePayload(sql, cleaned, incomingState) {
+  const rows = await sql`SELECT payload FROM app_state WHERE id = 1`;
+  const previous = rows[0]?.payload || {};
+  if (Array.isArray(incomingState.docs)) {
+    cleaned.docs = mergeStateItems(previous.docs || [], incomingState.docs || []);
+    const deletedDocIds = incomingState.docs.filter(doc => doc?._deleted && doc.id).map(doc => String(doc.id));
+    for (const id of deletedDocIds) {
+      await sql`DELETE FROM documents WHERE id=${id}`;
+    }
+  } else if (Array.isArray(previous.docs)) {
+    cleaned.docs = previous.docs;
+  }
+  return cleaned;
+}
+
 async function touchAppStateMarker(sql) {
   const savedAt = new Date().toISOString();
   await sql.query(
@@ -962,7 +994,7 @@ async function handle(req, res) {
     const body = await readBody(req);
     if (!body.state || typeof body.state !== 'object') return send(res, 400, { error: 'Field state wajib berupa object' });
     await syncModuleTables(body.state);
-    const cleaned = cleanState(body.state);
+    const cleaned = await mergeAppStatePayload(sql, cleanState(body.state), body.state);
     await sql`INSERT INTO app_state (id, payload, updated_at) VALUES (1, ${JSON.stringify(cleaned)}, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`;
     await audit(user, 'update', 'app_state', '1', { modules: Object.keys(MODULE_TABLES) });
     return send(res, 200, { ok: true, savedAt: cleaned.serverSavedAt });

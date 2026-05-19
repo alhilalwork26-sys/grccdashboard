@@ -2302,6 +2302,7 @@ function cleanServerStateForClient(serverState={}){
   delete cleaned.user;
   delete cleaned.userId;
   LOCAL_UI_STATE_KEYS.forEach(key => delete cleaned[key]);
+  if(Array.isArray(cleaned.docs)) cleaned.docs = cleaned.docs.filter(d => !d._deleted);
   return cleaned;
 }
 
@@ -5796,13 +5797,17 @@ async function deleteParticipant(programId, participantId){
 }
 
 /* ===== DOCUMENTS ===== */
+function activeDocs(){
+  return (state.docs || []).filter(d => !d._deleted);
+}
 function renderDocuments(){
   const u=state.user;
   const canUpload=canUploadPublicDocs(u);
   const canImportant=canManageImportantDocs(u);
   const sf=state.searchDoc, ff=state.folderDoc;
-  const folders=['Semua',...new Set(state.docs.map(d=>d.folder))];
-  const filtered=state.docs.filter(d=>{
+  const docs = activeDocs();
+  const folders=['Semua',...new Set(docs.map(d=>d.folder))];
+  const filtered=docs.filter(d=>{
     if(d.visibility === 'important' && !canImportant) return false;
     if(ff!=='Semua'&&d.folder!==ff) return false;
     if(sf&&!d.name.toLowerCase().includes(sf.toLowerCase())) return false;
@@ -5873,9 +5878,9 @@ function renderDocuments(){
   </div></div>`;
 }
 async function deleteDoc(id){
-  const doc = state.docs.find(d=>d.id===id);
+  const doc = activeDocs().find(d=>d.id===id);
   if(doc && !confirm(`Hapus dokumen "${doc.name}"?`)) return;
-  state.docs=state.docs.filter(d=>d.id!==id);
+  state.docs=state.docs.map(d=>d.id===id?{...d,_deleted:true,updatedAt:new Date().toISOString(),updatedBy:state.user?.name || ''}:d);
   renderPage();
   await persistDeleteToServer('Dokumen dihapus dari server', 'Dokumen dihapus lokal, tetapi sync server belum selesai');
 }
@@ -6985,7 +6990,7 @@ function openCukAiPinModal(doc){
   setTimeout(()=>document.getElementById('cuk-ai-pin')?.focus(), 80);
 }
 function openCukAiSummary(id){
-  const doc = state.docs.find(x => x.id === id);
+  const doc = activeDocs().find(x => x.id === id);
   if(!doc) return;
   if(location.protocol === 'file:'){
     showCukAiSummaryResult(doc, localCukAiSummary(doc, 'mode file lokal'), 'cuk-ai-production-only');
@@ -7009,7 +7014,7 @@ function openCukAiSummary(id){
   runCukAiSummary(id);
 }
 async function runCukAiSummary(id, refresh=false){
-  const doc = state.docs.find(x => x.id === id);
+  const doc = activeDocs().find(x => x.id === id);
   if(!doc) return;
   const pin = document.getElementById('cuk-ai-pin')?.value || '';
   if(doc.visibility === 'important' && !pin && !refresh){toast('PIN wajib diisi','error');return;}
@@ -7054,7 +7059,7 @@ async function runCukAiSummary(id, refresh=false){
   }
 }
 async function confirmImportantDocDownload(id){
-  const doc = state.docs.find(x => x.id === id);
+  const doc = activeDocs().find(x => x.id === id);
   const pin = document.getElementById('doc-pin-input')?.value || '';
   if(!doc) return;
   if(pin.length < 1){toast('PIN wajib diisi','error');return;}
@@ -7067,7 +7072,7 @@ async function confirmImportantDocDownload(id){
   }
 }
 async function downloadDoc(id){
-  const d = state.docs.find(x => x.id === id);
+  const d = activeDocs().find(x => x.id === id);
   if(!d) return;
   if(d.visibility === 'important'){
     if(!canManageImportantDocs(state.user)){toast('Dokumen penting hanya untuk Super Admin/Admin','error');return;}
