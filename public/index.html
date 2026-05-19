@@ -148,6 +148,12 @@ a { text-decoration: none; }
 .doc-access-pill { display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:7px;font-size:10px;font-weight:900;border:1px solid transparent; }
 .doc-access-public { background:rgba(91,141,246,.1);color:#7AAAF7;border-color:rgba(91,141,246,.2); }
 .doc-access-important { background:rgba(251,191,36,.12);color:#FBBF24;border-color:rgba(251,191,36,.25); }
+.doc-status-stack { display:flex; flex-direction:column; align-items:flex-start; gap:5px; min-width:130px; }
+.doc-status-pill { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border-radius:999px; font-size:10px; font-weight:900; border:1px solid transparent; white-space:nowrap; }
+.doc-status-pill.saved { color:#047857; background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.24); }
+.doc-status-pill.pending { color:#B45309; background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.24); }
+.doc-status-pill.roles { color:#1D4ED8; background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.2); }
+.doc-status-pill.restricted { color:#92400E; background:rgba(251,191,36,.12); border-color:rgba(251,191,36,.24); }
 
 /* ═══════════════════════════════════════════════
    LAYOUT
@@ -5800,6 +5806,17 @@ async function deleteParticipant(programId, participantId){
 function activeDocs(){
   return (state.docs || []).filter(d => !d._deleted);
 }
+function docServerSaved(doc){
+  return Boolean(doc?.serverStored || doc?.downloadUrl || doc?.googleDriveFileId || doc?.googleDriveUrl);
+}
+function renderDocStatus(doc){
+  const saved = docServerSaved(doc);
+  const publicDoc = doc?.visibility !== 'important';
+  return `<div class="doc-status-stack">
+    <span class="doc-status-pill ${saved ? 'saved' : 'pending'}">${saved ? '✓ Tersimpan database' : '⏳ Menunggu server'}</span>
+    <span class="doc-status-pill ${publicDoc ? 'roles' : 'restricted'}">${publicDoc ? 'Semua role bisa lihat' : 'Admin/Superadmin saja'}</span>
+  </div>`;
+}
 function renderDocuments(){
   const u=state.user;
   const canUpload=canUploadPublicDocs(u);
@@ -5840,9 +5857,9 @@ function renderDocuments(){
   </div>` : ''}
   <div class="table-wrap"><div class="table-scroll">
     <table>
-      <thead><tr>${['Dokumen','Folder','Akses','Ukuran','CUK AI','Diupload Oleh','Tanggal','Aksi'].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+      <thead><tr>${['Dokumen','Folder','Akses','Status','Ukuran','CUK AI','Diupload Oleh','Tanggal','Aksi'].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
       <tbody>
-        ${filtered.length===0?`<tr><td colspan="8" style="padding:32px;text-align:center;color:var(--muted)">Tidak ada dokumen ditemukan</td></tr>`:
+        ${filtered.length===0?`<tr><td colspan="9" style="padding:32px;text-align:center;color:var(--muted)">Tidak ada dokumen ditemukan</td></tr>`:
           filtered.map(d=>{const ec=EXT_M[d.ext]||{bg:'var(--bg)',c:'var(--sub)',l:(d.ext||'').toUpperCase()};return `
           <tr>
             <td>
@@ -5853,6 +5870,7 @@ function renderDocuments(){
             </td>
             <td><span style="background:var(--bg);color:var(--sub);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600">${escHtml(d.folder)}</span></td>
             <td>${d.visibility === 'important' ? '<span class="doc-access-pill doc-access-important">Penting</span>' : '<span class="doc-access-pill doc-access-public">Public</span>'}</td>
+            <td>${renderDocStatus(d)}</td>
             <td style="font-size:12px;color:var(--muted)">${escHtml(d.size)}</td>
             <td>
               <button class="cuk-ai-btn" onclick="openCukAiSummary('${d.id}')">
