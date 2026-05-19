@@ -6917,7 +6917,9 @@ function triggerDocUpload(){
   openDocModal();
 }
 async function fetchDocumentDownload(doc, pin=''){
-  const res = await fetch(doc.downloadUrl, {
+  const downloadUrl = doc.downloadUrl || (location.protocol !== 'file:' && doc.id ? `/api/documents/${encodeURIComponent(doc.id)}/download` : '');
+  if(!downloadUrl) throw new Error('Link download dokumen belum tersedia');
+  const res = await fetch(downloadUrl, {
     credentials: 'same-origin',
     headers: pin ? {'X-Document-Pin': pin} : {}
   });
@@ -7125,18 +7127,22 @@ async function downloadDoc(id){
     openImportantDocPinModal(d);
     return;
   }
-  if(d.downloadUrl){
+  if(d.downloadUrl || (location.protocol !== 'file:' && d.id)){
     try {
       await fetchDocumentDownload(d);
       toast(`Mengunduh: ${d.name}`, 'info');
     } catch(err) {
-      const a = document.createElement('a');
-      a.href = d.downloadUrl;
-      a.download = d.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      toast(`Mengunduh: ${d.name}`, 'info');
+      if(d.downloadUrl){
+        const a = document.createElement('a');
+        a.href = d.downloadUrl;
+        a.download = d.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        toast(`Mengunduh: ${d.name}`, 'info');
+      } else {
+        toast(err.message || 'Download dokumen gagal', 'error');
+      }
     }
     return;
   }

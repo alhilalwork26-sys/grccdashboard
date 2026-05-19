@@ -219,6 +219,31 @@ function safeDownloadName(filename) {
   return String(filename || 'download').replace(/[\r\n"]/g, '_');
 }
 
+function mimeFromFilename(filename) {
+  const ext = String(filename || '').toLowerCase().split('.').pop();
+  const types = {
+    pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    webp: 'image/webp'
+  };
+  return types[ext] || '';
+}
+
+function downloadContentType(filename, ...candidates) {
+  const byName = mimeFromFilename(filename);
+  const current = candidates.find(Boolean);
+  if (byName && (!current || ['text/plain', 'application/octet-stream', 'binary/octet-stream'].includes(String(current).toLowerCase()))) return byName;
+  return current || byName || 'application/octet-stream';
+}
+
 function canManageImportantDocuments(user) {
   return IMPORTANT_DOC_ROLES.has(user?.role);
 }
@@ -1264,8 +1289,9 @@ async function handle(req, res) {
       if (!blob || blob.statusCode !== 200 || !blob.stream) return send(res, 404, { error: 'Dokumen tidak ditemukan' });
       await audit(user, 'download', 'document', id, { filename: doc.filename, size: doc.size, visibility: doc.visibility || 'public', accessChecked: true });
       res.statusCode = 200;
-      res.setHeader('Content-Type', blob.contentType || doc.content_type || 'application/octet-stream');
-      res.setHeader('Content-Disposition', `attachment; filename="${safeDownloadName(doc.filename)}"`);
+      const downloadName = safeDownloadName(doc.filename);
+      res.setHeader('Content-Type', downloadContentType(doc.filename, blob.contentType, doc.content_type));
+      res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
       res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
       return Readable.fromWeb(blob.stream).pipe(res);
     } catch (err) {
