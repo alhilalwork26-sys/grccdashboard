@@ -718,6 +718,16 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
 .finance-invoice-name { font-size:11px; color:var(--blue); font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .finance-invoice-actions { display:flex; gap:5px; flex-wrap:wrap; }
 .finance-invoice-actions .btn { padding:4px 7px; min-height:24px; font-size:10px; border-radius:8px; }
+.expense-edit-invoice-panel { border:1px solid var(--border); border-radius:12px; padding:12px; background:rgba(248,250,252,.72); margin-top:12px; }
+.expense-edit-invoice-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+.expense-edit-invoice-title { font-size:11px; font-weight:950; color:var(--sub); letter-spacing:.8px; text-transform:uppercase; font-family:var(--mono); }
+.expense-edit-invoice-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.expense-edit-invoice-card {
+  border:1px solid rgba(226,232,240,.95); border-radius:10px; padding:9px; background:rgba(255,255,255,.86);
+  display:flex; flex-direction:column; gap:7px; min-width:0;
+}
+.expense-edit-invoice-name { font-size:12px; color:var(--text); font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.expense-edit-invoice-meta { font-size:10.5px; color:var(--muted); }
 .weekly-finance-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
 .weekly-finance-card {
   border:1px solid var(--border); border-radius:10px; background:rgba(255,255,255,.72);
@@ -1017,6 +1027,7 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   .reimburse-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .reimburse-form-row { grid-template-columns:1fr; }
   .finance-reimburse-list { grid-template-columns:1fr; }
+  .expense-edit-invoice-list { grid-template-columns:1fr; }
   .weekly-finance-grid, .weekly-detail-grid, .weekly-detail-list { grid-template-columns:1fr; }
   .rab-hero { flex-direction:column; }
   .rab-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -4458,53 +4469,85 @@ function clearFinancePeriodFilter(){
   persistPatched();
   renderPage();
 }
-function openExpModal(){
+function renderEditableExpenseInvoices(expense){
+  if(!expense?.id) return '';
+  const invoices = expense.invoices || [];
+  const key = `expense_edit_invoice_${expense.id}`;
+  window.__reimbursePreviewFiles = window.__reimbursePreviewFiles || {};
+  window.__reimbursePreviewFiles[key] = invoices;
+  return `<div class="expense-edit-invoice-panel">
+    <div class="expense-edit-invoice-head">
+      <div>
+        <div class="expense-edit-invoice-title">Kelola Invoice</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Preview, download, hapus, atau upload invoice baru dari sini.</div>
+      </div>
+      <button class="btn btn-sec btn-sm" onclick="triggerExpInvoiceUpload('${expense.id}', 'edit')">Upload Invoice</button>
+    </div>
+    ${invoices.length ? `<div class="expense-edit-invoice-list">
+      ${invoices.map((inv, idx) => `
+        <div class="expense-edit-invoice-card">
+          <div class="expense-edit-invoice-name" title="${escHtml(inv.name || 'Invoice')}">${escHtml(inv.name || `Invoice ${idx + 1}`)}</div>
+          <div class="expense-edit-invoice-meta">${escHtml(inv.size || '-')} · ${escHtml(inv.uploadedBy || 'Uploader tidak tercatat')}</div>
+          <div class="finance-invoice-actions">
+            <button class="btn btn-sec btn-sm" onclick="openReimburseFilePreview('${key}', ${idx})">Preview</button>
+            <button class="btn btn-sec btn-sm" onclick="downloadFinanceInvoice('${key}', ${idx})">Download</button>
+            <button class="btn btn-dan btn-sm" onclick="deleteExpenseInvoice('${expense.id}', '${inv.id || idx}')">Hapus</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>` : `<div style="font-size:12px;color:var(--muted);padding:12px;border:1px dashed rgba(148,163,184,.45);border-radius:10px;text-align:center">Belum ada invoice. Klik Upload Invoice untuk menambahkan bukti.</div>`}
+  </div>`;
+}
+function openExpModal(editId=''){
+  const current = editId ? activeExpenses().find(e => e.id === editId) : null;
+  const selectedType = current?.type || 'makan';
   const html=`
     <div class="form-group"><label class="form-label">Tipe Pengeluaran</label>
       <select id="ef-type" class="form-control" onchange="toggleExpForm()">
-        ${FINANCE_EXPENSE_TYPES.filter(type=>type.value!=='kegiatan').map(type=>`<option value="${type.value}">${escHtml(type.label)}</option>`).join('')}
+        ${FINANCE_EXPENSE_TYPES.filter(type=>type.value!=='kegiatan').map(type=>`<option value="${type.value}"${selectedType===type.value?' selected':''}>${escHtml(type.label)}</option>`).join('')}
       </select>
     </div>
     <div class="form-group"><label class="form-label">Nama Kegiatan <span>*</span></label>
-      <input id="ef-activity" class="form-control" placeholder="Nama kegiatan...">
+      <input id="ef-activity" class="form-control" placeholder="Nama kegiatan..." value="${escHtml(current?.activity || '')}">
     </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Tanggal <span>*</span></label>
-        <input id="ef-date" type="date" class="form-control">
+        <input id="ef-date" type="date" class="form-control" value="${escHtml(current?.date || '')}">
       </div>
       <div class="form-group"><label class="form-label">PIC</label>
-        <select id="ef-pic" class="form-control">${ACCOUNTS.map(a=>`<option>${escHtml(a.name)}</option>`).join('')}</select>
+        <select id="ef-pic" class="form-control">${ACCOUNTS.map(a=>`<option${(current?.pic || state.user?.name)===a.name?' selected':''}>${escHtml(a.name)}</option>`).join('')}</select>
       </div>
     </div>
     <div id="ef-detail">
       <div class="form-row" style="margin-top:0">
         <div class="form-group"><label class="form-label" id="ef-qty-label">Jumlah Orang</label>
-          <input id="ef-people" type="number" class="form-control" placeholder="0">
+          <input id="ef-people" type="number" class="form-control" placeholder="0" value="${escHtml(current?.people ?? current?.qty ?? '')}">
         </div>
         <div class="form-group" id="ef-unit-wrap" style="display:none"><label class="form-label">Satuan</label>
           <select id="ef-unit" class="form-control">
-            ${['paket','unit','orang','hari','kali','bulan','lembar'].map(unit=>`<option value="${unit}">${unit}</option>`).join('')}
+            ${['paket','unit','orang','hari','kali','bulan','lembar'].map(unit=>`<option value="${unit}"${(current?.unit || 'paket')===unit?' selected':''}>${unit}</option>`).join('')}
           </select>
         </div>
         <div class="form-group"><label class="form-label" id="ef-vendor-label">Vendor</label>
-          <input id="ef-vendor" class="form-control" placeholder="Nama vendor/catering">
+          <input id="ef-vendor" class="form-control" placeholder="Nama vendor/catering" value="${escHtml(current?.vendor || '')}">
         </div>
       </div>
       <div class="form-group"><label class="form-label">Total Biaya (Rp)</label>
-        <input id="ef-total" type="number" class="form-control" placeholder="0">
+        <input id="ef-total" type="number" class="form-control" placeholder="0" value="${escHtml(current ? expenseAmount(current) : '')}">
       </div>
     </div>
     <div class="form-group"><label class="form-label">Keterangan</label>
-      <textarea id="ef-desc" class="form-control" placeholder="Keterangan pengeluaran..." rows="2"></textarea>
+      <textarea id="ef-desc" class="form-control" placeholder="Keterangan pengeluaran..." rows="2">${escHtml(current?.desc || '')}</textarea>
     </div>
+    ${current ? renderEditableExpenseInvoices(current) : ''}
     <div style="background:var(--amber-lt);border:1px solid var(--amber-bd,#FDE68A);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--amber)">
-      Setelah draft tersimpan, upload invoice/nota dari tombol Upload di tabel Finance.
+      ${current ? 'Perubahan data dan invoice akan langsung disimpan dan tersinkron ke server.' : 'Setelah draft tersimpan, upload invoice/nota dari tombol Upload di tabel Finance.'}
     </div>
     <div class="modal-footer">
       <button class="btn btn-sec" onclick="closeModal()">Batal</button>
-      <button class="btn btn-pri" onclick="saveExp()">Simpan Draft</button>
+      <button class="btn btn-pri" onclick="saveExp('${editId}')">${current ? 'Simpan Perubahan' : 'Simpan Draft'}</button>
     </div>`;
-  showModal('Tambah Pengeluaran', html, 680);
+  showModal(current ? 'Edit Pengeluaran' : 'Tambah Pengeluaran', html, 720);
   toggleExpForm();
 }
 function toggleExpForm(){
@@ -4521,7 +4564,7 @@ function toggleExpForm(){
   if(vendorInput) vendorInput.placeholder = isMakan ? 'Nama vendor/catering' : 'Nama toko, penerima, atau supplier';
   if(unitWrap) unitWrap.style.display = isMakan ? 'none' : '';
 }
-function saveExp(){
+function saveExp(editId=''){
   const activity=document.getElementById('ef-activity').value.trim();
   const date=document.getElementById('ef-date').value;
   if(!activity||!date){toast('Kegiatan dan tanggal wajib diisi','error');return;}
@@ -4530,14 +4573,17 @@ function saveExp(){
   const qty = Number(document.getElementById('ef-people').value)||0;
   const unit = type === 'makan' ? 'orang' : (document.getElementById('ef-unit')?.value || 'paket');
   const total = Number(document.getElementById('ef-total').value)||0;
-  const data={id:uid(),type,activity,date,pic:document.getElementById('ef-pic').value,desc:document.getElementById('ef-desc').value,status:'Draft',createdAt:stamp,updatedAt:stamp,reimbursed:false,cat:financeExpenseTypeLabel(type),qty,unit,vendor:document.getElementById('ef-vendor').value,total,amount:total};
+  const current = editId ? activeExpenses().find(e => e.id === editId) : null;
+  const data={id:editId || uid(),type,activity,date,pic:document.getElementById('ef-pic').value,desc:document.getElementById('ef-desc').value,status:current?.status || 'Draft',createdAt:current?.createdAt || stamp,updatedAt:stamp,reimbursed:current?.reimbursed || false,cat:financeExpenseTypeLabel(type),qty,unit,vendor:document.getElementById('ef-vendor').value,total,amount:total,invoices:current?.invoices || []};
   if(type==='makan') data.people = qty;
-  state.expenses=[...state.expenses,data];
-  toast('Pengeluaran berhasil disimpan');
+  else delete data.people;
+  state.expenses = editId ? state.expenses.map(e => e.id === editId ? {...e,...data} : e) : [...state.expenses,data];
+  persistPatched();
+  toast(editId ? 'Pengeluaran berhasil diperbarui' : 'Pengeluaran berhasil disimpan');
   closeModal(); renderPage();
 }
 
-async function uploadExpenseInvoice(expenseId, file){
+async function uploadExpenseInvoice(expenseId, file, options={}){
   const exp = activeExpenses().find(e => e.id === expenseId);
   if(!exp || !file) return;
   const docId = `invoice_${expenseId}_${uid().replace(/^_/, '')}`;
@@ -4579,12 +4625,14 @@ async function uploadExpenseInvoice(expenseId, file){
     persistPatched();
     renderPage();
     toast('Invoice berhasil diupload');
+    if(options.returnToEdit) setTimeout(() => openExpModal(expenseId), 80);
+    if(options.returnToDetail) setTimeout(() => openExpenseDetail(expenseId), 80);
   } catch(err) {
     toast(err.message || 'Upload invoice gagal', 'error');
   }
 }
 
-function triggerExpInvoiceUpload(expenseId){
+function triggerExpInvoiceUpload(expenseId, returnMode=''){
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx';
@@ -4592,10 +4640,26 @@ function triggerExpInvoiceUpload(expenseId){
   input.addEventListener('change', () => {
     const file = input.files?.[0];
     input.remove();
-    if(file) uploadExpenseInvoice(expenseId, file);
+    if(file) uploadExpenseInvoice(expenseId, file, {returnToEdit:returnMode==='edit', returnToDetail:returnMode==='detail'});
   });
   document.body.appendChild(input);
   input.click();
+}
+function deleteExpenseInvoice(expenseId, invoiceId){
+  const exp = activeExpenses().find(e => e.id === expenseId);
+  if(!exp) return;
+  const invoice = (exp.invoices || []).find((inv, idx) => String(inv.id || idx) === String(invoiceId));
+  if(!invoice) return;
+  if(!confirm(`Hapus invoice "${invoice.name || 'Invoice'}"?`)) return;
+  state.expenses = state.expenses.map(e => e.id === expenseId ? {
+    ...e,
+    invoices: (e.invoices || []).filter((inv, idx) => String(inv.id || idx) !== String(invoiceId)),
+    updatedAt: new Date().toISOString()
+  } : e);
+  persistPatched();
+  renderPage();
+  toast('Invoice dihapus');
+  setTimeout(() => openExpModal(expenseId), 80);
 }
 
 function expenseAmount(e){ return Number(e?.total || e?.amount || 0); }
@@ -5734,6 +5798,8 @@ function openExpenseDetail(id){
     </div>
     <div class="modal-footer">
       <button class="btn btn-sec" onclick="closeModal()">Tutup</button>
+      <button class="btn btn-pri" onclick="openExpModal('${e.id}')">Edit Data</button>
+      <button class="btn btn-sec" onclick="triggerExpInvoiceUpload('${e.id}', 'detail')">Upload Invoice</button>
       ${canManageFinanceReimburse(state.user) && !reimbursed && key ? `<button class="btn btn-suc" onclick="closeModal();markFinanceWeekReimbursed('${key}')">Tandai Minggu Direimburse</button>` : ''}
     </div>
   `;
