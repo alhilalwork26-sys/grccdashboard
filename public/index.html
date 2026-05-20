@@ -724,6 +724,37 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
 .weekly-finance-metric { border:1px solid var(--border); border-radius:8px; padding:8px; background:rgba(255,255,255,.52); }
 .weekly-finance-metric span { display:block; font-size:9px; color:var(--muted); font-weight:900; letter-spacing:.7px; text-transform:uppercase; font-family:var(--mono); }
 .weekly-finance-metric strong { display:block; margin-top:3px; font-size:12px; color:var(--text); }
+.weekly-finance-actions { display:flex; gap:8px; justify-content:flex-end; align-items:center; flex-wrap:wrap; }
+.weekly-detail-hero {
+  position:relative; overflow:hidden; border:1px solid rgba(91,141,246,.2); border-radius:14px;
+  padding:16px; margin-bottom:12px; background:linear-gradient(135deg, rgba(239,246,255,.96), rgba(255,255,255,.92));
+}
+.weekly-detail-hero:before {
+  content:""; position:absolute; width:170px; height:170px; right:-58px; top:-72px; border-radius:999px;
+  background:radial-gradient(circle, rgba(91,141,246,.25), rgba(16,185,129,.08), transparent 68%);
+  animation:reimburseOrbit 9s linear infinite;
+}
+.weekly-detail-hero > * { position:relative; z-index:1; }
+.weekly-detail-title { font-size:18px; font-weight:950; color:var(--text); }
+.weekly-detail-sub { margin-top:4px; font-size:11.5px; color:var(--muted); }
+.weekly-detail-amount { font-size:24px; font-weight:950; color:var(--navy); margin-top:10px; }
+.weekly-detail-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:12px 0; }
+.weekly-detail-card { border:1px solid var(--border); border-radius:10px; padding:10px; background:rgba(255,255,255,.72); }
+.weekly-detail-card span { display:block; font-size:9.5px; color:var(--muted); font-family:var(--mono); font-weight:900; letter-spacing:.7px; text-transform:uppercase; }
+.weekly-detail-card strong { display:block; margin-top:5px; font-size:13px; color:var(--text); }
+.weekly-detail-section { border:1px solid var(--border); border-radius:12px; overflow:hidden; background:rgba(255,255,255,.78); margin-top:10px; }
+.weekly-detail-section-head { display:flex; justify-content:space-between; gap:10px; align-items:center; padding:10px 12px; background:rgba(148,163,184,.08); border-bottom:1px solid var(--border); }
+.weekly-detail-section-title { font-size:11px; font-weight:950; color:var(--sub); letter-spacing:.8px; text-transform:uppercase; font-family:var(--mono); }
+.weekly-detail-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:10px 12px; }
+.weekly-detail-chip { display:flex; justify-content:space-between; gap:8px; border:1px solid var(--border); border-radius:9px; padding:8px 10px; font-size:11.5px; color:var(--text); background:rgba(255,255,255,.72); }
+.weekly-detail-table { width:100%; border-collapse:separate; border-spacing:0; min-width:760px; }
+.weekly-detail-table th { padding:9px 10px; font-size:9.5px; color:var(--muted); text-align:left; letter-spacing:.8px; text-transform:uppercase; font-family:var(--mono); background:rgba(248,250,252,.92); }
+.weekly-detail-table td { padding:10px; border-top:1px solid var(--border); font-size:11.5px; color:var(--text); vertical-align:top; }
+.weekly-status-pill { display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; font-size:10px; font-weight:900; white-space:nowrap; border:1px solid transparent; }
+.weekly-status-pill.draft { color:#475569; background:#F1F5F9; border-color:#CBD5E1; }
+.weekly-status-pill.submitted { color:#1D4ED8; background:#DBEAFE; border-color:#BFDBFE; }
+.weekly-status-pill.approved { color:#047857; background:#D1FAE5; border-color:#A7F3D0; }
+.weekly-status-pill.rejected { color:#B91C1C; background:#FEE2E2; border-color:#FECACA; }
 .reimburse-pill { font-size:10px; font-weight:900; border-radius:999px; padding:4px 8px; white-space:nowrap; }
 .reimburse-pill.paid { color:#047857; background:rgba(16,185,129,.13); border:1px solid rgba(16,185,129,.24); }
 .reimburse-pill.unpaid { color:#B45309; background:rgba(245,158,11,.13); border:1px solid rgba(245,158,11,.24); }
@@ -978,6 +1009,7 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   .reimburse-stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .reimburse-form-row { grid-template-columns:1fr; }
   .finance-reimburse-list { grid-template-columns:1fr; }
+  .weekly-finance-grid, .weekly-detail-grid, .weekly-detail-list { grid-template-columns:1fr; }
   .rab-hero { flex-direction:column; }
   .rab-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .rab-form-row { grid-template-columns:1fr; }
@@ -4192,12 +4224,112 @@ function renderFinanceWeeklyView(groups){
           <div class="weekly-finance-metric"><span>Rejected</span><strong>${fmt$(g.rejected)}</strong></div>
         </div>
         ${paid ? `<div style="font-size:11px;color:var(--sub);line-height:1.45">Dibayar oleh <strong>${escHtml(paid.paidBy || '-')}</strong> pada ${escHtml(new Date(paid.paidAt).toLocaleString('id-ID'))}${paid.note?`<br>Catatan: ${escHtml(paid.note)}`:''}</div>` : `<div style="font-size:11px;color:var(--muted)">Tandai reimburse setelah nominal approved minggu ini sudah dibayar.</div>`}
-        ${canReimburse ? `<div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+        <div class="weekly-finance-actions">
+          <button class="btn btn-sec btn-sm" onclick="openFinanceWeekDetail('${g.key}')">Detail</button>
+        ${canReimburse ? `
           ${paid ? `<button class="btn btn-sec btn-sm" onclick="undoFinanceWeekReimbursed('${g.key}')">Batalkan</button>` : `<button class="btn btn-suc btn-sm" ${canMark?'':'disabled'} onclick="markFinanceWeekReimbursed('${g.key}')">Sudah Direimburse</button>`}
-        </div>` : `<div style="font-size:10.5px;color:var(--muted);font-weight:700;text-align:right">Hanya Super Admin/Finance yang bisa menandai reimburse.</div>`}
+        ` : `<span style="font-size:10.5px;color:var(--muted);font-weight:700">Hanya Super Admin/Finance yang bisa menandai reimburse.</span>`}
+        </div>
       </div>`;
     }).join('')}
   </div>`;
+}
+function weeklyExpenseStatusClass(status){
+  return String(status || 'Draft').toLowerCase();
+}
+function openFinanceWeekDetail(key){
+  const fs=state.filterExpStatus, ft=state.filterExpType, fm=state.filterExpMonth||'';
+  const filtered=activeExpenses().filter(e=>{
+    if(fs!=='Semua'&&e.status!==fs) return false;
+    if(ft!=='Semua'&&e.type!==ft) return false;
+    if(fm&&String(e.date||'').slice(0,7)!==fm) return false;
+    return true;
+  });
+  const group = financeWeeklyGroups(filtered).find(g => g.key === key);
+  if(!group){ toast('Data minggu tidak ditemukan', 'error'); return; }
+  const paid = group.paid;
+  const canReimburse = canManageFinanceReimburse(state.user);
+  const canMark = group.approved > 0;
+  const typeTotals = {};
+  const picTotals = {};
+  group.items.forEach(e => {
+    const amount = expenseAmount(e);
+    const type = financeExpenseTypeLabel(e.type);
+    const pic = e.pic || '-';
+    typeTotals[type] = (typeTotals[type] || 0) + amount;
+    picTotals[pic] = (picTotals[pic] || 0) + amount;
+  });
+  const chipList = obj => Object.entries(obj)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([label,total])=>`<div class="weekly-detail-chip"><span>${escHtml(label)}</span><strong>${fmt$(total)}</strong></div>`)
+    .join('') || `<div style="font-size:12px;color:var(--muted);padding:10px 12px">Belum ada data.</div>`;
+  const rows = group.items.slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  const html = `
+    <div class="weekly-detail-hero">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
+        <div>
+          <div class="weekly-detail-title">${escHtml(financeWeekLabel(group.monthKey, group.weekNo))}</div>
+          <div class="weekly-detail-sub">${escHtml(financeWeekRangeLabel(group.monthKey, group.weekNo))} · ${group.items.length} transaksi pengeluaran</div>
+          <div class="weekly-detail-amount">${fmt$(group.total)}</div>
+        </div>
+        <span class="reimburse-pill ${paid?'paid':'unpaid'}">${paid ? (group.hasNewAfterPaid ? 'ADA TAMBAHAN SETELAH DIBAYAR' : 'SUDAH DIREIMBURSE') : 'BELUM DIREIMBURSE'}</span>
+      </div>
+      ${paid ? `<div style="margin-top:10px;font-size:12px;color:var(--sub);line-height:1.55">
+        Dibayar oleh <strong>${escHtml(paid.paidBy || '-')}</strong> pada <strong>${escHtml(new Date(paid.paidAt).toLocaleString('id-ID'))}</strong>${paid.note?`<br>Catatan: ${escHtml(paid.note)}`:''}
+      </div>` : `<div style="margin-top:10px;font-size:12px;color:var(--muted)">Nominal approved minggu ini bisa ditandai sudah direimburse setelah pembayaran selesai.</div>`}
+    </div>
+    <div class="weekly-detail-grid">
+      <div class="weekly-detail-card"><span>Total</span><strong>${fmt$(group.total)}</strong></div>
+      <div class="weekly-detail-card"><span>Approved</span><strong>${fmt$(group.approved)}</strong></div>
+      <div class="weekly-detail-card"><span>Submitted</span><strong>${fmt$(group.submitted)}</strong></div>
+      <div class="weekly-detail-card"><span>Draft/Rejected</span><strong>${fmt$(group.draft + group.rejected)}</strong></div>
+    </div>
+    <div class="weekly-detail-section">
+      <div class="weekly-detail-section-head">
+        <div class="weekly-detail-section-title">Breakdown Tipe Pengeluaran</div>
+        <div style="font-size:11px;color:var(--muted)">${Object.keys(typeTotals).length} tipe</div>
+      </div>
+      <div class="weekly-detail-list">${chipList(typeTotals)}</div>
+    </div>
+    <div class="weekly-detail-section">
+      <div class="weekly-detail-section-head">
+        <div class="weekly-detail-section-title">Breakdown PIC</div>
+        <div style="font-size:11px;color:var(--muted)">${Object.keys(picTotals).length} PIC</div>
+      </div>
+      <div class="weekly-detail-list">${chipList(picTotals)}</div>
+    </div>
+    <div class="weekly-detail-section">
+      <div class="weekly-detail-section-head">
+        <div class="weekly-detail-section-title">Daftar Transaksi Minggu Ini</div>
+        <div style="font-size:11px;color:var(--muted)">${rows.length} item</div>
+      </div>
+      <div class="table-scroll">
+        <table class="weekly-detail-table">
+          <thead><tr><th>Tanggal</th><th>Kegiatan</th><th>Tipe</th><th>Detail</th><th>PIC</th><th>Status</th><th>Jumlah</th><th>Invoice</th></tr></thead>
+          <tbody>
+            ${rows.map(e => `
+              <tr>
+                <td style="white-space:nowrap">${escHtml(fmtD(e.date))}</td>
+                <td><strong>${escHtml(e.activity || '-')}</strong>${e.desc?`<div style="color:var(--muted);margin-top:3px">${escHtml(e.desc)}</div>`:''}</td>
+                <td>${escHtml(financeExpenseTypeLabel(e.type))}</td>
+                <td>${escHtml(expenseDetailText(e))}</td>
+                <td>${escHtml(e.pic || '-')}</td>
+                <td><span class="weekly-status-pill ${weeklyExpenseStatusClass(e.status)}">${escHtml(e.status || 'Draft')}</span></td>
+                <td style="font-weight:950;white-space:nowrap">${fmt$(expenseAmount(e))}</td>
+                <td>${(e.invoices || []).length ? (e.invoices || []).map(inv => `<a href="${escHtml(inv.downloadUrl)}" target="_blank" style="display:block;color:var(--blue);font-weight:800;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(inv.name || 'Invoice')}</a>`).join('') : '<span style="color:var(--muted)">Belum ada</span>'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Tutup</button>
+      ${canReimburse && paid ? `<button class="btn btn-sec" onclick="closeModal();undoFinanceWeekReimbursed('${group.key}')">Batalkan Reimburse</button>` : ''}
+      ${canReimburse && !paid ? `<button class="btn btn-suc" ${canMark?'':'disabled'} onclick="closeModal();markFinanceWeekReimbursed('${group.key}')">Sudah Direimburse</button>` : ''}
+    </div>
+  `;
+  showModal(`Detail Reimburse - ${financeWeekLabel(group.monthKey, group.weekNo)}`, html, 860);
 }
 function renderFinanceReimbursePanel(requests=[]){
   const canReview = canReviewReimburse(state.user);
