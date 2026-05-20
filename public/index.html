@@ -699,7 +699,7 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
   gap:14px; margin-bottom:18px; flex-wrap:wrap;
 }
 .finance-filters {
-  display:grid; grid-template-columns:minmax(120px,150px) minmax(170px,230px) minmax(190px,250px) minmax(130px,170px);
+  display:grid; grid-template-columns:minmax(120px,150px) minmax(170px,230px) minmax(190px,250px) minmax(150px,190px) minmax(130px,170px);
   gap:10px; align-items:end;
 }
 .finance-filter-field { display:flex; flex-direction:column; gap:6px; }
@@ -710,6 +710,14 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.1); background:rgba(91,141,24
 .finance-filter-field .form-control { height:40px; min-width:0; }
 .finance-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .finance-period-note { font-size:11px; color:var(--muted); margin-top:-8px; margin-bottom:14px; }
+.finance-invoice-stack { display:flex; flex-direction:column; gap:7px; min-width:180px; }
+.finance-invoice-item {
+  border:1px solid rgba(226,232,240,.95); border-radius:10px; padding:7px; background:rgba(255,255,255,.7);
+  display:flex; flex-direction:column; gap:6px; max-width:230px;
+}
+.finance-invoice-name { font-size:11px; color:var(--blue); font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.finance-invoice-actions { display:flex; gap:5px; flex-wrap:wrap; }
+.finance-invoice-actions .btn { padding:4px 7px; min-height:24px; font-size:10px; border-radius:8px; }
 .weekly-finance-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
 .weekly-finance-card {
   border:1px solid var(--border); border-radius:10px; background:rgba(255,255,255,.72);
@@ -2311,7 +2319,7 @@ let state = {
   progDetail: null,
   calMonth: new Date(2026,3,1),
   filterTaskStatus:'Semua', filterTaskUser:'Semua', searchTask:'',
-  filterExpStatus:'Semua', filterExpType:'Semua', filterExpMonth:'', financeView:'detail',
+  filterExpStatus:'Semua', filterExpType:'Semua', filterExpMonth:'', filterExpSort:'date_desc', financeView:'detail',
   searchDoc:'', folderDoc:'Semua',
   notifEmail: true, notifDeadline: true,
   dailyProgresses: [],
@@ -2335,7 +2343,7 @@ let state = {
 const LOCAL_UI_STATE_KEYS = [
   'page','taskDetail','progDetail','calMonth',
   'filterTaskStatus','filterTaskUser','searchTask',
-  'filterExpStatus','filterExpType','filterExpMonth','financeView',
+  'filterExpStatus','filterExpType','filterExpMonth','filterExpSort','financeView',
   'searchDoc','folderDoc',
   'filterProgressUser','filterProgressStatus','filterProgressDate',
   'filterProgramStatus','filterProgramTrainer','notificationFilter',
@@ -4042,8 +4050,56 @@ function expenseDetailText(e){
   const note = e.desc || '';
   return [qty, vendor, category, note].filter(Boolean).join(' · ') || '-';
 }
+function financeDateValue(date){
+  const time = new Date(date || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+function financeExpenseSorter(sort='date_desc'){
+  return (a,b) => {
+    const dateDiff = financeDateValue(a.date) - financeDateValue(b.date);
+    const monthDiff = String(financeMonthKey(a.date) || '').localeCompare(String(financeMonthKey(b.date) || ''));
+    const createdDiff = String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+    if(sort === 'date_asc') return dateDiff || createdDiff;
+    if(sort === 'month_asc') return monthDiff || dateDiff || createdDiff;
+    if(sort === 'month_desc') return -monthDiff || -dateDiff || -createdDiff;
+    return -dateDiff || -createdDiff;
+  };
+}
+function setFinanceSortFilter(value){
+  state.filterExpSort = value || 'date_desc';
+  persistPatched();
+  renderPage();
+}
+function renderFinanceInvoiceCell(expense){
+  const invoices = expense?.invoices || [];
+  if(!invoices.length) return `<span style="font-size:11px;color:var(--muted)">Belum ada</span>`;
+  const key = `expense_invoice_${expense.id}`;
+  window.__reimbursePreviewFiles = window.__reimbursePreviewFiles || {};
+  window.__reimbursePreviewFiles[key] = invoices;
+  return `<div class="finance-invoice-stack">
+    ${invoices.map((inv, idx) => `
+      <div class="finance-invoice-item">
+        <div class="finance-invoice-name" title="${escHtml(inv.name || 'Invoice')}">${escHtml(inv.name || `Invoice ${idx + 1}`)}</div>
+        <div class="finance-invoice-actions">
+          <button class="btn btn-sec btn-sm" onclick="event.stopPropagation();openReimburseFilePreview('${key}', ${idx})">Preview</button>
+          <button class="btn btn-sec btn-sm" onclick="event.stopPropagation();downloadFinanceInvoice('${key}', ${idx})">Download</button>
+        </div>
+      </div>
+    `).join('')}
+  </div>`;
+}
+function downloadFinanceInvoice(prefix, idx){
+  const file = (window.__reimbursePreviewFiles || {})[prefix]?.[idx];
+  if(!file || !file.downloadUrl){ toast('File download belum tersedia', 'error'); return; }
+  const a = document.createElement('a');
+  a.href = file.downloadUrl;
+  a.download = file.name || 'invoice';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 function renderFinance(){
-  const fs=state.filterExpStatus, ft=state.filterExpType, fm=state.filterExpMonth||'', fv=state.financeView||'detail';
+  const fs=state.filterExpStatus, ft=state.filterExpType, fm=state.filterExpMonth||'', fv=state.financeView||'detail', sort=state.filterExpSort||'date_desc';
   const monthLong = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
   const expenses = activeExpenses();
   const reimburseRequests = activeReimburseRequests();
@@ -4061,7 +4117,7 @@ function renderFinance(){
     if(ft!=='Semua'&&e.type!==ft) return false;
     if(fm&&String(e.date||'').slice(0,7)!==fm) return false;
     return true;
-  });
+  }).sort(financeExpenseSorter(sort));
   const periodExpenses=expenses.filter(e=>!fm||String(e.date||'').slice(0,7)===fm);
   const periodReimburseRequests = reimburseRequests.filter(r => !fm || String(r.date || '').slice(0,7) === fm);
   const totalReimburseRequests = periodReimburseRequests.filter(r => r.status !== 'Rejected').reduce((s,r)=>s+reimburseTotal(r),0);
@@ -4129,6 +4185,15 @@ function renderFinance(){
         </select>
       </div>
       <div class="finance-filter-field">
+        <label>Urutan</label>
+        <select class="form-control" onchange="setFinanceSortFilter(this.value)">
+          <option value="date_desc"${sort==='date_desc'?' selected':''}>Tanggal terbaru</option>
+          <option value="date_asc"${sort==='date_asc'?' selected':''}>Tanggal terlama</option>
+          <option value="month_desc"${sort==='month_desc'?' selected':''}>Bulan terbaru</option>
+          <option value="month_asc"${sort==='month_asc'?' selected':''}>Bulan terlama</option>
+        </select>
+      </div>
+      <div class="finance-filter-field">
         <label>Tampilan</label>
         <select class="form-control" onchange="setFinanceView(this.value)">
           <option value="detail"${fv==='detail'?' selected':''}>Detail</option>
@@ -4175,12 +4240,7 @@ function renderFinance(){
             <td style="font-size:12px;color:var(--sub)">${escHtml(e.pic)}</td>
             <td>${badge(e.status)}</td>
             <td style="min-width:150px">
-              ${e.invoices?.length ? `
-                <div style="display:flex;flex-direction:column;gap:5px">
-                  ${e.invoices.map(inv => `
-                    <a href="${escHtml(inv.downloadUrl)}" target="_blank" onclick="event.stopPropagation()" style="font-size:11px;color:var(--blue);font-weight:700;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHtml(inv.name)}">${escHtml(inv.name)}</a>
-                  `).join('')}
-                </div>` : `<span style="font-size:11px;color:var(--muted)">Belum ada</span>`}
+              ${renderFinanceInvoiceCell(e)}
             </td>
             <td>
               <div style="display:flex;gap:4px;align-items:center">
@@ -4316,7 +4376,7 @@ function openFinanceWeekDetail(key){
                 <td>${escHtml(e.pic || '-')}</td>
                 <td><span class="weekly-status-pill ${weeklyExpenseStatusClass(e.status)}">${escHtml(e.status || 'Draft')}</span></td>
                 <td style="font-weight:950;white-space:nowrap">${fmt$(expenseAmount(e))}</td>
-                <td>${(e.invoices || []).length ? (e.invoices || []).map(inv => `<a href="${escHtml(inv.downloadUrl)}" target="_blank" style="display:block;color:var(--blue);font-weight:800;max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(inv.name || 'Invoice')}</a>`).join('') : '<span style="color:var(--muted)">Belum ada</span>'}</td>
+                <td>${renderFinanceInvoiceCell(e)}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -5670,7 +5730,7 @@ function openExpenseDetail(id){
     </div>
     <div style="border:1px solid var(--border);border-radius:10px;padding:12px">
       <div style="font-size:11px;font-weight:900;color:var(--muted);letter-spacing:.8px;text-transform:uppercase;font-family:var(--mono);margin-bottom:6px">Invoice</div>
-      ${(e.invoices || []).length ? (e.invoices || []).map(inv => `<a href="${escHtml(inv.downloadUrl)}" target="_blank" style="display:block;font-size:12px;color:var(--blue);font-weight:800;margin-bottom:5px">${escHtml(inv.name)}</a>`).join('') : '<div style="font-size:12px;color:var(--muted)">Belum ada invoice.</div>'}
+      ${renderFinanceInvoiceCell(e)}
     </div>
     <div class="modal-footer">
       <button class="btn btn-sec" onclick="closeModal()">Tutup</button>
@@ -6933,6 +6993,7 @@ function restorePatched(){
       if(parsed.calMonth) state.calMonth = new Date(parsed.calMonth);
     }
     if(state.filterExpMonth === undefined) state.filterExpMonth = '';
+    if(state.filterExpSort === undefined) state.filterExpSort = 'date_desc';
     if(state.financeView === undefined) state.financeView = 'detail';
     if(state.filterProgramStatus === undefined) state.filterProgramStatus = 'Semua';
     if(state.filterProgramTrainer === undefined) state.filterProgramTrainer = 'Semua';
@@ -7001,7 +7062,7 @@ function exportFinanceCsv(){
   rows.push(['No','Minggu','Tanggal','Kegiatan','Tipe','Detail','Jumlah','PIC','Status Approval','Status Reimburse','Invoice','Keterangan']);
   filtered
     .slice()
-    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')))
+    .sort(financeExpenseSorter(state.filterExpSort || 'date_desc'))
     .forEach((e,i) => {
       const weekKey = financeWeekKeyFromExpense(e);
       const g = weekly.find(item => item.key === weekKey);
