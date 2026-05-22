@@ -39,6 +39,7 @@ const DEFAULT_ROLE_COLORS = {
   Riset: '#2563EB'
 };
 const SUPER_ADMIN_ROLES = new Set(['Super Admin', 'Super Admin + Manager']);
+const REIMBURSE_REVIEW_ROLES = new Set(['Finance', 'Staff Finance + Dokumen']);
 const ADMIN_ONLY_PAGES = new Set(['rab', 'settings']);
 const IMPORTANT_DOC_ROLES = new Set(['Super Admin', 'Super Admin + Manager', 'Program Admin', 'Program Admin + Kepala Marketing/Kreatif']);
 const LEGACY_ROLE_MIGRATIONS = {
@@ -549,6 +550,7 @@ async function ensureSchema() {
   await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS google_drive_file_id text NOT NULL DEFAULT ''`;
   await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS google_drive_url text NOT NULL DEFAULT ''`;
   await sql`CREATE TABLE IF NOT EXISTS audit_log (id bigserial PRIMARY KEY, actor_id text, actor_name text, action text NOT NULL, entity_type text NOT NULL, entity_id text, details jsonb, created_at timestamptz NOT NULL DEFAULT now())`;
+  await sql`CREATE TABLE IF NOT EXISTS module_deletions (module_key text NOT NULL, entity_id text NOT NULL, deleted_at timestamptz NOT NULL DEFAULT now(), deleted_by text, PRIMARY KEY (module_key, entity_id))`;
   for (const table of Object.values(MODULE_TABLES)) {
     await sql.query(`CREATE TABLE IF NOT EXISTS ${table} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
   }
@@ -601,6 +603,10 @@ async function requireAdmin(req, res) {
   return user;
 }
 
+function canReviewReimburseBackend(user) {
+  return SUPER_ADMIN_ROLES.has(user?.role) || REIMBURSE_REVIEW_ROLES.has(user?.role);
+}
+
 async function listUsers() {
   const sql = db();
   const rows = await sql`SELECT id, name, username, email, role, dept, whatsapp, av, avatar_url, active FROM users WHERE active = true ORDER BY name`;
@@ -630,7 +636,24 @@ async function syncModuleTables(state) {
       item.id = id;
       if (item._deleted === true) {
         await sql.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+        await sql.query(
+          `INSERT INTO module_deletions (module_key, entity_id, deleted_at, deleted_by)
+           VALUES ($1, $2, now(), $3)
+           ON CONFLICT (module_key, entity_id) DO UPDATE
+           SET deleted_at = EXCLUDED.deleted_at, deleted_by = EXCLUDED.deleted_by`,
+          [stateKey, id, String(item.deletedById || item.updatedById || item.updatedBy || item.deletedByName || '')]
+        );
         continue;
+      }
+      const deletedRows = await sql.query(
+        `SELECT deleted_at FROM module_deletions WHERE module_key = $1 AND entity_id = $2 LIMIT 1`,
+        [stateKey, id]
+      );
+      const deletedAt = deletedRows.rows?.[0]?.deleted_at || deletedRows[0]?.deleted_at || null;
+      if (deletedAt) {
+        const itemUpdatedAt = Date.parse(item.updatedAt || item.createdAt || '');
+        const deletedTime = Date.parse(deletedAt);
+        if (!Number.isFinite(itemUpdatedAt) || itemUpdatedAt <= deletedTime) continue;
       }
       let payload = item;
       if (stateKey === 'tasks') {
@@ -1163,6 +1186,37 @@ async function handle(req, res) {
     await sql`INSERT INTO app_state (id, payload, updated_at) VALUES (1, ${JSON.stringify(cleaned)}, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`;
     await audit(user, 'update', 'app_state', '1', { modules: Object.keys(MODULE_TABLES) });
     return send(res, 200, { ok: true, savedAt: cleaned.serverSavedAt });
+  }
+
+  const reimburseMatch = path.match(/^\/reimburse-requests\/([^/]+)$/);
+  if (reimburseMatch && method === 'DELETE') {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const id = decodeURIComponent(reimburseMatch[1]);
+    const rows = await sql`SELECT payload FROM reimburse_requests WHERE id=${id}`;
+    if (!rows[0]) {
+      await sql`
+        INSERT INTO module_deletions (module_key, entity_id, deleted_at, deleted_by)
+        VALUES ('reimburseRequests', ${id}, now(), ${user.id})
+        ON CONFLICT (module_key, entity_id) DO UPDATE
+        SET deleted_at = EXCLUDED.deleted_at, deleted_by = EXCLUDED.deleted_by
+      `;
+      await touchAppStateMarker(sql);
+      return send(res, 200, { ok: true, deleted: false });
+    }
+    const item = rows[0].payload || {};
+    const allowed = canReviewReimburseBackend(user) || (item.applicantId === user.id && item.status === 'Submitted');
+    if (!allowed) return send(res, 403, { error: 'Anda tidak punya akses menghapus pengajuan ini' });
+    await sql`DELETE FROM reimburse_requests WHERE id=${id}`;
+    await sql`
+      INSERT INTO module_deletions (module_key, entity_id, deleted_at, deleted_by)
+      VALUES ('reimburseRequests', ${id}, now(), ${user.id})
+      ON CONFLICT (module_key, entity_id) DO UPDATE
+      SET deleted_at = EXCLUDED.deleted_at, deleted_by = EXCLUDED.deleted_by
+    `;
+    const savedAt = await touchAppStateMarker(sql);
+    await audit(user, 'delete', 'reimburse_request', id, { before: item });
+    return send(res, 200, { ok: true, deleted: true, savedAt });
   }
 
   if (path === '/users' && method === 'GET') {

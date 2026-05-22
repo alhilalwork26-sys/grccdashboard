@@ -5251,7 +5251,19 @@ async function deleteReimburseRequest(id){
   persistPatched();
   renderPage();
   try {
-    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    if(isProductionRuntime()){
+      const res = await fetch(`/api/reimburse-requests/${encodeURIComponent(id)}`, {
+        method:'DELETE',
+        credentials:'same-origin',
+        headers:{'Accept':'application/json'}
+      });
+      const data = await res.json().catch(() => ({}));
+      if(!res.ok) throw new Error(data.error || `Hapus gagal (${res.status})`);
+      if(data.savedAt) window.__grccLastServerMarker = data.savedAt;
+    } else if(typeof window.flushBackendSave === 'function') {
+      await window.flushBackendSave();
+    }
+    if(typeof window.autoSyncFromServer === 'function') setTimeout(() => window.autoSyncFromServer('reimburse-delete'), 250);
     toast('Pengajuan reimburse berhasil dihapus dari server','success');
   } catch(err) {
     toast('Pengajuan disembunyikan, tapi sinkron server belum selesai','warning');
