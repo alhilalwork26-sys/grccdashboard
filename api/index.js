@@ -625,7 +625,6 @@ async function syncModuleTables(state) {
     if (!Object.prototype.hasOwnProperty.call(state, stateKey)) continue;
     if (!Array.isArray(state[stateKey])) continue;
     const items = state[stateKey];
-    const activeIds = [];
     for (const item of items) {
       const id = String(item.id || crypto.randomBytes(8).toString('hex'));
       item.id = id;
@@ -633,23 +632,59 @@ async function syncModuleTables(state) {
         await sql.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
         continue;
       }
-      activeIds.push(id);
       let payload = item;
       if (stateKey === 'tasks') {
         const existingRows = await sql.query(`SELECT payload FROM ${table} WHERE id = $1`, [id]);
         payload = mergeTaskPayload(existingRows.rows?.[0]?.payload || existingRows[0]?.payload || null, item);
+      } else if (stateKey === 'dailyProgresses') {
+        const existingRows = await sql.query(
+          `SELECT payload FROM ${table}
+           WHERE id = $1
+              OR ((payload->>'userId') = $2 AND (payload->>'date') = $3)
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [id, String(item.userId || ''), String(item.date || '')]
+        );
+        const existing = existingRows.rows?.[0]?.payload || existingRows[0]?.payload || null;
+        payload = mergeDailyProgressPayload(existing, item);
+        if (existing?.id && existing.id !== id) {
+          await sql.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+          payload.id = existing.id;
+        }
       }
-      await sql.query(`INSERT INTO ${table} (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`, [id, JSON.stringify(payload)]);
-    }
-    if (stateKey === 'tasks') {
-      continue;
-    }
-    if (activeIds.length) {
-      await sql.query(`DELETE FROM ${table} WHERE NOT (id = ANY($1::text[]))`, [activeIds]);
-    } else {
-      await sql.query(`DELETE FROM ${table}`);
+      await sql.query(`INSERT INTO ${table} (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`, [String(payload.id || id), JSON.stringify(payload)]);
     }
   }
+}
+
+function newerIso(a, b) {
+  const aTime = Date.parse(a || '');
+  const bTime = Date.parse(b || '');
+  if (!Number.isFinite(aTime)) return b || a || '';
+  if (!Number.isFinite(bTime)) return a || b || '';
+  return aTime >= bTime ? a : b;
+}
+
+function earlierIso(a, b) {
+  const aTime = Date.parse(a || '');
+  const bTime = Date.parse(b || '');
+  if (!Number.isFinite(aTime)) return b || a || '';
+  if (!Number.isFinite(bTime)) return a || b || '';
+  return aTime <= bTime ? a : b;
+}
+
+function mergeDailyProgressPayload(existing, incoming) {
+  if (!existing || typeof existing !== 'object') return incoming;
+  const merged = { ...existing, ...incoming };
+  ['morningPlan', 'eveningUpdate', 'blockers', 'tomorrowPlan', 'progressStatus', 'userName', 'role'].forEach(field => {
+    if ((incoming[field] === undefined || incoming[field] === null || incoming[field] === '') && existing[field]) {
+      merged[field] = existing[field];
+    }
+  });
+  merged.morningInputTime = earlierIso(existing.morningInputTime, incoming.morningInputTime);
+  merged.eveningUpdateTime = newerIso(existing.eveningUpdateTime, incoming.eveningUpdateTime);
+  merged.updatedAt = newerIso(existing.updatedAt, incoming.updatedAt);
+  return merged;
 }
 
 function mergeByIdOrSignature(existing = [], incoming = []) {
