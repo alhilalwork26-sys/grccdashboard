@@ -4930,6 +4930,13 @@ function openReimburseModal(){
       <strong>Upload struk</strong>
       <div style="margin-top:3px">Bisa pilih beberapa gambar atau PDF. Disarankan foto jelas dan tidak blur.</div>
       <input id="rr-files" type="file" class="form-control" accept="image/*,.pdf" multiple>
+      <div id="rr-upload-status" style="display:none;margin-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:7px">
+          <span id="rr-upload-step" style="font-size:11px;font-weight:900;color:var(--muted)">Menyiapkan upload</span>
+          <span id="rr-upload-percent" style="font-size:11px;font-weight:950;color:var(--blue)">0%</span>
+        </div>
+        <div class="doc-upload-progress" style="width:100%;height:8px"><span id="rr-upload-bar" style="width:1%"></span></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-sec" onclick="closeModal()">Batal</button>
@@ -4976,6 +4983,7 @@ async function uploadReimburseDocumentToServer(file, doc, options={}){
         size:file.size,
         folder:doc.folder || 'Reimburse',
         visibility:options.visibility || doc.visibility || 'public',
+        mirrorDrive: options.mirrorDrive !== false,
         pin:options.pin || ''
       })
     });
@@ -4994,6 +5002,7 @@ async function uploadReimburseDocumentToServer(file, doc, options={}){
           dataUrl,
           folder:doc.folder || 'Reimburse',
           visibility:options.visibility || doc.visibility || 'public',
+          mirrorDrive: options.mirrorDrive !== false,
           pin:options.pin || ''
         })
       });
@@ -5003,6 +5012,17 @@ async function uploadReimburseDocumentToServer(file, doc, options={}){
     }
     throw err;
   }
+}
+function updateReimburseUploadProgress(progress, step='Mengupload struk'){
+  const wrap = document.getElementById('rr-upload-status');
+  const bar = document.getElementById('rr-upload-bar');
+  const pctEl = document.getElementById('rr-upload-percent');
+  const stepEl = document.getElementById('rr-upload-step');
+  const pct = Math.max(1, Math.min(99, Math.round(Number(progress) || 1)));
+  if(wrap) wrap.style.display = 'block';
+  if(bar) bar.style.width = `${pct}%`;
+  if(pctEl) pctEl.textContent = `${pct}%`;
+  if(stepEl) stepEl.textContent = step;
 }
 async function submitReimburseRequest(){
   const btn = document.getElementById('rr-submit');
@@ -5022,14 +5042,28 @@ async function submitReimburseRequest(){
   if(!files.length){toast('Upload minimal satu foto/PDF struk sebelum diajukan', 'error');return;}
   try {
     if(btn){ btn.disabled = true; btn.textContent = 'Mengirim...'; }
-    const receipts = [];
-    for(const file of files.slice(0, 6)){
+    updateReimburseUploadProgress(5, 'Menyiapkan struk');
+    const selectedFiles = files.slice(0, 6);
+    const progressByFile = new Map(selectedFiles.map((_, idx) => [idx, 3]));
+    const receipts = await Promise.all(selectedFiles.map(async (file, idx) => {
       const docId = `reimburse_${reqId.replace(/^_/,'')}_${uid().replace(/^_/,'')}`;
       const ext = (file.name.split('.').pop() || '').toLowerCase();
       const doc = {id:docId, name:file.name, folder:'Reimburse', size:fmtFileSizePatch(file.size), by:state.user?.name || '', date:today(), ext, visibility:'public', isLocal:true};
-      const saved = await uploadReimburseDocumentToServer(file, doc, {visibility:'public'});
-      receipts.push({id:docId, name:file.name, size:fmtFileSizePatch(file.size), downloadUrl:saved.downloadUrl, uploadedAt:new Date().toISOString(), uploadedBy:state.user?.name || ''});
-    }
+      const saved = await uploadReimburseDocumentToServer(file, doc, {
+        visibility:'public',
+        mirrorDrive:false,
+        onProgress:(pct, step) => {
+          progressByFile.set(idx, Math.max(3, Math.min(94, Number(pct) || 3)));
+          const avg = [...progressByFile.values()].reduce((s,v)=>s+v,0) / selectedFiles.length;
+          updateReimburseUploadProgress(avg, `${step || 'Mengupload struk'} (${idx + 1}/${selectedFiles.length})`);
+        }
+      });
+      progressByFile.set(idx, 96);
+      const avg = [...progressByFile.values()].reduce((s,v)=>s+v,0) / selectedFiles.length;
+      updateReimburseUploadProgress(avg, `Struk ${idx + 1}/${selectedFiles.length} tersimpan`);
+      return {id:docId, name:file.name, size:fmtFileSizePatch(file.size), downloadUrl:saved.downloadUrl, uploadedAt:new Date().toISOString(), uploadedBy:state.user?.name || ''};
+    }));
+    updateReimburseUploadProgress(97, 'Menyimpan pengajuan ke database');
     const now = new Date().toISOString();
     const request = {
       id:reqId, code, date, items, receipts,
@@ -5051,6 +5085,8 @@ async function submitReimburseRequest(){
       dedupeKey:`reimburse_new_${request.id}`
     });
     persistPatched();
+    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    updateReimburseUploadProgress(99, 'Finalisasi');
     closeModal();
     renderPage();
     toast('Reimburse berhasil diajukan ke Finance dan Super Admin', 'success');
@@ -8724,6 +8760,7 @@ if(state.user && !isProductionRuntime()){
           size: file.size,
           folder: doc.folder || 'Dokumen Resmi',
           visibility: options.visibility || doc.visibility || 'public',
+          mirrorDrive: options.mirrorDrive !== false,
           pin: options.pin || ''
         })
       });
@@ -8739,7 +8776,7 @@ if(state.user && !isProductionRuntime()){
       const res = await fetch(API.documents, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({id: doc.id, filename: doc.name || file.name, contentType: file.type || 'application/octet-stream', dataUrl, folder: doc.folder || 'Dokumen Resmi', visibility: options.visibility || doc.visibility || 'public', pin: options.pin || ''})
+        body: JSON.stringify({id: doc.id, filename: doc.name || file.name, contentType: file.type || 'application/octet-stream', dataUrl, folder: doc.folder || 'Dokumen Resmi', visibility: options.visibility || doc.visibility || 'public', mirrorDrive: options.mirrorDrive !== false, pin: options.pin || ''})
       });
       const saved = await res.json().catch(()=>({}));
       if(!res.ok) throw new Error(saved.error || 'HTTP ' + res.status);

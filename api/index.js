@@ -1299,6 +1299,7 @@ async function handle(req, res) {
         const folder = String(payload.folder || 'Dokumen Resmi').trim() || 'Dokumen Resmi';
         const visibility = String(payload.visibility || 'public') === 'important' ? 'important' : 'public';
         const pin = String(payload.pin || '');
+        const mirrorDrive = payload.mirrorDrive !== false;
         if (!id || !filename) throw new Error('id dan filename wajib diisi');
         if (visibility === 'important' && !canManageImportantDocuments(user)) throw new Error('Hanya Super Admin/Admin yang boleh membuat dokumen penting');
         if (visibility === 'important' && pin.length < 4) throw new Error('PIN dokumen penting minimal 4 digit/karakter');
@@ -1310,6 +1311,7 @@ async function handle(req, res) {
             size,
             folder,
             visibility,
+            mirrorDrive,
             pinHash: visibility === 'important' ? hashPassword(pin) : '',
             userId: user.id,
             userName: user.name,
@@ -1324,22 +1326,24 @@ async function handle(req, res) {
         const access = blob.url && blob.url.includes('.private.blob.vercel-storage.com') ? 'private' : 'public';
         let driveFile = null;
         let driveError = '';
-        try {
-          driveFile = await mirrorDocumentToGoogleDrive({
-            blobUrl: blob.url,
-            blobAccess: access,
-            filename: payload.filename,
-            contentType: payload.contentType || blob.contentType || 'application/octet-stream',
-            folder: payload.folder,
-            documentId: payload.id,
-            visibility: payload.visibility || 'public'
-          });
-        } catch (err) {
-          driveError = err.message || 'Mirror Google Drive gagal';
-          console.warn('google drive mirror gagal', driveError);
+        if (payload.mirrorDrive !== false) {
+          try {
+            driveFile = await mirrorDocumentToGoogleDrive({
+              blobUrl: blob.url,
+              blobAccess: access,
+              filename: payload.filename,
+              contentType: payload.contentType || blob.contentType || 'application/octet-stream',
+              folder: payload.folder,
+              documentId: payload.id,
+              visibility: payload.visibility || 'public'
+            });
+          } catch (err) {
+            driveError = err.message || 'Mirror Google Drive gagal';
+            console.warn('google drive mirror gagal', driveError);
+          }
         }
         await sql`INSERT INTO documents (id, filename, content_type, blob_url, blob_access, visibility, pin_hash, folder, size, uploaded_by, google_drive_file_id, google_drive_url, uploaded_at) VALUES (${payload.id}, ${payload.filename}, ${payload.contentType || blob.contentType || 'application/octet-stream'}, ${blob.url}, ${access}, ${payload.visibility || 'public'}, ${payload.pinHash || ''}, ${payload.folder || 'Dokumen Resmi'}, ${payload.size || 0}, ${payload.userId}, ${driveFile?.id || ''}, ${driveFile?.webViewLink || ''}, now()) ON CONFLICT (id) DO UPDATE SET filename=EXCLUDED.filename, content_type=EXCLUDED.content_type, blob_url=EXCLUDED.blob_url, blob_access=EXCLUDED.blob_access, visibility=EXCLUDED.visibility, pin_hash=EXCLUDED.pin_hash, folder=EXCLUDED.folder, size=EXCLUDED.size, uploaded_by=EXCLUDED.uploaded_by, google_drive_file_id=EXCLUDED.google_drive_file_id, google_drive_url=EXCLUDED.google_drive_url, ai_summary='', ai_summary_at=NULL, ai_summary_model='', uploaded_at=now()`;
-        await audit(actor, previous[0] ? 'replace' : 'upload', 'document', payload.id, { before: previous[0] || null, after: { filename: payload.filename, contentType: payload.contentType || blob.contentType, size: payload.size, folder: payload.folder || 'Dokumen Resmi', visibility: payload.visibility || 'public', blobAccess: access, pinProtected: payload.visibility === 'important', googleDrive: driveFile ? 'mirrored' : (isGoogleDriveConfigured() ? 'mirror_failed' : 'not_configured'), googleDriveFileId: driveFile?.id || '', googleDriveError: driveError } });
+        await audit(actor, previous[0] ? 'replace' : 'upload', 'document', payload.id, { before: previous[0] || null, after: { filename: payload.filename, contentType: payload.contentType || blob.contentType, size: payload.size, folder: payload.folder || 'Dokumen Resmi', visibility: payload.visibility || 'public', blobAccess: access, pinProtected: payload.visibility === 'important', googleDrive: payload.mirrorDrive === false ? 'skipped' : driveFile ? 'mirrored' : (isGoogleDriveConfigured() ? 'mirror_failed' : 'not_configured'), googleDriveFileId: driveFile?.id || '', googleDriveError: driveError } });
       }
     });
     return send(res, 200, jsonResponse);
@@ -1373,6 +1377,7 @@ async function handle(req, res) {
     const folder = String(body.folder || 'Dokumen Resmi').trim() || 'Dokumen Resmi';
     const visibility = String(body.visibility || 'public').trim() === 'important' ? 'important' : 'public';
     const pin = String(body.pin || '');
+    const mirrorDrive = body.mirrorDrive !== false;
     if (!id || !filename || !dataUrl.includes(',')) return send(res, 400, { error: 'id, filename, dan dataUrl wajib diisi' });
     if (visibility === 'important' && !canManageImportantDocuments(user)) return send(res, 403, { error: 'Hanya Super Admin/Admin yang boleh membuat dokumen penting' });
     if (visibility === 'important' && pin.length < 4) return send(res, 400, { error: 'PIN dokumen penting minimal 4 digit/karakter' });
@@ -1386,21 +1391,23 @@ async function handle(req, res) {
     const pinHash = visibility === 'important' ? hashPassword(pin) : '';
     let driveFile = null;
     let driveError = '';
-    try {
-      driveFile = await mirrorDocumentToGoogleDrive({
-        buffer,
-        filename,
-        contentType,
-        folder,
-        documentId: id,
-        visibility
-      });
-    } catch (err) {
-      driveError = err.message || 'Mirror Google Drive gagal';
-      console.warn('google drive mirror gagal', driveError);
+    if (mirrorDrive) {
+      try {
+        driveFile = await mirrorDocumentToGoogleDrive({
+          buffer,
+          filename,
+          contentType,
+          folder,
+          documentId: id,
+          visibility
+        });
+      } catch (err) {
+        driveError = err.message || 'Mirror Google Drive gagal';
+        console.warn('google drive mirror gagal', driveError);
+      }
     }
     await sql`INSERT INTO documents (id, filename, content_type, blob_url, blob_access, visibility, pin_hash, folder, size, uploaded_by, google_drive_file_id, google_drive_url, uploaded_at) VALUES (${id}, ${filename}, ${contentType}, ${blob.url}, ${blobAccess === 'private' ? 'private' : 'public'}, ${visibility}, ${pinHash}, ${folder}, ${buffer.length}, ${user.id}, ${driveFile?.id || ''}, ${driveFile?.webViewLink || ''}, now()) ON CONFLICT (id) DO UPDATE SET filename=EXCLUDED.filename, content_type=EXCLUDED.content_type, blob_url=EXCLUDED.blob_url, blob_access=EXCLUDED.blob_access, visibility=EXCLUDED.visibility, pin_hash=EXCLUDED.pin_hash, folder=EXCLUDED.folder, size=EXCLUDED.size, uploaded_by=EXCLUDED.uploaded_by, google_drive_file_id=EXCLUDED.google_drive_file_id, google_drive_url=EXCLUDED.google_drive_url, uploaded_at=now()`;
-    await audit(user, previous[0] ? 'replace' : 'upload', 'document', id, { before: previous[0] || null, after: { filename, contentType, size: buffer.length, folder, visibility, blobAccess: blobAccess === 'private' ? 'private' : 'public', pinProtected: visibility === 'important', googleDrive: driveFile ? 'mirrored' : (isGoogleDriveConfigured() ? 'mirror_failed' : 'not_configured'), googleDriveFileId: driveFile?.id || '', googleDriveError: driveError } });
+    await audit(user, previous[0] ? 'replace' : 'upload', 'document', id, { before: previous[0] || null, after: { filename, contentType, size: buffer.length, folder, visibility, blobAccess: blobAccess === 'private' ? 'private' : 'public', pinProtected: visibility === 'important', googleDrive: mirrorDrive ? driveFile ? 'mirrored' : (isGoogleDriveConfigured() ? 'mirror_failed' : 'not_configured') : 'skipped', googleDriveFileId: driveFile?.id || '', googleDriveError: driveError } });
     return send(res, 200, { ok: true, downloadUrl: `/api/documents/${encodeURIComponent(id)}/download`, size: buffer.length, googleDriveUrl: driveFile?.webViewLink || '', googleDriveFileId: driveFile?.id || '' });
   }
 
