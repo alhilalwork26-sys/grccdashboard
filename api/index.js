@@ -743,6 +743,48 @@ function progressReminderMessage(phase, user, dateKey) {
   return `Halo ${user.name}, jangan lupa isi update progres sore hari ini (${dateKey}) sebelum selesai kerja. Buka GRCC Dashboard > Progres Harian.`;
 }
 
+function jakartaDateMs(dateKey) {
+  const match = String(dateKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return NaN;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+function daysUntilJakarta(dateKey, baseDateKey = jakartaDateKey()) {
+  const due = jakartaDateMs(dateKey);
+  const base = jakartaDateMs(baseDateKey);
+  if (!Number.isFinite(due) || !Number.isFinite(base)) return null;
+  return Math.round((due - base) / 86400000);
+}
+
+function taskReminderStage(days) {
+  if (days === null) return null;
+  if (days === 2) return 'h-2';
+  if (days === 1) return 'h-1';
+  if (days === 0) return 'today';
+  if (days < 0) return 'overdue';
+  return null;
+}
+
+function taskDeadlineReminderMessage(task, user, days) {
+  const title = task.title || 'Task';
+  const deadline = task.deadline || '-';
+  const priority = task.priority ? ` Prioritas: ${task.priority}.` : '';
+  if (days < 0) {
+    return `Halo ${user.name}, task "${title}" sudah melewati deadline ${deadline}. Mohon update status/progresnya hari ini di GRCC Dashboard > Task Management.${priority}`;
+  }
+  if (days === 0) {
+    return `Halo ${user.name}, task "${title}" jatuh tempo HARI INI (${deadline}). Mohon selesaikan atau update progresnya di GRCC Dashboard > Task Management.${priority}`;
+  }
+  return `Halo ${user.name}, reminder task "${title}" akan jatuh tempo dalam ${days} hari (${deadline}). Mohon cek dan update progresnya di GRCC Dashboard > Task Management.${priority}`;
+}
+
+function taskAssignee(task, users = []) {
+  if (!task) return null;
+  return users.find(user => user.id === task.aId)
+    || users.find(user => String(user.name || '').toLowerCase() === String(task.assignee || '').toLowerCase())
+    || null;
+}
+
 async function sendWhatsappMessage(to, message, meta = {}) {
   const target = normalizeWhatsapp(to);
   if (!target) return { ok: false, skipped: true, reason: 'missing_whatsapp' };
@@ -838,6 +880,63 @@ async function runWhatsappProgressReminder(phase) {
   };
 }
 
+async function reminderAlreadyHandled(entityType, entityId) {
+  const sql = db();
+  const rows = await sql`SELECT id FROM audit_log WHERE entity_type=${entityType} AND entity_id=${entityId} AND action LIKE 'whatsapp_%' LIMIT 1`;
+  return Boolean(rows[0]);
+}
+
+async function runWhatsappTaskDeadlineReminder() {
+  const loaded = await loadState();
+  const state = loaded.state;
+  const dateKey = jakartaDateKey();
+  const users = Array.isArray(state.accounts) ? state.accounts.filter(user => user.active !== false) : [];
+  const tasks = (Array.isArray(state.tasks) ? state.tasks : [])
+    .filter(task => task && !task._deleted && task.status !== 'Done' && task.deadline);
+  const results = [];
+  for (const task of tasks) {
+    const days = daysUntilJakarta(task.deadline, dateKey);
+    const stage = taskReminderStage(days);
+    if (!stage) continue;
+    const user = taskAssignee(task, users);
+    if (!user) {
+      results.push({ taskId: task.id, title: task.title, status: 'skipped', reason: 'assignee_not_found' });
+      continue;
+    }
+    const logKey = `${dateKey}_${stage}_${task.id}_${user.id}`;
+    if (await reminderAlreadyHandled('task', logKey)) {
+      results.push({ taskId: task.id, title: task.title, userId: user.id, name: user.name, status: 'duplicate_skipped', stage });
+      continue;
+    }
+    const message = taskDeadlineReminderMessage(task, user, days);
+    let result;
+    try {
+      result = await sendWhatsappMessage(user.whatsapp, message, { stage, taskId: task.id, userId: user.id, deadline: task.deadline });
+    } catch (err) {
+      result = { ok: false, reason: err.message || 'send_failed' };
+    }
+    const status = result.ok ? 'sent' : result.skipped ? 'skipped' : 'failed';
+    results.push({ taskId: task.id, title: task.title, userId: user.id, name: user.name, whatsapp: user.whatsapp ? 'set' : 'missing', status, stage, days, reason: result.reason || null });
+    await audit(
+      { id: 'system', name: 'GRCC Reminder' },
+      status === 'sent' ? 'whatsapp_task_deadline_sent' : `whatsapp_task_deadline_${status}`,
+      'task',
+      logKey,
+      { stage, days, date: dateKey, taskId: task.id, title: task.title, deadline: task.deadline, userId: user.id, userName: user.name, result }
+    );
+  }
+  return {
+    ok: true,
+    date: dateKey,
+    timeWib: jakartaTimeLabel(),
+    total: results.length,
+    sent: results.filter(item => item.status === 'sent').length,
+    skipped: results.filter(item => item.status === 'skipped' || item.status === 'duplicate_skipped').length,
+    failed: results.filter(item => item.status === 'failed').length,
+    results
+  };
+}
+
 function cleanState(state) {
   const cleaned = { ...state, serverSavedAt: new Date().toISOString() };
   delete cleaned.accounts;
@@ -913,6 +1012,12 @@ async function handle(req, res) {
     const expected = process.env.CRON_SECRET ? `Bearer ${process.env.CRON_SECRET}` : '';
     if (!expected || req.headers.authorization !== expected) return send(res, 401, { error: 'Unauthorized cron request' });
     return send(res, 200, await runWhatsappProgressReminder(cronMatch[1]));
+  }
+
+  if (path === '/cron/task-deadlines' && method === 'GET') {
+    const expected = process.env.CRON_SECRET ? `Bearer ${process.env.CRON_SECRET}` : '';
+    if (!expected || req.headers.authorization !== expected) return send(res, 401, { error: 'Unauthorized cron request' });
+    return send(res, 200, await runWhatsappTaskDeadlineReminder());
   }
 
   if (path === '/auth/login' && method === 'POST') {
