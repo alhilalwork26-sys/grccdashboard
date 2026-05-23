@@ -157,17 +157,26 @@ async function readBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-function hashPassword(password, salt = crypto.randomBytes(16), iterations = 260000) {
-  const derived = crypto.pbkdf2Sync(password, salt, iterations, 32, 'sha256');
-  return `pbkdf2_sha256$${iterations}$${salt.toString('base64')}$${derived.toString('base64')}`;
+async function hashPassword(password, salt = crypto.randomBytes(16), iterations = 260000) {
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(password, salt, iterations, 32, 'sha256', (err, derived) => {
+      if (err) return reject(err);
+      resolve(`pbkdf2_sha256$${iterations}$${salt.toString('base64')}$${derived.toString('base64')}`);
+    });
+  });
 }
 
-function verifyPassword(password, stored) {
+async function verifyPassword(password, stored) {
   try {
     const [alg, iterRaw, saltRaw, hashRaw] = stored.split('$');
     if (alg !== 'pbkdf2_sha256') return false;
-    const actual = crypto.pbkdf2Sync(password, Buffer.from(saltRaw, 'base64'), Number(iterRaw), 32, 'sha256');
-    return crypto.timingSafeEqual(actual, Buffer.from(hashRaw, 'base64'));
+    return new Promise((resolve, reject) => {
+      crypto.pbkdf2(password, Buffer.from(saltRaw, 'base64'), Number(iterRaw), 32, 'sha256', (err, actual) => {
+        if (err) return resolve(false);
+        try { resolve(crypto.timingSafeEqual(actual, Buffer.from(hashRaw, 'base64'))); }
+        catch { resolve(false); }
+      });
+    });
   } catch {
     return false;
   }
@@ -614,7 +623,7 @@ async function ensureSchema() {
   if (users[0].count === 0) {
     const adminPw = process.env.ADMIN_INITIAL_PASSWORD || '';
     if (!adminPw || adminPw.length < 8) throw new Error('Set ADMIN_INITIAL_PASSWORD (min 8 karakter) sebelum deploy pertama kali');
-    await sql`INSERT INTO users (id, name, username, email, password_hash, role, dept, av) VALUES ('owner', 'Administrator GRCC', 'admin', 'admin@grcc.id', ${hashPassword(adminPw)}, 'Super Admin + Manager', 'Manajemen', 'AG')`;
+    await sql`INSERT INTO users (id, name, username, email, password_hash, role, dept, av) VALUES ('owner', 'Administrator GRCC', 'admin', 'admin@grcc.id', ${await hashPassword(adminPw)}, 'Super Admin + Manager', 'Manajemen', 'AG')`;
   }
   await sql`INSERT INTO app_state (id, payload) VALUES (1, ${JSON.stringify(EMPTY_STATE)}) ON CONFLICT (id) DO NOTHING`;
   schemaReady = true;
@@ -1145,7 +1154,7 @@ async function handle(req, res) {
     const identifier = String(body.identifier || '').trim().toLowerCase();
     const password = String(body.password || '');
     const rows = await sql`SELECT id, name, username, email, password_hash, role, dept, whatsapp, av, active FROM users WHERE active = true AND (lower(username) = ${identifier} OR lower(email) = ${identifier})`;
-    if (!rows[0] || !verifyPassword(password, rows[0].password_hash)) {
+    if (!rows[0] || !await verifyPassword(password, rows[0].password_hash)) {
       await audit(
         { id: 'system', name: 'GRCC Auth' },
         'login_failed', 'session', identifier,
@@ -1234,7 +1243,7 @@ async function handle(req, res) {
       if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, user.id);
       if (!avatarUrl) avatarUrl = current[0].avatar_url || '';
       const av = initials(name);
-      await sql`UPDATE users SET name=${name}, email=${email}, whatsapp=${whatsapp}, password_hash=${password ? hashPassword(password) : current[0].password_hash}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${user.id}`;
+      await sql`UPDATE users SET name=${name}, email=${email}, whatsapp=${whatsapp}, password_hash=${password ? await hashPassword(password) : current[0].password_hash}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${user.id}`;
       const rows = await sql`SELECT id, name, username, email, role, dept, whatsapp, av, avatar_url, active FROM users WHERE id=${user.id}`;
       const diff = auditDiff(normalizedUser(current[0]), normalizedUser(rows[0]), ['name', 'email', 'whatsapp', 'av', 'avatarUrl']);
       await audit(user, 'update', 'profile', user.id, { ...diff, changed: Object.keys(diff.after), passwordChanged: Boolean(password), avatarUpdated: Boolean(avatarDataUrl) });
@@ -1328,11 +1337,11 @@ async function handle(req, res) {
         beforeUserRecord = current[0];
         if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, updateId);
         if (!avatarUrl) avatarUrl = current[0].avatar_url || '';
-        await sql`UPDATE users SET name=${name}, username=${username}, email=${email}, whatsapp=${whatsapp}, password_hash=${password ? hashPassword(password) : current[0].password_hash}, role=${role}, dept=${dept}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${updateId}`;
+        await sql`UPDATE users SET name=${name}, username=${username}, email=${email}, whatsapp=${whatsapp}, password_hash=${password ? await hashPassword(password) : current[0].password_hash}, role=${role}, dept=${dept}, av=${av}, avatar_url=${avatarUrl}, updated_at=now() WHERE id=${updateId}`;
       } else {
         id = crypto.randomBytes(8).toString('base64url');
         if (avatarDataUrl) avatarUrl = await uploadAvatarDataUrl(avatarDataUrl, id);
-        await sql`INSERT INTO users (id, name, username, email, whatsapp, password_hash, role, dept, av, avatar_url) VALUES (${id}, ${name}, ${username}, ${email}, ${whatsapp}, ${hashPassword(password)}, ${role}, ${dept}, ${av}, ${avatarUrl})`;
+        await sql`INSERT INTO users (id, name, username, email, whatsapp, password_hash, role, dept, av, avatar_url) VALUES (${id}, ${name}, ${username}, ${email}, ${whatsapp}, ${await hashPassword(password)}, ${role}, ${dept}, ${av}, ${avatarUrl})`;
       }
       const rows = await sql`SELECT id, name, username, email, role, dept, whatsapp, av, avatar_url, active FROM users WHERE id=${id}`;
       const afterUser = normalizedUser(rows[0]);
@@ -1444,7 +1453,7 @@ async function handle(req, res) {
             folder,
             visibility,
             mirrorDrive,
-            pinHash: visibility === 'important' ? hashPassword(pin) : '',
+            pinHash: visibility === 'important' ? await hashPassword(pin) : '',
             userId: user.id,
             userName: user.name,
             userRole: user.role
@@ -1520,7 +1529,7 @@ async function handle(req, res) {
       contentType
     });
     const previous = await sql`SELECT filename, content_type, blob_url, blob_access, visibility, folder, size, uploaded_by, google_drive_file_id, google_drive_url FROM documents WHERE id=${id}`;
-    const pinHash = visibility === 'important' ? hashPassword(pin) : '';
+    const pinHash = visibility === 'important' ? await hashPassword(pin) : '';
     let driveFile = null;
     let driveError = '';
     if (mirrorDrive) {
@@ -1557,7 +1566,7 @@ async function handle(req, res) {
         await audit(user, 'denied', 'document', id, { filename: doc.filename, reason: 'role_not_allowed', visibility: doc.visibility });
         return send(res, 403, { error: 'Dokumen penting hanya bisa diakses Super Admin/Admin' });
       }
-      if (!doc.pin_hash || !verifyPassword(suppliedPin, doc.pin_hash)) {
+      if (!doc.pin_hash || !await verifyPassword(suppliedPin, doc.pin_hash)) {
         await audit(user, 'denied', 'document', id, { filename: doc.filename, reason: 'pin_invalid', visibility: doc.visibility });
         return send(res, 403, { error: 'PIN dokumen penting salah' });
       }
@@ -1602,7 +1611,7 @@ async function handle(req, res) {
         await audit(user, 'denied', 'document_ai_summary', id, { filename: doc.filename, reason: 'role_not_allowed', visibility: doc.visibility });
         return send(res, 403, { error: 'Dokumen penting hanya bisa diringkas Super Admin/Admin' });
       }
-      if (!doc.pin_hash || !verifyPassword(suppliedPin, doc.pin_hash)) {
+      if (!doc.pin_hash || !await verifyPassword(suppliedPin, doc.pin_hash)) {
         await audit(user, 'denied', 'document_ai_summary', id, { filename: doc.filename, reason: 'pin_invalid', visibility: doc.visibility });
         return send(res, 403, { error: 'PIN dokumen penting salah' });
       }
