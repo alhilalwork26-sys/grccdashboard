@@ -2243,7 +2243,7 @@ textarea:focus {
 <script>
 /* ===== DATA ===== */
 const ACCOUNTS = [
-  {id:'owner',name:'Administrator GRCC', username:'admin', email:'admin@grcc.id', pw:'admin12345', role:'Super Admin + Manager', dept:'Manajemen', av:'AG'},
+  {id:'owner',name:'Administrator GRCC', username:'admin', email:'admin@grcc.id', pw:'', role:'Super Admin + Manager', dept:'Manajemen', av:'AG'},
 ];
 const PERMS = {
   'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','rab','documents','settings','timeline'],
@@ -5996,7 +5996,7 @@ function renderProgDetail(){
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           <span style="font-size:12px;flex:1">${escHtml(m)}</span>
         </div>`).join('')}
-      <button class="btn btn-sec btn-sm" style="width:100%;justify-content:center" onclick="toast('Fitur upload terhubung ke Firebase Storage','info')">
+      <button class="btn btn-sec btn-sm" style="width:100%;justify-content:center" onclick="navigate('documents');toast('Gunakan halaman Dokumen untuk upload materi program','info')">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Upload Materi
       </button>
@@ -6242,7 +6242,7 @@ async function loadDocumentDriveStatus(){
   const pillEl = document.getElementById('drive-status-pill');
   if(!textEl || !pillEl || location.protocol === 'file:') return;
   try{
-    const res = await fetch('/api/documents/drive-status');
+    const res = await fetch('/api/documents/drive-status', {credentials: 'same-origin'});
     const data = await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error || 'Status Drive gagal dicek');
     textEl.textContent = data.message || 'Status Google Drive tidak diketahui';
@@ -7069,7 +7069,8 @@ function persistPatched(){
     };
     delete payload.user;
     localStorage.setItem(STORAGE_KEYS_PATCH.state, JSON.stringify(payload));
-    localStorage.setItem(STORAGE_KEYS_PATCH.accounts, JSON.stringify(ACCOUNTS));
+    const accountsSafe = ACCOUNTS.map(a => { const c = {...a}; delete c.pw; return c; });
+    localStorage.setItem(STORAGE_KEYS_PATCH.accounts, JSON.stringify(accountsSafe));
     if(!isProductionRuntime()){
       if(state.user?.id) localStorage.setItem(STORAGE_KEYS_PATCH.session, state.user.id);
       else localStorage.removeItem(STORAGE_KEYS_PATCH.session);
@@ -8648,6 +8649,7 @@ if(state.user && !isProductionRuntime()){
       if(!immediate && body === lastBackendPayload) return;
       const res = await fetch(API.state, {
         method: 'PUT',
+        credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
         body
       });
@@ -8692,7 +8694,7 @@ if(state.user && !isProductionRuntime()){
     }
     try {
       setSyncStatus('Memuat data server...', 'info');
-      const res = await fetch(API.state, {headers: {'Accept': 'application/json'}});
+      const res = await fetch(API.state, {credentials: 'same-origin', headers: {'Accept': 'application/json'}});
       if(res.status === 401){
         if(state.user && typeof window.forceSessionExpiredLogout === 'function') window.forceSessionExpiredLogout();
         else setSyncStatus('Silakan login untuk memakai database server', 'info');
@@ -8787,6 +8789,7 @@ if(state.user && !isProductionRuntime()){
       if(onProgress) onProgress(62, 'Mengirim ke API dokumen');
       const res = await fetch(API.documents, {
         method: 'POST',
+        credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({id: doc.id, filename: doc.name || file.name, contentType: file.type || 'application/octet-stream', dataUrl, folder: doc.folder || 'Dokumen Resmi', visibility: options.visibility || doc.visibility || 'public', mirrorDrive: options.mirrorDrive !== false, pin: options.pin || ''})
       });
@@ -8976,17 +8979,39 @@ if(state.user && !isProductionRuntime()){
     setSyncStatus('Mengecek ulang sesi...', 'info');
     setTimeout(checkSessionAlive, 5000);
   }
-  async function checkSessionAlive(){
-    if(location.protocol === 'file:' || !state.user) return;
+  const SESSION_WARN_SECONDS = 300; // warn 5 minutes before expiry
+  let sessionWarnToastShown = false;
+  function checkLocalSessionExpiry(){
     const expiresAt = Number(localStorage.getItem('grcc_session_expires_at') || 0);
-    if(expiresAt && Date.now() >= expiresAt * 1000){
+    if(!expiresAt || !state.user) return;
+    const nowS = Math.floor(Date.now() / 1000);
+    const remaining = expiresAt - nowS;
+    if(remaining <= 0){
       showLoginForExpiredSession();
       return;
     }
+    if(remaining <= SESSION_WARN_SECONDS && !sessionWarnToastShown){
+      sessionWarnToastShown = true;
+      const mins = Math.ceil(remaining / 60);
+      if(typeof toast === 'function') toast(`Sesi Anda akan berakhir dalam ${mins} menit. Simpan pekerjaan Anda.`, 'info');
+    }
+    if(remaining > SESSION_WARN_SECONDS) sessionWarnToastShown = false;
+  }
+  async function checkSessionAlive(){
+    if(location.protocol === 'file:' || !state.user) return;
+    checkLocalSessionExpiry();
     try {
       const res = await fetch('/api/auth/me', {credentials:'same-origin', headers:{'Accept':'application/json'}});
-      if(res.status === 401) handlePossibleSessionExpired();
-      else if(res.ok) session401Count = 0;
+      if(res.status === 401){
+        handlePossibleSessionExpired();
+        return;
+      }
+      if(res.ok){
+        session401Count = 0;
+        sessionWarnToastShown = false;
+        const data = await res.json().catch(() => ({}));
+        if(data.sessionExpiresAt) setClientSessionExpiry(data.sessionExpiresAt);
+      }
     } catch(e) {}
   }
   function startSessionWatcher(){

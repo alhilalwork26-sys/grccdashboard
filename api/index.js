@@ -88,6 +88,40 @@ let schemaReady = false;
 const JAKARTA_TIMEZONE = 'Asia/Jakarta';
 let googleDriveTokenCache = null;
 
+/* ── Rate Limiter (in-memory, per IP/key) ── */
+const _rateBuckets = new Map();
+function rateLimit(key, maxHits, windowMs) {
+  const now = Date.now();
+  const bucket = _rateBuckets.get(key) || { count: 0, reset: now + windowMs };
+  if (now > bucket.reset) { bucket.count = 0; bucket.reset = now + windowMs; }
+  bucket.count++;
+  _rateBuckets.set(key, bucket);
+  return bucket.count <= maxHits;
+}
+// Cleanup stale buckets every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _rateBuckets) if (now > v.reset) _rateBuckets.delete(k);
+}, 300_000);
+
+/* ── Validation helpers ── */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+function validateEmail(v) { return EMAIL_RE.test(String(v || '')); }
+function validateName(v)  { const s = String(v || '').trim(); return s.length >= 2 && s.length <= 100; }
+function validatePassword(v) { return String(v || '').length >= 6; }
+
+/* ── Safe table accessor ── */
+const VALID_MODULE_TABLES = new Set(Object.values(MODULE_TABLES));
+function safeTable(name) {
+  if (!VALID_MODULE_TABLES.has(name)) throw new Error(`Invalid table: ${name}`);
+  return name;
+}
+
+/* ── Client IP helper ── */
+function clientIp(req) {
+  return String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+}
+
 function db() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL belum diset');
   return neon(process.env.DATABASE_URL);
@@ -552,8 +586,19 @@ async function ensureSchema() {
   await sql`CREATE TABLE IF NOT EXISTS audit_log (id bigserial PRIMARY KEY, actor_id text, actor_name text, action text NOT NULL, entity_type text NOT NULL, entity_id text, details jsonb, created_at timestamptz NOT NULL DEFAULT now())`;
   await sql`CREATE TABLE IF NOT EXISTS module_deletions (module_key text NOT NULL, entity_id text NOT NULL, deleted_at timestamptz NOT NULL DEFAULT now(), deleted_by text, PRIMARY KEY (module_key, entity_id))`;
   for (const table of Object.values(MODULE_TABLES)) {
-    await sql.query(`CREATE TABLE IF NOT EXISTS ${table} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
+    const t = safeTable(table);
+    await sql.query(`CREATE TABLE IF NOT EXISTS ${t} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
+    await sql.query(`CREATE INDEX IF NOT EXISTS idx_${t}_updated_at ON ${t}(updated_at DESC)`);
   }
+  // Performance indexes
+  await sql`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_users_active ON users(active)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_documents_visibility ON documents(visibility)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(folder)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(id DESC)`;
   for (const [role, permissions] of Object.entries(DEFAULT_PERMS)) {
     await sql`INSERT INTO roles (name, permissions, color) VALUES (${role}, ${JSON.stringify(permissions)}, ${DEFAULT_ROLE_COLORS[role] || '#6B7280'}) ON CONFLICT (name) DO NOTHING`;
   }
@@ -567,7 +612,9 @@ async function ensureSchema() {
   }
   const users = await sql`SELECT count(*)::int AS count FROM users`;
   if (users[0].count === 0) {
-    await sql`INSERT INTO users (id, name, username, email, password_hash, role, dept, av) VALUES ('owner', 'Administrator GRCC', 'admin', 'admin@grcc.id', ${hashPassword(process.env.ADMIN_INITIAL_PASSWORD || 'admin12345')}, 'Super Admin + Manager', 'Manajemen', 'AG')`;
+    const adminPw = process.env.ADMIN_INITIAL_PASSWORD || '';
+    if (!adminPw || adminPw.length < 8) throw new Error('Set ADMIN_INITIAL_PASSWORD (min 8 karakter) sebelum deploy pertama kali');
+    await sql`INSERT INTO users (id, name, username, email, password_hash, role, dept, av) VALUES ('owner', 'Administrator GRCC', 'admin', 'admin@grcc.id', ${hashPassword(adminPw)}, 'Super Admin + Manager', 'Manajemen', 'AG')`;
   }
   await sql`INSERT INTO app_state (id, payload) VALUES (1, ${JSON.stringify(EMPTY_STATE)}) ON CONFLICT (id) DO NOTHING`;
   schemaReady = true;
@@ -630,12 +677,13 @@ async function syncModuleTables(state) {
   for (const [stateKey, table] of Object.entries(MODULE_TABLES)) {
     if (!Object.prototype.hasOwnProperty.call(state, stateKey)) continue;
     if (!Array.isArray(state[stateKey])) continue;
+    const t = safeTable(table);
     const items = state[stateKey];
     for (const item of items) {
       const id = String(item.id || crypto.randomBytes(8).toString('hex'));
       item.id = id;
       if (item._deleted === true) {
-        await sql.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+        await sql.query(`DELETE FROM ${t} WHERE id = $1`, [id]);
         await sql.query(
           `INSERT INTO module_deletions (module_key, entity_id, deleted_at, deleted_by)
            VALUES ($1, $2, now(), $3)
@@ -657,11 +705,11 @@ async function syncModuleTables(state) {
       }
       let payload = item;
       if (stateKey === 'tasks') {
-        const existingRows = await sql.query(`SELECT payload FROM ${table} WHERE id = $1`, [id]);
+        const existingRows = await sql.query(`SELECT payload FROM ${t} WHERE id = $1`, [id]);
         payload = mergeTaskPayload(existingRows.rows?.[0]?.payload || existingRows[0]?.payload || null, item);
       } else if (stateKey === 'dailyProgresses') {
         const existingRows = await sql.query(
-          `SELECT payload FROM ${table}
+          `SELECT payload FROM ${t}
            WHERE id = $1
               OR ((payload->>'userId') = $2 AND (payload->>'date') = $3)
            ORDER BY updated_at DESC
@@ -671,28 +719,30 @@ async function syncModuleTables(state) {
         const existing = existingRows.rows?.[0]?.payload || existingRows[0]?.payload || null;
         payload = mergeDailyProgressPayload(existing, item);
         if (existing?.id && existing.id !== id) {
-          await sql.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+          await sql.query(`DELETE FROM ${t} WHERE id = $1`, [id]);
           payload.id = existing.id;
         }
       }
-      await sql.query(`INSERT INTO ${table} (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`, [String(payload.id || id), JSON.stringify(payload)]);
+      await sql.query(`INSERT INTO ${t} (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`, [String(payload.id || id), JSON.stringify(payload)]);
     }
   }
 }
 
 function newerIso(a, b) {
-  const aTime = Date.parse(a || '');
-  const bTime = Date.parse(b || '');
-  if (!Number.isFinite(aTime)) return b || a || '';
-  if (!Number.isFinite(bTime)) return a || b || '';
+  const aTime = a ? Date.parse(a) : -Infinity;
+  const bTime = b ? Date.parse(b) : -Infinity;
+  if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return '';
+  if (!Number.isFinite(aTime)) return b;
+  if (!Number.isFinite(bTime)) return a;
   return aTime >= bTime ? a : b;
 }
 
 function earlierIso(a, b) {
-  const aTime = Date.parse(a || '');
-  const bTime = Date.parse(b || '');
-  if (!Number.isFinite(aTime)) return b || a || '';
-  if (!Number.isFinite(bTime)) return a || b || '';
+  const aTime = a ? Date.parse(a) : Infinity;
+  const bTime = b ? Date.parse(b) : Infinity;
+  if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return '';
+  if (!Number.isFinite(aTime)) return b;
+  if (!Number.isFinite(bTime)) return a;
   return aTime <= bTime ? a : b;
 }
 
@@ -737,7 +787,8 @@ function mergeTaskPayload(existing, incoming) {
 
 async function moduleItems(table) {
   const sql = db();
-  const result = await sql.query(`SELECT payload FROM ${table} ORDER BY updated_at DESC`);
+  const t = safeTable(table);
+  const result = await sql.query(`SELECT payload FROM ${t} ORDER BY updated_at DESC`);
   return (result.rows || result).map(row => row.payload).filter(item => !item?._deleted);
 }
 
@@ -837,10 +888,8 @@ function taskDeadlineReminderMessage(task, user, days) {
 }
 
 function taskAssignee(task, users = []) {
-  if (!task) return null;
-  return users.find(user => user.id === task.aId)
-    || users.find(user => String(user.name || '').toLowerCase() === String(task.assignee || '').toLowerCase())
-    || null;
+  if (!task || !task.aId) return null;
+  return users.find(user => user.id === task.aId) || null;
 }
 
 async function sendWhatsappMessage(to, message, meta = {}) {
@@ -1058,37 +1107,57 @@ async function handle(req, res) {
   const sql = db();
 
   if (path === '/health') {
-    return send(res, 200, {
-      ok: true,
-      db: 'postgres',
-      cukAI: process.env.OPENAI_API_KEY ? 'openai' : process.env.GEMINI_API_KEY ? 'gemini' : 'fallback'
-    });
+    try {
+      const sql = db();
+      await sql`SELECT 1`;
+      return send(res, 200, {
+        ok: true,
+        db: 'ok',
+        cukAI: process.env.OPENAI_API_KEY ? 'openai' : process.env.GEMINI_API_KEY ? 'gemini' : 'fallback',
+        ts: new Date().toISOString()
+      });
+    } catch (err) {
+      return send(res, 503, { ok: false, db: 'error', error: err.message });
+    }
   }
 
   const cronMatch = path.match(/^\/cron\/progress-(morning|evening)$/);
   if (cronMatch && method === 'GET') {
-    const expected = process.env.CRON_SECRET ? `Bearer ${process.env.CRON_SECRET}` : '';
-    if (!expected || req.headers.authorization !== expected) return send(res, 401, { error: 'Unauthorized cron request' });
+    if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+      return send(res, 401, { error: 'Unauthorized cron request' });
+    }
     return send(res, 200, await runWhatsappProgressReminder(cronMatch[1]));
   }
 
   if (path === '/cron/task-deadlines' && method === 'GET') {
-    const expected = process.env.CRON_SECRET ? `Bearer ${process.env.CRON_SECRET}` : '';
-    if (!expected || req.headers.authorization !== expected) return send(res, 401, { error: 'Unauthorized cron request' });
+    if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+      return send(res, 401, { error: 'Unauthorized cron request' });
+    }
     return send(res, 200, await runWhatsappTaskDeadlineReminder());
   }
 
   if (path === '/auth/login' && method === 'POST') {
+    const ip = clientIp(req);
+    if (!rateLimit(`login:${ip}`, 10, 60_000)) {
+      return send(res, 429, { error: 'Terlalu banyak percobaan login. Coba lagi dalam 1 menit.' });
+    }
     const body = await readBody(req);
     const identifier = String(body.identifier || '').trim().toLowerCase();
     const password = String(body.password || '');
     const rows = await sql`SELECT id, name, username, email, password_hash, role, dept, whatsapp, av, active FROM users WHERE active = true AND (lower(username) = ${identifier} OR lower(email) = ${identifier})`;
-    if (!rows[0] || !verifyPassword(password, rows[0].password_hash)) return send(res, 401, { error: 'Username/email atau password salah' });
-    const token = crypto.randomBytes(32).toString('base64url');
+    if (!rows[0] || !verifyPassword(password, rows[0].password_hash)) {
+      await audit(
+        { id: 'system', name: 'GRCC Auth' },
+        'login_failed', 'session', identifier,
+        { reason: rows[0] ? 'invalid_password' : 'user_not_found', ip }
+      );
+      return send(res, 401, { error: 'Username/email atau password salah' });
+    }
+    const token = crypto.randomBytes(32).toString('hex');
     const sessionExpiresAt = Math.floor(Date.now() / 1000) + SESSION_SECONDS;
     await sql`INSERT INTO sessions (token, user_id, expires_at) VALUES (${token}, ${rows[0].id}, ${sessionExpiresAt})`;
     const user = publicUser(rows[0]);
-    await audit(user, 'login', 'session', user.id);
+    await audit(user, 'login', 'session', user.id, { ip });
     const loaded = await loadState();
     loaded.state.userId = user.id;
     setSessionCookie(res, token, SESSION_SECONDS);
@@ -1109,7 +1178,11 @@ async function handle(req, res) {
   if (path === '/auth/me' && method === 'GET') {
     const user = await requireUser(req, res);
     if (!user) return;
-    return send(res, 200, { user });
+    // Slide session window on activity
+    const token = parseCookies(req).grcc_session;
+    const newExpiry = Math.floor(Date.now() / 1000) + SESSION_SECONDS;
+    if (token) await sql`UPDATE sessions SET expires_at=${newExpiry} WHERE token=${token}`;
+    return send(res, 200, { user, sessionExpiresAt: newExpiry });
   }
 
   const avatarMatch = path.match(/^\/users\/([^/]+)\/avatar$/);
@@ -1152,7 +1225,9 @@ async function handle(req, res) {
     const password = String(body.password || '');
     const avatarDataUrl = String(body.avatarDataUrl || '');
     let avatarUrl = String(body.avatarUrl || user.avatarUrl || '').trim();
-    if (!name || !email) return send(res, 400, { error: 'Nama dan email wajib diisi' });
+    if (!validateName(name)) return send(res, 400, { error: 'Nama harus 2–100 karakter' });
+    if (!validateEmail(email)) return send(res, 400, { error: 'Format email tidak valid' });
+    if (password && !validatePassword(password)) return send(res, 400, { error: 'Password minimal 6 karakter' });
     try {
       const current = await sql`SELECT name, username, email, role, dept, whatsapp, av, avatar_url, active, password_hash FROM users WHERE id = ${user.id}`;
       if (!current[0]) return send(res, 404, { error: 'User tidak ditemukan' });
@@ -1239,8 +1314,11 @@ async function handle(req, res) {
     const av = String(body.av || initials(name)).trim().slice(0, 3).toUpperCase();
     const avatarDataUrl = String(body.avatarDataUrl || '');
     let avatarUrl = String(body.avatarUrl || '').trim();
-    if (!name || !username || !email) return send(res, 400, { error: 'Nama, username, dan email wajib diisi' });
-    if (!updateId && password.length < 6) return send(res, 400, { error: 'Password minimal 6 karakter' });
+    if (!validateName(name)) return send(res, 400, { error: 'Nama harus 2–100 karakter' });
+    if (!username || username.length > 50) return send(res, 400, { error: 'Username wajib diisi (maks 50 karakter)' });
+    if (!validateEmail(email)) return send(res, 400, { error: 'Format email tidak valid' });
+    if (!updateId && !validatePassword(password)) return send(res, 400, { error: 'Password minimal 6 karakter' });
+    if (password && !validatePassword(password)) return send(res, 400, { error: 'Password minimal 6 karakter' });
     try {
       let id = updateId;
       let beforeUserRecord = null;
@@ -1510,6 +1588,9 @@ async function handle(req, res) {
   if (summaryMatch && method === 'POST') {
     const user = await requireUser(req, res);
     if (!user) return;
+    if (!rateLimit(`summary:${user.id}`, 5, 60_000)) {
+      return send(res, 429, { error: 'Terlalu banyak permintaan AI summary. Coba lagi dalam 1 menit.' });
+    }
     const id = decodeURIComponent(summaryMatch[1]);
     const body = await readBody(req);
     const suppliedPin = String(body.pin || req.headers['x-document-pin'] || '');
@@ -1529,6 +1610,10 @@ async function handle(req, res) {
     if (doc.ai_summary && !body.refresh) {
       return send(res, 200, { ok: true, summary: doc.ai_summary, model: doc.ai_summary_model || 'cached', cached: true, summarizedAt: doc.ai_summary_at });
     }
+    const MAX_SUMMARY_SIZE = 15 * 1024 * 1024; // 15 MB
+    if (doc.size && doc.size > MAX_SUMMARY_SIZE) {
+      return send(res, 413, { error: 'Ukuran file terlalu besar untuk AI summary (maks 15 MB)' });
+    }
     const access = doc.blob_access === 'private' || doc.blob_url.includes('.private.blob.vercel-storage.com') ? 'private' : 'public';
     const blob = await get(doc.blob_url, { access });
     if (!blob || blob.statusCode !== 200 || !blob.stream) return send(res, 404, { error: 'Dokumen tidak ditemukan' });
@@ -1543,8 +1628,16 @@ async function handle(req, res) {
 
   if (path === '/audit' && method === 'GET') {
     if (!await requireAdmin(req, res)) return;
-    const auditRows = await sql`SELECT id, actor_id, actor_name, action, entity_type, entity_id, details, created_at FROM audit_log ORDER BY id DESC LIMIT 200`;
-    return send(res, 200, { audit: auditRows });
+    const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 200);
+    const cursorRaw = url.searchParams.get('cursor');
+    const cursor = cursorRaw ? Number(cursorRaw) : null;
+    const auditRows = cursor
+      ? await sql`SELECT id, actor_id, actor_name, action, entity_type, entity_id, details, created_at FROM audit_log WHERE id < ${cursor} ORDER BY id DESC LIMIT ${limit + 1}`
+      : await sql`SELECT id, actor_id, actor_name, action, entity_type, entity_id, details, created_at FROM audit_log ORDER BY id DESC LIMIT ${limit + 1}`;
+    const hasMore = auditRows.length > limit;
+    const items = hasMore ? auditRows.slice(0, limit) : auditRows;
+    const nextCursor = hasMore ? String(items[items.length - 1].id) : null;
+    return send(res, 200, { audit: items, hasMore, nextCursor });
   }
 
   return send(res, 404, { error: 'Endpoint tidak ditemukan' });
