@@ -3550,6 +3550,7 @@ function renderDailyProgress(){
 
   const users = ['Semua', ...new Set(state.dailyProgresses.map(x => x.userName))];
   const statuses = ['Semua','On Track','Need Help','Done'];
+  const progressFilterActive = state.filterProgressUser !== 'Semua' || state.filterProgressStatus !== 'Semua' || !!state.filterProgressDate;
   const monitored = state.dailyProgresses
     .filter(x => {
       if(state.filterProgressUser !== 'Semua' && x.userName !== state.filterProgressUser) return false;
@@ -3558,6 +3559,7 @@ function renderDailyProgress(){
       return true;
     })
     .sort((a,b)=>new Date(b.date) - new Date(a.date) || new Date(b.updatedAt||0) - new Date(a.updatedAt||0));
+  const hiddenByProgressFilter = canMonitor ? Math.max(0, state.dailyProgresses.length - monitored.length) : 0;
 
   const activeDate = today();
   const todayEntry = mine.find(x => x.date === activeDate);
@@ -3648,12 +3650,27 @@ function renderDailyProgress(){
             <select class="form-control" style="width:auto;height:36px" onchange="state.filterProgressStatus=this.value;renderPage()">
               ${statuses.map(s=>`<option${state.filterProgressStatus===s?' selected':''}>${s}</option>`).join('')}
             </select>
-            <input class="form-control" type="date" style="width:auto;height:36px" value="${escHtml(state.filterProgressDate||'')}" onchange="state.filterProgressDate=this.value;renderPage()">
+            <div style="display:flex;align-items:center;gap:6px">
+              <input class="form-control" type="date" style="width:auto;height:36px" value="${escHtml(state.filterProgressDate||'')}" onchange="state.filterProgressDate=this.value;renderPage()" title="Filter tanggal monitoring">
+              ${progressFilterActive ? `<button class="btn btn-sec btn-sm" onclick="resetProgressMonitorFilters()">Reset</button>` : ''}
+            </div>
           </div>` : ''}
       </div>
 
+      ${canMonitor && progressFilterActive ? `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;padding:10px 12px;border:1px solid #BFDBFE;background:#EFF6FF;border-radius:14px;color:#1E3A8A;font-size:12px;font-weight:800">
+          <span>
+            Filter monitoring aktif${state.filterProgressDate ? `: tanggal ${fmtD(state.filterProgressDate)}` : ''}.
+            ${hiddenByProgressFilter ? `${hiddenByProgressFilter} catatan lain sedang disembunyikan.` : 'Semua catatan yang cocok sudah tampil.'}
+          </span>
+          <button class="btn btn-sec btn-sm" onclick="resetProgressMonitorFilters()">Tampilkan semua</button>
+        </div>` : ''}
+
       ${((canMonitor ? monitored : mine).length === 0) ? `
-        <div class="empty"><div class="empty-icon">📝</div><div class="empty-text">Belum ada progres yang dicatat.</div></div>
+        <div class="empty">
+          <div class="empty-icon">📝</div>
+          <div class="empty-text">${canMonitor && progressFilterActive && state.dailyProgresses.length ? 'Tidak ada progres yang cocok dengan filter ini. Data lain masih ada, coba reset filter.' : 'Belum ada progres yang dicatat.'}</div>
+        </div>
       ` : `
         <div style="display:flex;flex-direction:column;gap:12px">
           ${(canMonitor ? monitored : mine).map(item => {
@@ -3726,6 +3743,13 @@ function renderDailyProgress(){
       </div>
     </div>` : ''}
   </div>`;
+}
+
+function resetProgressMonitorFilters(){
+  state.filterProgressUser = 'Semua';
+  state.filterProgressStatus = 'Semua';
+  state.filterProgressDate = '';
+  renderPage();
 }
 
 function loadDailyProgressByDate(date){
@@ -3830,6 +3854,9 @@ function saveDailyProgress(phase='full'){
     });
   }
   persistPatched();
+  if(typeof window.flushBackendSave === 'function'){
+    window.flushBackendSave().catch(err => console.warn('flush progres harian gagal', err));
+  }
   renderPage();
 }
 /* ===== SCHEDULE ===== */
@@ -8641,6 +8668,7 @@ if(state.user && !isProductionRuntime()){
     }
     if(saving && !immediate) return;
     saving = true;
+    window.__grccPendingBackendSave = false;
     window.__grccSavingToBackend = true;
     const dot = document.getElementById('sync-dot');
     if(dot){ clearTimeout(dot._hideTimer); dot.setAttribute('data-sync','saving'); }
@@ -8674,6 +8702,7 @@ if(state.user && !isProductionRuntime()){
 
   function scheduleBackendSave(){
     clearTimeout(saveTimer);
+    window.__grccPendingBackendSave = true;
     saveTimer = setTimeout(()=>saveToBackend(false), 1200);
   }
 
@@ -8684,6 +8713,7 @@ if(state.user && !isProductionRuntime()){
   };
   window.flushBackendSave = function(){
     clearTimeout(saveTimer);
+    window.__grccPendingBackendSave = false;
     return saveToBackend(true);
   };
 
@@ -9232,7 +9262,7 @@ if(state.user && !isProductionRuntime()){
   }
 
   function canAutoSync(){
-    return location.protocol !== 'file:' && typeof state === 'object' && Boolean(state?.user) && !syncInFlight && !window.__grccSavingToBackend;
+    return location.protocol !== 'file:' && typeof state === 'object' && Boolean(state?.user) && !syncInFlight && !window.__grccSavingToBackend && !window.__grccPendingBackendSave;
   }
 
   function modalIsOpen(){
