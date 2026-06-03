@@ -3788,7 +3788,7 @@ function clearDailyProgressConflictNotifications(userId, date, phase='morning'){
     return !suffixes.some(suffix => key === `auto_${date}_${suffix}`);
   });
 }
-function saveDailyProgress(phase='full'){
+async function saveDailyProgress(phase='full'){
   const date = document.getElementById('dp-date')?.value;
   const progressStatus = document.getElementById('dp-status')?.value || 'On Track';
   const morningPlan = document.getElementById('dp-morning-plan')?.value.trim();
@@ -3807,6 +3807,7 @@ function saveDailyProgress(phase='full'){
   const nowIso = new Date().toISOString();
   const existing = state.dailyProgresses.find(x => x.userId === state.user.id && x.date === date);
   const shouldSaveEvening = phase === 'evening' || (phase === 'full' && Boolean(eveningUpdate));
+  let savedItem = null;
   if(existing){
     existing.morningInputTime = existing.morningInputTime || nowIso;
     existing.morningPlan = morningPlan;
@@ -3818,9 +3819,10 @@ function saveDailyProgress(phase='full'){
     existing.tomorrowPlan = tomorrowPlan;
     existing.progressStatus = progressStatus;
     existing.updatedAt = nowIso;
+    savedItem = existing;
     toast(shouldSaveEvening ? 'Update sore berhasil disimpan' : 'Input pagi berhasil diperbarui');
   } else {
-    state.dailyProgresses.unshift({
+    savedItem = {
       id: uid(),
       userId: state.user.id,
       userName: state.user.name,
@@ -3834,7 +3836,8 @@ function saveDailyProgress(phase='full'){
       morningInputTime: nowIso,
       eveningUpdateTime: shouldSaveEvening ? nowIso : '',
       updatedAt: nowIso
-    });
+    };
+    state.dailyProgresses.unshift(savedItem);
     toast(shouldSaveEvening ? 'Progres harian berhasil disimpan' : 'Input pagi berhasil disimpan');
   }
 
@@ -3854,7 +3857,14 @@ function saveDailyProgress(phase='full'){
     });
   }
   persistPatched();
-  if(typeof window.flushBackendSave === 'function'){
+  if(typeof window.saveDailyProgressToServer === 'function'){
+    try {
+      await window.saveDailyProgressToServer(savedItem, shouldSaveEvening ? 'evening' : 'morning');
+    } catch(err) {
+      toast(err.message || 'Progres tersimpan lokal, tapi belum tersimpan ke server', 'error');
+      console.warn('simpan progres harian gagal', err);
+    }
+  } else if(typeof window.flushBackendSave === 'function'){
     window.flushBackendSave().catch(err => console.warn('flush progres harian gagal', err));
   }
   renderPage();
@@ -7613,7 +7623,7 @@ initApp = function(){
 };
 
 // persist after all major mutations
-['saveTask','updateTaskStatus','deleteTask','addComment','saveSchedule','deleteSchedule','prevMonth','nextMonth','changeExpStatus','deleteExp','saveExp','setAtt','saveProg','deleteDoc','saveDailyProgress'].forEach(wrapPersist);
+['saveTask','updateTaskStatus','deleteTask','addComment','saveSchedule','deleteSchedule','prevMonth','nextMonth','changeExpStatus','deleteExp','saveExp','setAtt','saveProg','deleteDoc'].forEach(wrapPersist);
 
 // patch file upload
 const docInput = document.getElementById('doc-file-input');
@@ -8604,12 +8614,42 @@ if(state.user && !isProductionRuntime()){
 (function(){
   const API = {
     state: '/api/state',
+    dailyProgress: '/api/daily-progress',
     documents: '/api/documents'
   };
   const syncBadgeId = 'backend-sync-status';
   let saveTimer = null;
   let saving = false;
   let lastBackendPayload = '';
+
+  window.saveDailyProgressToServer = async function(item, phase='full'){
+    if(location.protocol === 'file:') return { ok:false, skipped:true };
+    window.__grccPendingBackendSave = true;
+    try {
+      const res = await fetch(API.dailyProgress, {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: {'Content-Type':'application/json', 'Accept':'application/json'},
+        body: JSON.stringify({ item, phase })
+      });
+      const payload = await res.json().catch(() => ({}));
+      if(res.status === 401) {
+        if(typeof window.forceSessionExpiredLogout === 'function') window.forceSessionExpiredLogout();
+        throw new Error('Login diperlukan untuk menyimpan progres');
+      }
+      if(!res.ok) throw new Error(payload.error || 'Progres harian gagal disimpan ke server');
+      if(payload.item){
+        const idx = state.dailyProgresses.findIndex(x => x.id === payload.item.id || (x.userId === payload.item.userId && x.date === payload.item.date));
+        if(idx >= 0) state.dailyProgresses[idx] = { ...state.dailyProgresses[idx], ...payload.item };
+        else state.dailyProgresses.unshift(payload.item);
+      }
+      if(payload.savedAt) window.__grccLastServerMarker = payload.savedAt;
+      setSyncStatus('Progres harian tersimpan', 'success');
+      return payload;
+    } finally {
+      window.__grccPendingBackendSave = false;
+    }
+  };
 
   function setSyncStatus(text, type='info'){
     /* update the tiny dot in the header */

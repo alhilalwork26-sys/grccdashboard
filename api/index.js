@@ -757,16 +757,55 @@ function earlierIso(a, b) {
 
 function mergeDailyProgressPayload(existing, incoming) {
   if (!existing || typeof existing !== 'object') return incoming;
-  const merged = { ...existing, ...incoming };
+  const existingTime = Date.parse(existing.updatedAt || '');
+  const incomingTime = Date.parse(incoming.updatedAt || '');
+  const incomingIsNewer = Number.isFinite(incomingTime) && (!Number.isFinite(existingTime) || incomingTime >= existingTime);
+  const merged = incomingIsNewer ? { ...existing, ...incoming } : { ...incoming, ...existing };
   ['morningPlan', 'eveningUpdate', 'blockers', 'tomorrowPlan', 'progressStatus', 'userName', 'role'].forEach(field => {
-    if ((incoming[field] === undefined || incoming[field] === null || incoming[field] === '') && existing[field]) {
-      merged[field] = existing[field];
-    }
+    const preferred = incomingIsNewer ? incoming[field] : existing[field];
+    const fallback = incomingIsNewer ? existing[field] : incoming[field];
+    merged[field] = (preferred === undefined || preferred === null || preferred === '') ? (fallback || '') : preferred;
   });
   merged.morningInputTime = earlierIso(existing.morningInputTime, incoming.morningInputTime);
   merged.eveningUpdateTime = newerIso(existing.eveningUpdateTime, incoming.eveningUpdateTime);
   merged.updatedAt = newerIso(existing.updatedAt, incoming.updatedAt);
   return merged;
+}
+
+async function upsertDailyProgressItem(sql, incoming, actor) {
+  const item = incoming && typeof incoming === 'object' ? { ...incoming } : {};
+  const date = String(item.date || '').trim();
+  const userId = String(item.userId || actor?.id || '').trim();
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Tanggal progres tidak valid');
+  if (!userId) throw new Error('User progres tidak valid');
+  if (actor?.id && userId !== actor.id && !SUPER_ADMIN_ROLES.has(actor.role)) throw new Error('Tidak boleh menyimpan progres user lain');
+  item.userId = userId;
+  item.userName = String(item.userName || actor?.name || '').trim();
+  item.role = String(item.role || actor?.role || '').trim();
+  item.updatedAt = item.updatedAt || new Date().toISOString();
+
+  const existingRows = await sql.query(
+    `SELECT id, payload FROM daily_progresses
+     WHERE id = $1
+        OR ((payload->>'userId') = $2 AND (payload->>'date') = $3)
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [String(item.id || ''), userId, date]
+  );
+  const existingRow = existingRows.rows?.[0] || existingRows[0] || null;
+  const existing = existingRow?.payload || null;
+  const id = String(existing?.id || item.id || crypto.randomBytes(8).toString('base64url'));
+  item.id = id;
+  const payload = mergeDailyProgressPayload(existing, item);
+  payload.id = id;
+  await sql.query(`DELETE FROM daily_progresses WHERE ((payload->>'userId') = $1 AND (payload->>'date') = $2) AND id <> $3`, [userId, date, id]);
+  await sql.query(
+    `INSERT INTO daily_progresses (id, payload, updated_at)
+     VALUES ($1, $2::jsonb, now())
+     ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
+    [id, JSON.stringify(payload)]
+  );
+  return payload;
 }
 
 function mergeByIdOrSignature(existing = [], incoming = []) {
@@ -801,6 +840,20 @@ async function moduleItems(table) {
   return (result.rows || result).map(row => row.payload).filter(item => !item?._deleted);
 }
 
+function normalizeDailyProgressItems(items = []) {
+  const map = new Map();
+  items.forEach(item => {
+    if (!item || typeof item !== 'object') return;
+    const key = `${item.userId || ''}|${item.date || ''}`;
+    if (!item.userId || !item.date) {
+      map.set(item.id || crypto.randomBytes(4).toString('hex'), item);
+      return;
+    }
+    map.set(key, mergeDailyProgressPayload(map.get(key), item));
+  });
+  return [...map.values()].sort((a, b) => Date.parse(b.updatedAt || b.date || '') - Date.parse(a.updatedAt || a.date || ''));
+}
+
 async function loadState() {
   const sql = db();
   const appRows = await sql`SELECT payload, updated_at FROM app_state WHERE id = 1`;
@@ -815,7 +868,7 @@ async function loadState() {
     listRoles()
   ]);
   moduleResults.forEach(([stateKey, items]) => {
-    state[stateKey] = items;
+    state[stateKey] = stateKey === 'dailyProgresses' ? normalizeDailyProgressItems(items) : items;
   });
   state.accounts = users;
   state.permissions = roles.permissions;
@@ -1258,6 +1311,24 @@ async function handle(req, res) {
     const user = await requireUser(req, res);
     if (!user) return;
     return send(res, 200, await loadState());
+  }
+
+  if (path === '/daily-progress' && (method === 'PUT' || method === 'POST')) {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const body = await readBody(req);
+    try {
+      const item = await upsertDailyProgressItem(sql, body.item || body.progress || body, user);
+      const savedAt = await touchAppStateMarker(sql);
+      await audit(user, 'upsert', 'daily_progress', item.id, {
+        date: item.date,
+        userId: item.userId,
+        phase: body.phase || null
+      });
+      return send(res, 200, { ok: true, item, savedAt });
+    } catch (err) {
+      return send(res, 400, { error: err.message || 'Progres harian gagal disimpan' });
+    }
   }
 
   if (path === '/state' && (method === 'PUT' || method === 'POST')) {
