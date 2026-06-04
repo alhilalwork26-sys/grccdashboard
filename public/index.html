@@ -4309,7 +4309,12 @@ function renderFinance(){
       </button>
     </div>
   </div>
-  <div class="finance-period-note">Menampilkan ${filtered.length} item untuk ${escHtml(periodLabel)}.</div>
+  <div class="finance-period-note">
+    ${filtered.length === 0 && fm && !expenses.some(e => String(e.date||'').slice(0,7) === fm)
+      ? `⚠️ Tidak ada pengeluaran untuk periode ${escHtml(periodLabel)}. <button class="btn btn-sec btn-sm" style="margin-left:8px" onclick="clearFinancePeriodFilter()">Tampilkan semua</button>`
+      : `Menampilkan ${filtered.length} item untuk ${escHtml(periodLabel)}.`
+    }
+  </div>
   ${renderFinanceReimbursePanel(periodReimburseRequests)}
   ${fv==='weekly' ? renderFinanceWeeklyView(weeklyGroups) : ''}
   ${fv==='detail' ? `
