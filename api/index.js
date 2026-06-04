@@ -1,10 +1,13 @@
 const crypto = require('crypto');
 const { Readable } = require('stream');
-const { neon } = require('@neondatabase/serverless');
+const { neon, neonConfig } = require('@neondatabase/serverless');
 const { get, put } = require('@vercel/blob');
 const { handleUpload } = require('@vercel/blob/client');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
+
+/* Aktifkan HTTP connection reuse antar invocation di instance yang sama */
+neonConfig.fetchConnectionCache = true;
 
 const SESSION_SECONDS = 8 * 60 * 60; // 8 jam (sliding window via /api/auth/me)
 const MODULE_TABLES = {
@@ -85,6 +88,7 @@ const EMPTY_STATE = {
 };
 
 let schemaReady = false;
+let _sqlClient = null; // cached neon client — reused across warm invocations
 const JAKARTA_TIMEZONE = 'Asia/Jakarta';
 let googleDriveTokenCache = null;
 
@@ -128,7 +132,9 @@ function clientIp(req) {
 
 function db() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL belum diset');
-  return neon(process.env.DATABASE_URL);
+  /* Reuse client di warm invocation — neon() safe untuk di-cache */
+  if (!_sqlClient) _sqlClient = neon(process.env.DATABASE_URL);
+  return _sqlClient;
 }
 
 function send(res, status, payload, headers = {}) {
@@ -583,71 +589,118 @@ async function summarizeWithCukAI(filename, text) {
   return { summary: fallbackSummary(filename, text), model: 'cuk-ai-local' };
 }
 
+/*
+ * Schema version — naikkan setiap kali ada perubahan DDL.
+ * Pada warm path (schema sudah di DB): hanya 1 query SELECT.
+ * Pada cold path (deploy baru): jalankan semua DDL lalu simpan versi baru.
+ */
+const SCHEMA_VERSION = '2026-06-04-v3';
+
 async function ensureSchema() {
   if (schemaReady) return;
   const sql = db();
+
+  /* ── Fast path: cek versi schema di DB ── */
+  try {
+    const vRow = await sql`
+      SELECT value FROM app_config WHERE key = 'schema_version' LIMIT 1`;
+    if (vRow[0]?.value === SCHEMA_VERSION) {
+      schemaReady = true;
+      return; // schema sudah up-to-date, skip semua DDL
+    }
+  } catch { /* app_config belum ada → lanjut ke full schema setup */ }
+
+  /* ── Slow path: jalankan semua DDL secara paralel ── */
+
+  // Batch 1: tabel fondasi (harus ada sebelum tabel lain yang punya FK)
+  await sql`CREATE TABLE IF NOT EXISTS app_config (key text PRIMARY KEY, value text NOT NULL)`;
   await sql`CREATE TABLE IF NOT EXISTS roles (name text PRIMARY KEY, permissions jsonb NOT NULL, color text NOT NULL DEFAULT '#6B7280', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
+
+  // Batch 2: tabel users (butuh roles)
   await sql`CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY, name text NOT NULL, username text NOT NULL UNIQUE, email text NOT NULL UNIQUE, password_hash text NOT NULL, role text NOT NULL REFERENCES roles(name) ON UPDATE CASCADE, dept text NOT NULL DEFAULT '', av text NOT NULL DEFAULT 'U', avatar_url text NOT NULL DEFAULT '', active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
-  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url text NOT NULL DEFAULT ''`;
-  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp text NOT NULL DEFAULT ''`;
-  await sql`CREATE TABLE IF NOT EXISTS sessions (token text PRIMARY KEY, user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at bigint NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`;
-  await sql`CREATE TABLE IF NOT EXISTS app_state (id integer PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`;
+
+  // Batch 3: tabel lain + ALTER TABLE secara paralel
+  await Promise.all([
+    sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url text NOT NULL DEFAULT ''`,
+    sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp text NOT NULL DEFAULT ''`,
+    sql`CREATE TABLE IF NOT EXISTS sessions (token text PRIMARY KEY, user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at bigint NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`,
+    sql`CREATE TABLE IF NOT EXISTS app_state (id integer PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`,
+    sql`CREATE TABLE IF NOT EXISTS audit_log (id bigserial PRIMARY KEY, actor_id text, actor_name text, action text NOT NULL, entity_type text NOT NULL, entity_id text, details jsonb, created_at timestamptz NOT NULL DEFAULT now())`,
+    sql`CREATE TABLE IF NOT EXISTS module_deletions (module_key text NOT NULL, entity_id text NOT NULL, deleted_at timestamptz NOT NULL DEFAULT now(), deleted_by text, PRIMARY KEY (module_key, entity_id))`,
+  ]);
+
+  // Batch 4: tabel documents + kolom barunya secara paralel
   await sql`CREATE TABLE IF NOT EXISTS documents (id text PRIMARY KEY, filename text NOT NULL, content_type text NOT NULL, blob_url text NOT NULL, blob_access text NOT NULL DEFAULT 'public', size integer NOT NULL, uploaded_by text, uploaded_at timestamptz NOT NULL DEFAULT now())`;
-  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS blob_access text NOT NULL DEFAULT 'public'`;
-  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS visibility text NOT NULL DEFAULT 'public'`;
-  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS pin_hash text NOT NULL DEFAULT ''`;
-  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary text NOT NULL DEFAULT ''`;
-  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary_at timestamptz`;
-  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary_model text NOT NULL DEFAULT ''`;
-  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS folder text NOT NULL DEFAULT 'Dokumen Resmi'`;
-  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS google_drive_file_id text NOT NULL DEFAULT ''`;
-  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS google_drive_url text NOT NULL DEFAULT ''`;
-  await sql`CREATE TABLE IF NOT EXISTS audit_log (id bigserial PRIMARY KEY, actor_id text, actor_name text, action text NOT NULL, entity_type text NOT NULL, entity_id text, details jsonb, created_at timestamptz NOT NULL DEFAULT now())`;
-  await sql`CREATE TABLE IF NOT EXISTS module_deletions (module_key text NOT NULL, entity_id text NOT NULL, deleted_at timestamptz NOT NULL DEFAULT now(), deleted_by text, PRIMARY KEY (module_key, entity_id))`;
-  for (const table of Object.values(MODULE_TABLES)) {
+  await Promise.all([
+    sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS blob_access text NOT NULL DEFAULT 'public'`,
+    sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS visibility text NOT NULL DEFAULT 'public'`,
+    sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS pin_hash text NOT NULL DEFAULT ''`,
+    sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary text NOT NULL DEFAULT ''`,
+    sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary_at timestamptz`,
+    sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS ai_summary_model text NOT NULL DEFAULT ''`,
+    sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS folder text NOT NULL DEFAULT 'Dokumen Resmi'`,
+    sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS google_drive_file_id text NOT NULL DEFAULT ''`,
+    sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS google_drive_url text NOT NULL DEFAULT ''`,
+  ]);
+
+  // Batch 5: semua module tables + index secara paralel
+  await Promise.all(Object.values(MODULE_TABLES).map(table => {
     const t = safeTable(table);
-    await sql.query(`CREATE TABLE IF NOT EXISTS ${t} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
-    await sql.query(`CREATE INDEX IF NOT EXISTS idx_${t}_updated_at ON ${t}(updated_at DESC)`);
+    return sql.query(`CREATE TABLE IF NOT EXISTS ${t} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
+  }));
+  await Promise.all([
+    ...Object.values(MODULE_TABLES).map(table => {
+      const t = safeTable(table);
+      return sql.query(`CREATE INDEX IF NOT EXISTS idx_${t}_updated_at ON ${t}(updated_at DESC)`);
+    }),
+    sql`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)`,
+    sql`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`,
+    sql`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`,
+    sql`CREATE INDEX IF NOT EXISTS idx_users_active ON users(active)`,
+    sql`CREATE INDEX IF NOT EXISTS idx_documents_visibility ON documents(visibility)`,
+    sql`CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(folder)`,
+    sql`CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id)`,
+    sql`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(id DESC)`,
+  ]);
+
+  // Batch 6: seed default roles secara paralel
+  await Promise.all(Object.entries(DEFAULT_PERMS).map(([role, permissions]) =>
+    sql`INSERT INTO roles (name, permissions, color)
+        VALUES (${role}, ${JSON.stringify(permissions)}, ${DEFAULT_ROLE_COLORS[role] || '#6B7280'})
+        ON CONFLICT (name) DO NOTHING`
+  ));
+
+  // Batch 7: migrasi data sekuensial (urutan penting)
+  await Promise.all([
+    sql.query(`UPDATE roles SET permissions = permissions || '["schedule"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'schedule'`),
+    sql.query(`UPDATE roles SET permissions = permissions || '["reimburse"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'reimburse'`),
+    sql.query(`UPDATE roles SET permissions = permissions || '["tasks"]'::jsonb, updated_at = now() WHERE name IN ('Finance','Staff Finance + Dokumen','Kepala Trainer') AND NOT permissions ? 'tasks'`),
+    sql.query(`UPDATE roles SET permissions = permissions - 'rab' - 'settings', updated_at = now() WHERE name NOT IN ('Super Admin','Super Admin + Manager') AND (permissions ? 'rab' OR permissions ? 'settings')`),
+  ]);
+
+  for (const [oldRole, newRole] of Object.entries(LEGACY_ROLE_MIGRATIONS)) {
+    await sql`UPDATE users SET role = ${newRole}, updated_at = now() WHERE role = ${oldRole}`;
+    await sql`DELETE FROM roles WHERE name = ${oldRole} AND NOT EXISTS (SELECT 1 FROM users WHERE role = ${oldRole})`;
   }
-  // Performance indexes
-  await sql`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_users_active ON users(active)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_documents_visibility ON documents(visibility)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_documents_folder ON documents(folder)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(id DESC)`;
-  for (const [role, permissions] of Object.entries(DEFAULT_PERMS)) {
-    await sql`INSERT INTO roles (name, permissions, color) VALUES (${role}, ${JSON.stringify(permissions)}, ${DEFAULT_ROLE_COLORS[role] || '#6B7280'}) ON CONFLICT (name) DO NOTHING`;
-  }
+
   // Migrasi: pindah researchItems dari app_state.payload ke tabel research_items
   try {
     const appRow = await sql`SELECT payload FROM app_state WHERE id = 1`;
     const legacyItems = appRow[0]?.payload?.researchItems;
     if (Array.isArray(legacyItems) && legacyItems.length > 0) {
-      for (const item of legacyItems) {
-        if (!item || typeof item !== 'object') continue;
+      await Promise.all(legacyItems.filter(Boolean).map(item => {
         const id = String(item.id || crypto.randomBytes(8).toString('hex'));
         item.id = id;
-        await sql.query(
+        return sql.query(
           `INSERT INTO research_items (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO NOTHING`,
           [id, JSON.stringify(item)]
         );
-      }
-      // Hapus researchItems dari app_state payload setelah migrasi
+      }));
       await sql`UPDATE app_state SET payload = payload - 'researchItems', updated_at = now() WHERE id = 1`;
     }
-  } catch (_migErr) { /* abaikan jika kolom belum ada atau data sudah bersih */ }
+  } catch (_migErr) { /* abaikan jika data sudah bersih */ }
 
-  await sql.query(`UPDATE roles SET permissions = permissions || '["schedule"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'schedule'`);
-  await sql.query(`UPDATE roles SET permissions = permissions || '["reimburse"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'reimburse'`);
-  await sql.query(`UPDATE roles SET permissions = permissions || '["tasks"]'::jsonb, updated_at = now() WHERE name IN ('Finance','Staff Finance + Dokumen','Kepala Trainer') AND NOT permissions ? 'tasks'`);
-  await sql.query(`UPDATE roles SET permissions = permissions - 'rab' - 'settings', updated_at = now() WHERE name NOT IN ('Super Admin','Super Admin + Manager') AND (permissions ? 'rab' OR permissions ? 'settings')`);
-  for (const [oldRole, newRole] of Object.entries(LEGACY_ROLE_MIGRATIONS)) {
-    await sql`UPDATE users SET role = ${newRole}, updated_at = now() WHERE role = ${oldRole}`;
-    await sql`DELETE FROM roles WHERE name = ${oldRole} AND NOT EXISTS (SELECT 1 FROM users WHERE role = ${oldRole})`;
-  }
+  // Seed admin user jika DB kosong
   const users = await sql`SELECT count(*)::int AS count FROM users`;
   if (users[0].count === 0) {
     const adminPw = process.env.ADMIN_INITIAL_PASSWORD || '';
@@ -655,6 +708,10 @@ async function ensureSchema() {
     await sql`INSERT INTO users (id, name, username, email, password_hash, role, dept, av) VALUES ('owner', 'Administrator GRCC', 'admin', 'admin@grcc.id', ${await hashPassword(adminPw)}, 'Super Admin + Manager', 'Manajemen', 'AG')`;
   }
   await sql`INSERT INTO app_state (id, payload) VALUES (1, ${JSON.stringify(EMPTY_STATE)}) ON CONFLICT (id) DO NOTHING`;
+
+  /* ── Simpan versi schema — request berikutnya akan skip semua DDL di atas ── */
+  await sql`INSERT INTO app_config (key, value) VALUES ('schema_version', ${SCHEMA_VERSION})
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`;
   schemaReady = true;
 }
 

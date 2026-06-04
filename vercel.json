@@ -1,5 +1,10 @@
 {
   "version": 2,
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 30
+    }
+  },
   "crons": [
     { "path": "/api/cron/task-deadlines", "schedule": "0 2 * * *" },
     { "path": "/api/cron/progress-morning", "schedule": "0 3 * * *" },
