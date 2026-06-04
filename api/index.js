@@ -1237,12 +1237,13 @@ async function mergeAppStatePayload(sql, cleaned, incomingState) {
 
 async function touchAppStateMarker(sql) {
   const savedAt = new Date().toISOString();
+  const marker = JSON.stringify({ serverSavedAt: savedAt });
   await sql.query(
     `INSERT INTO app_state (id, payload, updated_at)
      VALUES (1, $1::jsonb, now())
      ON CONFLICT (id) DO UPDATE
-     SET payload = app_state.payload || $2::jsonb, updated_at = now()`,
-    [JSON.stringify({ ...EMPTY_STATE, serverSavedAt: savedAt }), JSON.stringify({ serverSavedAt: savedAt })]
+     SET payload = app_state.payload || $1::jsonb, updated_at = now()`,
+    [marker]
   );
   return savedAt;
 }

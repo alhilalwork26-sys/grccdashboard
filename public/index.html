@@ -7730,8 +7730,9 @@ initApp = function(){
   persistPatched();
 };
 
-// persist after all major mutations
-['saveTask','updateTaskStatus','deleteTask','addComment','saveSchedule','deleteSchedule','prevMonth','nextMonth','changeExpStatus','deleteExp','saveExp','setAtt','saveProg','deleteDoc'].forEach(wrapPersist);
+// persist setelah mutasi UI-state murni (yang tidak punya flushBackendSave sendiri)
+// Fungsi yang sudah punya flushBackendSave/persistDeleteToServer TIDAK perlu di-wrap lagi
+['prevMonth','nextMonth','deleteDoc'].forEach(wrapPersist);
 
 // patch file upload
 const docInput = document.getElementById('doc-file-input');
