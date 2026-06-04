@@ -8734,12 +8734,15 @@ if(state.user && !isProductionRuntime()){
   window.saveDailyProgressToServer = async function(item, phase='full'){
     if(location.protocol === 'file:') return { ok:false, skipped:true };
     window.__grccPendingBackendSave = true;
+    const ctrl = new AbortController();
+    const fetchTimer = setTimeout(() => ctrl.abort(), 20000);
     try {
       const res = await fetch(API.dailyProgress, {
         method: 'PUT',
         credentials: 'same-origin',
         headers: {'Content-Type':'application/json', 'Accept':'application/json'},
-        body: JSON.stringify({ item, phase })
+        body: JSON.stringify({ item, phase }),
+        signal: ctrl.signal
       });
       const payload = await res.json().catch(() => ({}));
       if(res.status === 401) {
@@ -8753,9 +8756,11 @@ if(state.user && !isProductionRuntime()){
         else state.dailyProgresses.unshift(payload.item);
       }
       if(payload.savedAt) window.__grccLastServerMarker = payload.savedAt;
+      saveFailCount = 0; // reset juga counter saat progres harian berhasil
       setSyncStatus('Progres harian tersimpan', 'success');
       return payload;
     } finally {
+      clearTimeout(fetchTimer);
       window.__grccPendingBackendSave = false;
     }
   };
@@ -8811,20 +8816,27 @@ if(state.user && !isProductionRuntime()){
   }
 
   let saveFailedRetryTimer = null;
+  let saveFailCount = 0;   // berturut-turut gagal
+  let flushQueued = false; // ada flush yg menunggu save selesai
 
-  /* saveToBackend — returns true on success, false on skip, throws on error */
+  /* saveToBackend — returns true on success, false on skip, throws jika _throwOnError */
   async function saveToBackend(immediate=false, _throwOnError=false){
-    if(location.protocol === 'file:'){
-      setSyncStatus('Mode file lokal: tidak menyimpan ke server', 'error');
-      return false;
-    }
+    if(location.protocol === 'file:') return false;
+
+    /* Jika sedang save dan ini immediate: queue flush setelah selesai */
+    if(saving && immediate) { flushQueued = true; return false; }
     if(saving && !immediate) return false;
+
     saving = true;
     window.__grccPendingBackendSave = false;
     window.__grccSavingToBackend = true;
     clearTimeout(saveFailedRetryTimer);
     const dot = document.getElementById('sync-dot');
     if(dot){ clearTimeout(dot._hideTimer); dot.setAttribute('data-sync','saving'); }
+
+    /* Fetch dengan timeout 20 detik — jangan biarkan hang sampai 30s */
+    const ctrl = new AbortController();
+    const fetchTimer = setTimeout(() => ctrl.abort(), 20000);
     try {
       const body = JSON.stringify({state: statePayload()});
       if(!immediate && body === lastBackendPayload) return false;
@@ -8832,33 +8844,55 @@ if(state.user && !isProductionRuntime()){
         method: 'PUT',
         credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
-        body
+        body,
+        signal: ctrl.signal
       });
       if(res.status === 401) {
         if(typeof window.forceSessionExpiredLogout === 'function') window.forceSessionExpiredLogout();
-        else setSyncStatus('Login diperlukan untuk menyimpan ke server', 'info');
         return false;
       }
       if(!res.ok) throw new Error('HTTP ' + res.status);
       const saved = await res.json().catch(() => ({}));
       if(saved.savedAt) window.__grccLastServerMarker = saved.savedAt;
       lastBackendPayload = body;
+      saveFailCount = 0; // reset hitungan gagal
       setSyncStatus('Data dashboard tersimpan', 'success');
       return true;
+
     } catch(err) {
+      saveFailCount++;
       console.warn('sinkronisasi backend gagal', err);
-      setSyncStatus('Data belum tersimpan ke server, mencoba ulang...', 'error');
-      /* Tandai pending agar auto-sync tidak overwrite data lokal yang belum tersimpan */
+
+      /* Tandai pending agar auto-sync tidak timpa data lokal */
       window.__grccPendingBackendSave = true;
-      /* Jadwalkan retry otomatis 12 detik lagi */
+
+      /* Tampilkan notifikasi HANYA untuk background save, BUKAN untuk flushBackendSave
+         (caller flushBackendSave sudah punya toast sendiri — ini mencegah double-notif).
+         Background save: tampilkan badge hanya setelah gagal ≥2x berturut-turut */
+      if(!_throwOnError) {
+        if(saveFailCount === 1) {
+          /* Gagal pertama: hanya dot merah, tanpa floating badge */
+          const d = document.getElementById('sync-dot');
+          if(d){ d.setAttribute('data-sync','error'); setTimeout(()=>d.removeAttribute('data-sync'), 5000); }
+        } else if(saveFailCount >= 2) {
+          setSyncStatus('Koneksi server bermasalah, data aman di lokal', 'error');
+        }
+      }
+
+      /* Retry dengan exponential backoff: 8s → 15s → 25s (max) */
+      const delay = Math.min(8000 * Math.pow(1.6, Math.min(saveFailCount - 1, 3)), 25000);
       saveFailedRetryTimer = setTimeout(() => {
         if(window.__grccPendingBackendSave) saveToBackend(false);
-      }, 12000);
+      }, delay);
+
       if(_throwOnError) throw err;
       return false;
     } finally {
+      clearTimeout(fetchTimer);
       saving = false;
       window.__grccSavingToBackend = false;
+      /* Jalankan flush yang tertunda */
+      if(flushQueued){ flushQueued = false; setTimeout(()=>saveToBackend(true, false), 50); }
     }
   }
 
@@ -8874,12 +8908,13 @@ if(state.user && !isProductionRuntime()){
     scheduleBackendSave();
   };
 
-  /* flushBackendSave: immediate save, melempar error jika gagal */
+  /* flushBackendSave: immediate save.
+     Melempar error jika gagal — caller yang handle toast, BUKAN saveToBackend.
+     Dengan begitu user tidak lihat 2 error message sekaligus. */
   window.flushBackendSave = async function(){
     clearTimeout(saveTimer);
     window.__grccPendingBackendSave = false;
-    const ok = await saveToBackend(true, true); // _throwOnError=true
-    return ok;
+    return saveToBackend(true, true); // _throwOnError=true → caller handle toast
   };
 
   async function loadFromBackend(){
