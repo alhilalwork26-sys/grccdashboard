@@ -2328,7 +2328,7 @@ let state = {
   docs: [],
   taskDetail: null,
   progDetail: null,
-  calMonth: new Date(2026,3,1),
+  calMonth: (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
   filterTaskStatus:'Semua', filterTaskUser:'Semua', searchTask:'',
   filterExpStatus:'Semua', filterExpType:'Semua', filterExpMonth:'', filterExpSort:'date_desc', financeView:'detail',
   searchDoc:'', folderDoc:'Semua',
@@ -2765,8 +2765,9 @@ function researchStatusClass(status){
 function visibleResearchItems(){
   normalizeResearchItems();
   const u = state.user;
-  if(isResearchRole(u)) return state.researchItems.filter(item => !item.userId || item.userId === u.id || item.pic === u.name || item.owner === u.name);
-  return state.researchItems;
+  const active = (state.researchItems || []).filter(item => !item._deleted);
+  if(isResearchRole(u)) return active.filter(item => !item.userId || item.userId === u.id || item.pic === u.name || item.owner === u.name);
+  return active;
 }
 function renderResearchTable(items, compact=false){
   const canEdit = isManagerRole(state.user) || isResearchRole(state.user);
@@ -3068,7 +3069,11 @@ async function deleteResearchItem(id){
   const item = (state.researchItems || []).find(x => x.id === id);
   if(!item) return;
   if(!confirm(`Hapus data riset "${item.title}"?`)) return;
-  state.researchItems = state.researchItems.filter(x => x.id !== id);
+  // Tandai _deleted:true agar backend bisa hapus dari tabel research_items
+  state.researchItems = state.researchItems.map(x => x.id === id
+    ? {...x, _deleted: true, updatedAt: new Date().toISOString(), deletedByName: state.user?.name || ''}
+    : x
+  );
   renderPage();
   await persistDeleteToServer('Data riset dihapus dari server', 'Data riset dihapus lokal, tetapi sync server belum selesai');
 }
@@ -7327,7 +7332,7 @@ file:///Users/macbook/Documents/New project 3/public/index.html
 Di mode file lokal, database/server tidak aktif. CUK AI tidak bisa mengambil file PDF asli dari server walaupun tombolnya terlihat.
 
 Yang harus dilakukan:
-1. Buka https://grcc-dashboard.vercel.app
+1. Buka https://grccdashboard.vercel.app
 2. Login
 3. Upload dokumen dari website production
 4. Klik CUK AI lagi
@@ -7350,7 +7355,7 @@ Dokumen ini belum bisa dibaca langsung dari server${reason ? ` (${reason})` : ''
 Supaya CUK AI bisa merangkum isi dokumen asli, upload ulang dokumen melalui website production sampai statusnya tersimpan ke server.`;
 }
 function showCukAiSummaryResult(doc, summary, model='cuk-ai-preview', cached=false){
-  const fileModeAction = location.protocol === 'file:' ? '<a class="btn btn-pri" href="https://grcc-dashboard.vercel.app" target="_blank">Buka Website Production</a>' : `<button class="btn btn-pri" onclick="runCukAiSummary('${doc.id}', true)">Ringkas Ulang</button>`;
+  const fileModeAction = location.protocol === 'file:' ? '<a class="btn btn-pri" href="https://grccdashboard.vercel.app" target="_blank">Buka Website Production</a>' : `<button class="btn btn-pri" onclick="runCukAiSummary('${doc.id}', true)">Ringkas Ulang</button>`;
   showModal(`CUK AI · ${doc.name}`, `
     ${cukAiHero(summary)}
     <div style="font-size:10px;color:var(--muted);margin-top:10px">Model: ${escHtml(model || '-')} ${cached ? '· dari cache' : ''}</div>
@@ -8681,7 +8686,7 @@ if(state.user && !isProductionRuntime()){
     const el = document.createElement('div');
     el.id = 'file-mode-warning';
     el.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:9999;max-width:min(720px,calc(100vw - 28px));padding:10px 14px;border-radius:12px;background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.36);color:#FBBF24;font-size:12px;font-weight:800;box-shadow:0 12px 34px rgba(0,0,0,.28);text-align:center';
-    el.innerHTML = 'Mode file lokal aktif. Upload, database, audit, dan CUK AI asli hanya berjalan di <a href="https://grcc-dashboard.vercel.app" style="color:#fff;text-decoration:underline">grcc-dashboard.vercel.app</a>';
+    el.innerHTML = 'Mode file lokal aktif. Upload, database, audit, dan CUK AI asli hanya berjalan di <a href="https://grccdashboard.vercel.app" style="color:#fff;text-decoration:underline">grccdashboard.vercel.app</a>';
     document.body.appendChild(el);
     setSyncStatus('Mode file lokal: tidak menyimpan ke server', 'error');
   }

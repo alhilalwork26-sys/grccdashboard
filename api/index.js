@@ -6,7 +6,7 @@ const { handleUpload } = require('@vercel/blob/client');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 
-const SESSION_SECONDS = 2 * 60 * 60;
+const SESSION_SECONDS = 8 * 60 * 60; // 8 jam (sliding window via /api/auth/me)
 const MODULE_TABLES = {
   tasks: 'tasks',
   schedules: 'schedules',
@@ -16,7 +16,8 @@ const MODULE_TABLES = {
   timelineEquity: 'timeline_equity',
   reimburseRequests: 'reimburse_requests',
   rabItems: 'rab_items',
-  notifications: 'notifications'
+  notifications: 'notifications',
+  researchItems: 'research_items'
 };
 const DEFAULT_PERMS = {
   'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','rab','documents','timeline','settings'],
@@ -53,7 +54,7 @@ const EMPTY_STATE = {
   page: 'dashboard',
   taskDetail: null,
   progDetail: null,
-  calMonth: '2026-04-01T00:00:00.000Z',
+  get calMonth() { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString(); },
   filterTaskStatus: 'Semua',
   filterTaskUser: 'Semua',
   searchTask: '',
@@ -72,7 +73,6 @@ const EMPTY_STATE = {
   filterProgramStatus: 'Semua',
   filterProgramTrainer: 'Semua',
   notificationFilter: 'all',
-  researchItems: [],
   timelineEquity: [],
   reimburseRequests: [],
   rabItems: [],
@@ -109,6 +109,10 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 function validateEmail(v) { return EMAIL_RE.test(String(v || '')); }
 function validateName(v)  { const s = String(v || '').trim(); return s.length >= 2 && s.length <= 100; }
 function validatePassword(v) { return String(v || '').length >= 6; }
+function validateUsername(v) {
+  const s = String(v || '').trim();
+  return s.length >= 3 && s.length <= 50 && /^[a-z0-9._-]+$/.test(s);
+}
 
 /* ── Safe table accessor ── */
 const VALID_MODULE_TABLES = new Set(Object.values(MODULE_TABLES));
@@ -150,9 +154,15 @@ function setSessionCookie(res, token, maxAge) {
   res.setHeader('Set-Cookie', `grcc_session=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax;${secure}`);
 }
 
+const MAX_BODY_BYTES = 52 * 1024 * 1024; // 52 MB (sama dengan server.py MAX_BODY)
 async function readBody(req) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let total = 0;
+  for await (const chunk of req) {
+    total += chunk.length;
+    if (total > MAX_BODY_BYTES) throw Object.assign(new Error('Payload terlalu besar (maks 52 MB)'), { statusCode: 413 });
+    chunks.push(chunk);
+  }
   if (!chunks.length) return {};
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
@@ -611,6 +621,25 @@ async function ensureSchema() {
   for (const [role, permissions] of Object.entries(DEFAULT_PERMS)) {
     await sql`INSERT INTO roles (name, permissions, color) VALUES (${role}, ${JSON.stringify(permissions)}, ${DEFAULT_ROLE_COLORS[role] || '#6B7280'}) ON CONFLICT (name) DO NOTHING`;
   }
+  // Migrasi: pindah researchItems dari app_state.payload ke tabel research_items
+  try {
+    const appRow = await sql`SELECT payload FROM app_state WHERE id = 1`;
+    const legacyItems = appRow[0]?.payload?.researchItems;
+    if (Array.isArray(legacyItems) && legacyItems.length > 0) {
+      for (const item of legacyItems) {
+        if (!item || typeof item !== 'object') continue;
+        const id = String(item.id || crypto.randomBytes(8).toString('hex'));
+        item.id = id;
+        await sql.query(
+          `INSERT INTO research_items (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO NOTHING`,
+          [id, JSON.stringify(item)]
+        );
+      }
+      // Hapus researchItems dari app_state payload setelah migrasi
+      await sql`UPDATE app_state SET payload = payload - 'researchItems', updated_at = now() WHERE id = 1`;
+    }
+  } catch (_migErr) { /* abaikan jika kolom belum ada atau data sudah bersih */ }
+
   await sql.query(`UPDATE roles SET permissions = permissions || '["schedule"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'schedule'`);
   await sql.query(`UPDATE roles SET permissions = permissions || '["reimburse"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'reimburse'`);
   await sql.query(`UPDATE roles SET permissions = permissions || '["tasks"]'::jsonb, updated_at = now() WHERE name IN ('Finance','Staff Finance + Dokumen','Kepala Trainer') AND NOT permissions ? 'tasks'`);
@@ -1395,7 +1424,7 @@ async function handle(req, res) {
     const avatarDataUrl = String(body.avatarDataUrl || '');
     let avatarUrl = String(body.avatarUrl || '').trim();
     if (!validateName(name)) return send(res, 400, { error: 'Nama harus 2–100 karakter' });
-    if (!username || username.length > 50) return send(res, 400, { error: 'Username wajib diisi (maks 50 karakter)' });
+    if (!validateUsername(username)) return send(res, 400, { error: 'Username harus 3–50 karakter, hanya huruf kecil, angka, titik, underscore, atau strip (a-z 0-9 . _ -)' });
     if (!validateEmail(email)) return send(res, 400, { error: 'Format email tidak valid' });
     if (!updateId && !validatePassword(password)) return send(res, 400, { error: 'Password minimal 6 karakter' });
     if (password && !validatePassword(password)) return send(res, 400, { error: 'Password minimal 6 karakter' });
@@ -1728,6 +1757,7 @@ module.exports = async (req, res) => {
     await handle(req, res);
   } catch (err) {
     console.error(err);
-    send(res, 500, { error: err.message || 'Server error' });
+    const status = err.statusCode === 413 ? 413 : 500;
+    send(res, status, { error: err.message || 'Server error' });
   }
 };
