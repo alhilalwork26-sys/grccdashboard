@@ -3503,27 +3503,29 @@ function saveTask(editId){
 function normalizeSimpleDailyProgress(){
   if(!Array.isArray(state.dailyProgresses)) state.dailyProgresses = [];
   state.dailyProgresses = state.dailyProgresses.map(item => {
+    /* Item sudah dalam format baru — hanya isi field yang kosong, jangan timpa data valid */
     if(typeof item.morningPlan === 'string' || typeof item.eveningUpdate === 'string') {
       return {
         ...item,
-        morningPlan: item.morningPlan || (Array.isArray(item.morningTodos) ? item.morningTodos.map(t => t.task).filter(Boolean).join(', ') : item.workPlan || ''),
-        eveningUpdate: item.eveningUpdate || (Array.isArray(item.morningTodos) ? item.morningTodos.map(t => t.eveningUpdate).filter(Boolean).join(' ') : item.progressText || ''),
-        blockers: item.blockers || '',
-        tomorrowPlan: item.tomorrowPlan || item.nextPlan || '',
-        morningInputTime: item.morningInputTime || item.updatedAt || new Date().toISOString(),
+        morningPlan: item.morningPlan != null ? item.morningPlan : (Array.isArray(item.morningTodos) ? item.morningTodos.map(t => t.task).filter(Boolean).join(', ') : item.workPlan || ''),
+        eveningUpdate: item.eveningUpdate != null ? item.eveningUpdate : (Array.isArray(item.morningTodos) ? item.morningTodos.map(t => t.eveningUpdate).filter(Boolean).join(' ') : item.progressText || ''),
+        blockers: item.blockers ?? '',
+        tomorrowPlan: item.tomorrowPlan ?? item.nextPlan ?? '',
+        morningInputTime: item.morningInputTime || item.updatedAt || '',
         eveningUpdateTime: item.eveningUpdateTime || '',
         progressStatus: item.progressStatus || deriveProgressStatus(item)
       };
     }
+    /* Item format lama — migrasikan ke format baru tanpa merusak data yang sudah ada */
     return {
       ...item,
-      morningPlan: item.workPlan || '',
-      eveningUpdate: item.progressText || '',
-      blockers: item.blockers || '',
-      tomorrowPlan: item.nextPlan || '',
-      morningInputTime: item.updatedAt || new Date().toISOString(),
-      eveningUpdateTime: '',
-      progressStatus: deriveProgressStatus(item)
+      morningPlan: item.morningPlan ?? item.workPlan ?? '',
+      eveningUpdate: item.eveningUpdate ?? item.progressText ?? '',
+      blockers: item.blockers ?? '',
+      tomorrowPlan: item.tomorrowPlan ?? item.nextPlan ?? '',
+      morningInputTime: item.morningInputTime || item.updatedAt || '',
+      eveningUpdateTime: item.eveningUpdateTime || '',
+      progressStatus: item.progressStatus || deriveProgressStatus(item)
     };
   });
 }
@@ -4479,7 +4481,16 @@ function renderFinanceReimbursePanel(requests=[]){
     </div>` : `<div style="font-size:12px;color:var(--muted)">Belum ada pengajuan reimburse pada periode ini.</div>`}
   </div>`;
 }
-function changeExpStatus(id,status){ state.expenses=state.expenses.map(e=>e.id===id&&!e._deleted?{...e,status,updatedAt:new Date().toISOString()}:e); persistPatched(); toast(`Status diubah ke ${status}`); renderPage(); }
+async function changeExpStatus(id,status){
+  state.expenses=state.expenses.map(e=>e.id===id&&!e._deleted?{...e,status,updatedAt:new Date().toISOString()}:e);
+  persistPatched(); renderPage();
+  try {
+    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    toast(`Status diubah ke ${status}`);
+  } catch(err) {
+    toast(`Status diubah ke ${status} (lokal, sync dicoba ulang)`, 'warning');
+  }
+}
 async function deleteExp(id){
   const exp = activeExpenses().find(e => e.id === id);
   if(!exp) return;
@@ -4607,7 +4618,7 @@ function toggleExpForm(){
   if(vendorInput) vendorInput.placeholder = isMakan ? 'Nama vendor/catering' : 'Nama toko, penerima, atau supplier';
   if(unitWrap) unitWrap.style.display = isMakan ? 'none' : '';
 }
-function saveExp(editId=''){
+async function saveExp(editId=''){
   const activity=document.getElementById('ef-activity').value.trim();
   const date=document.getElementById('ef-date').value;
   if(!activity||!date){toast('Kegiatan dan tanggal wajib diisi','error');return;}
@@ -4622,8 +4633,13 @@ function saveExp(editId=''){
   else delete data.people;
   state.expenses = editId ? state.expenses.map(e => e.id === editId ? {...e,...data} : e) : [...state.expenses,data];
   persistPatched();
-  toast(editId ? 'Pengeluaran berhasil diperbarui' : 'Pengeluaran berhasil disimpan');
   closeModal(); renderPage();
+  try {
+    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    toast(editId ? 'Pengeluaran berhasil diperbarui' : 'Pengeluaran berhasil disimpan');
+  } catch(err) {
+    toast((editId ? 'Pengeluaran diperbarui' : 'Pengeluaran tersimpan') + ' secara lokal, sinkron server sedang dicoba ulang', 'warning');
+  }
 }
 
 async function uploadExpenseInvoice(expenseId, file, options={}){
@@ -5201,7 +5217,15 @@ function reviewReimburse(id, status){
   });
   persistPatched();
   renderPage();
-  toast(status === 'Approved' ? 'Reimburse disetujui' : 'Reimburse ditolak', status === 'Approved' ? 'success' : 'warning');
+  const toastType = status === 'Approved' ? 'success' : 'warning';
+  try {
+    if(typeof window.flushBackendSave === 'function') window.flushBackendSave()
+      .then(() => toast(status === 'Approved' ? 'Reimburse disetujui dan tersimpan' : 'Reimburse ditolak dan tersimpan', toastType))
+      .catch(() => toast((status === 'Approved' ? 'Reimburse disetujui' : 'Reimburse ditolak') + ' (lokal, sync dicoba ulang)', 'warning'));
+    else toast(status === 'Approved' ? 'Reimburse disetujui' : 'Reimburse ditolak', toastType);
+  } catch(err) {
+    toast(status === 'Approved' ? 'Reimburse disetujui' : 'Reimburse ditolak', toastType);
+  }
 }
 function markReimbursePaid(id){
   if(!canReviewReimburse(state.user)){toast('Hanya Finance dan Super Admin yang bisa menandai pembayaran','error');return;}
@@ -5268,7 +5292,12 @@ async function submitReimbursePaid(id){
     persistPatched();
     closeModal();
     renderPage();
-    toast('Bukti pembayaran tersimpan dan reimburse ditandai dibayar', 'success');
+    try {
+      if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+      toast('Bukti pembayaran tersimpan dan reimburse ditandai dibayar', 'success');
+    } catch(saveErr) {
+      toast('Bukti diupload, status tersimpan lokal — sync server sedang dicoba ulang', 'warning');
+    }
   } catch(err) {
     toast(err.message || 'Upload bukti pembayaran gagal', 'error');
   } finally {
@@ -8706,20 +8735,24 @@ if(state.user && !isProductionRuntime()){
     return payload;
   }
 
-  async function saveToBackend(immediate=false){
+  let saveFailedRetryTimer = null;
+
+  /* saveToBackend — returns true on success, false on skip, throws on error */
+  async function saveToBackend(immediate=false, _throwOnError=false){
     if(location.protocol === 'file:'){
       setSyncStatus('Mode file lokal: tidak menyimpan ke server', 'error');
-      return;
+      return false;
     }
-    if(saving && !immediate) return;
+    if(saving && !immediate) return false;
     saving = true;
     window.__grccPendingBackendSave = false;
     window.__grccSavingToBackend = true;
+    clearTimeout(saveFailedRetryTimer);
     const dot = document.getElementById('sync-dot');
     if(dot){ clearTimeout(dot._hideTimer); dot.setAttribute('data-sync','saving'); }
     try {
       const body = JSON.stringify({state: statePayload()});
-      if(!immediate && body === lastBackendPayload) return;
+      if(!immediate && body === lastBackendPayload) return false;
       const res = await fetch(API.state, {
         method: 'PUT',
         credentials: 'same-origin',
@@ -8729,16 +8762,25 @@ if(state.user && !isProductionRuntime()){
       if(res.status === 401) {
         if(typeof window.forceSessionExpiredLogout === 'function') window.forceSessionExpiredLogout();
         else setSyncStatus('Login diperlukan untuk menyimpan ke server', 'info');
-        return;
+        return false;
       }
       if(!res.ok) throw new Error('HTTP ' + res.status);
       const saved = await res.json().catch(() => ({}));
       if(saved.savedAt) window.__grccLastServerMarker = saved.savedAt;
       lastBackendPayload = body;
       setSyncStatus('Data dashboard tersimpan', 'success');
+      return true;
     } catch(err) {
       console.warn('sinkronisasi backend gagal', err);
-      setSyncStatus('Mode lokal: server tidak tersambung', 'error');
+      setSyncStatus('Data belum tersimpan ke server, mencoba ulang...', 'error');
+      /* Tandai pending agar auto-sync tidak overwrite data lokal yang belum tersimpan */
+      window.__grccPendingBackendSave = true;
+      /* Jadwalkan retry otomatis 12 detik lagi */
+      saveFailedRetryTimer = setTimeout(() => {
+        if(window.__grccPendingBackendSave) saveToBackend(false);
+      }, 12000);
+      if(_throwOnError) throw err;
+      return false;
     } finally {
       saving = false;
       window.__grccSavingToBackend = false;
@@ -8756,10 +8798,13 @@ if(state.user && !isProductionRuntime()){
     localPersist();
     scheduleBackendSave();
   };
-  window.flushBackendSave = function(){
+
+  /* flushBackendSave: immediate save, melempar error jika gagal */
+  window.flushBackendSave = async function(){
     clearTimeout(saveTimer);
     window.__grccPendingBackendSave = false;
-    return saveToBackend(true);
+    const ok = await saveToBackend(true, true); // _throwOnError=true
+    return ok;
   };
 
   async function loadFromBackend(){
@@ -9399,6 +9444,9 @@ if(state.user && !isProductionRuntime()){
     }, reason === 'timer' ? 650 : 250);
   }
 
+  /* Kunci modul yang isinya tidak boleh ditimpa server jika ada pending local save */
+  const DATA_MODULE_KEYS = ['expenses','reimburseRequests','dailyProgresses','rabItems','timelineEquity','researchItems','programs','tasks','schedules','notifications'];
+
   function applyAutoSyncPayload(payload, reason){
     const serverState = payload?.state || payload;
     if(!serverState || typeof serverState !== 'object') return false;
@@ -9412,6 +9460,9 @@ if(state.user && !isProductionRuntime()){
       return false;
     }
 
+    /* Jika ada data lokal yang belum tersimpan ke server, jangan timpa modul data */
+    const hasPendingLocalSave = Boolean(window.__grccPendingBackendSave);
+
     const currentUserId = state.user?.id || (!isProductionRuntime() ? localStorage.getItem(STORAGE_KEYS_PATCH.session) : '') || '';
     const beforeSignature = pageSyncSignature();
 
@@ -9422,7 +9473,14 @@ if(state.user && !isProductionRuntime()){
     ensureRequiredRolePerms();
     if(serverState.roleColors && typeof serverState.roleColors === 'object') replaceObject(ROLE_COLORS, serverState.roleColors);
 
-    Object.assign(state, cleanServerStateForClient(serverState));
+    const clientState = cleanServerStateForClient(serverState);
+
+    if(hasPendingLocalSave) {
+      /* Hanya apply metadata (accounts, permissions, non-module state), jangan timpa data modul */
+      DATA_MODULE_KEYS.forEach(key => delete clientState[key]);
+    }
+
+    Object.assign(state, clientState);
     delete state.accounts;
     delete state.permissions;
     delete state.roleColors;
@@ -9437,7 +9495,6 @@ if(state.user && !isProductionRuntime()){
     if(canRenderNow) scheduleSmoothSyncRender(reason);
     if(typeof safeRefreshNotifications === 'function') safeRefreshNotifications();
 
-    /* intentionally silent — sync dot in header is the only indicator */
     bootstrapped = true;
     return true;
   }
