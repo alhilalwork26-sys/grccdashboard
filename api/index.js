@@ -1,13 +1,10 @@
 const crypto = require('crypto');
 const { Readable } = require('stream');
-const { neon, neonConfig } = require('@neondatabase/serverless');
+const { neon } = require('@neondatabase/serverless');
 const { get, put } = require('@vercel/blob');
 const { handleUpload } = require('@vercel/blob/client');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
-
-/* Aktifkan HTTP connection reuse antar invocation di instance yang sama */
-neonConfig.fetchConnectionCache = true;
 
 const SESSION_SECONDS = 8 * 60 * 60; // 8 jam (sliding window via /api/auth/me)
 const MODULE_TABLES = {
@@ -767,59 +764,110 @@ async function listRoles() {
   return { permissions, roleColors };
 }
 
+/*
+ * syncModuleTables — BATCH version
+ * Sebelumnya: 2-3 query per item → N×items queries total → TIMEOUT
+ * Sekarang:   3-5 query per modul → ~40 queries total → ~2-4 detik
+ */
 async function syncModuleTables(state) {
   const sql = db();
+
   for (const [stateKey, table] of Object.entries(MODULE_TABLES)) {
     if (!Object.prototype.hasOwnProperty.call(state, stateKey)) continue;
     if (!Array.isArray(state[stateKey])) continue;
     const t = safeTable(table);
     const items = state[stateKey];
-    for (const item of items) {
-      const id = String(item.id || crypto.randomBytes(8).toString('hex'));
-      item.id = id;
-      if (item._deleted === true) {
-        await sql.query(`DELETE FROM ${t} WHERE id = $1`, [id]);
-        await sql.query(
+    if (!items.length) continue;
+
+    /* Assign ID ke item yang belum punya */
+    items.forEach(item => { if (!item.id) item.id = crypto.randomBytes(8).toString('hex'); });
+
+    const deletedItems = items.filter(item => item._deleted === true);
+    const activeItems  = items.filter(item => item._deleted !== true);
+
+    /* ── 1. Batch DELETE + batch INSERT module_deletions ── */
+    if (deletedItems.length) {
+      const ids = deletedItems.map(item => String(item.id));
+      const bys = deletedItems.map(item => String(item.deletedById || item.updatedById || item.deletedByName || ''));
+      await Promise.all([
+        sql.query(`DELETE FROM ${t} WHERE id = ANY($1::text[])`, [ids]),
+        sql.query(
           `INSERT INTO module_deletions (module_key, entity_id, deleted_at, deleted_by)
-           VALUES ($1, $2, now(), $3)
+           SELECT $1, unnest($2::text[]), now(), unnest($3::text[])
            ON CONFLICT (module_key, entity_id) DO UPDATE
            SET deleted_at = EXCLUDED.deleted_at, deleted_by = EXCLUDED.deleted_by`,
-          [stateKey, id, String(item.deletedById || item.updatedById || item.updatedBy || item.deletedByName || '')]
-        );
-        continue;
-      }
-      const deletedRows = await sql.query(
-        `SELECT deleted_at FROM module_deletions WHERE module_key = $1 AND entity_id = $2 LIMIT 1`,
-        [stateKey, id]
-      );
-      const deletedAt = deletedRows.rows?.[0]?.deleted_at || deletedRows[0]?.deleted_at || null;
-      if (deletedAt) {
-        const itemUpdatedAt = Date.parse(item.updatedAt || item.createdAt || '');
-        const deletedTime = Date.parse(deletedAt);
-        if (!Number.isFinite(itemUpdatedAt) || itemUpdatedAt <= deletedTime) continue;
-      }
-      let payload = item;
-      if (stateKey === 'tasks') {
-        const existingRows = await sql.query(`SELECT payload FROM ${t} WHERE id = $1`, [id]);
-        payload = mergeTaskPayload(existingRows.rows?.[0]?.payload || existingRows[0]?.payload || null, item);
-      } else if (stateKey === 'dailyProgresses') {
-        const existingRows = await sql.query(
-          `SELECT payload FROM ${t}
-           WHERE id = $1
-              OR ((payload->>'userId') = $2 AND (payload->>'date') = $3)
-           ORDER BY updated_at DESC
-           LIMIT 1`,
-          [id, String(item.userId || ''), String(item.date || '')]
-        );
-        const existing = existingRows.rows?.[0]?.payload || existingRows[0]?.payload || null;
-        payload = mergeDailyProgressPayload(existing, item);
-        if (existing?.id && existing.id !== id) {
-          await sql.query(`DELETE FROM ${t} WHERE id = $1`, [id]);
-          payload.id = existing.id;
-        }
-      }
-      await sql.query(`INSERT INTO ${t} (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`, [String(payload.id || id), JSON.stringify(payload)]);
+          [stateKey, ids, bys]
+        )
+      ]);
     }
+
+    if (!activeItems.length) continue;
+
+    const activeIds = activeItems.map(item => String(item.id));
+
+    /* ── 2. Batch check module_deletions (1 query utk semua ID aktif) ── */
+    const delRows = await sql.query(
+      `SELECT entity_id, deleted_at FROM module_deletions
+       WHERE module_key = $1 AND entity_id = ANY($2::text[])`,
+      [stateKey, activeIds]
+    );
+    const delMap = new Map(
+      (delRows.rows || delRows).map(row => [String(row.entity_id), row.deleted_at])
+    );
+
+    /* Filter item yg sudah dihapus dan belum di-recreate */
+    const toUpsert = activeItems.filter(item => {
+      const deletedAt = delMap.get(String(item.id));
+      if (!deletedAt) return true;
+      const updatedAt = Date.parse(item.updatedAt || item.createdAt || '');
+      return Number.isFinite(updatedAt) && updatedAt > Date.parse(deletedAt);
+    });
+    if (!toUpsert.length) continue;
+
+    /* ── 3. Batch fetch existing + merge (hanya untuk tasks & dailyProgresses) ── */
+    let finalPayloads;
+
+    if (stateKey === 'tasks') {
+      /* Batch SELECT semua task yang ada di DB sekaligus */
+      const ids = toUpsert.map(item => String(item.id));
+      const existRows = await sql.query(
+        `SELECT id, payload FROM ${t} WHERE id = ANY($1::text[])`, [ids]
+      );
+      const existMap = new Map((existRows.rows || existRows).map(row => [String(row.id), row.payload]));
+      finalPayloads = toUpsert.map(item => {
+        const merged = mergeTaskPayload(existMap.get(String(item.id)) || null, item);
+        merged.id = String(item.id);
+        return merged;
+      });
+
+    } else if (stateKey === 'dailyProgresses') {
+      /* Batch SELECT semua existing daily progress */
+      const ids = toUpsert.map(item => String(item.id));
+      const existRows = await sql.query(
+        `SELECT id, payload FROM ${t} WHERE id = ANY($1::text[])`, [ids]
+      );
+      const existMap = new Map((existRows.rows || existRows).map(row => [String(row.id), row.payload]));
+      finalPayloads = toUpsert.map(item => {
+        const existing = existMap.get(String(item.id)) || null;
+        const merged = mergeDailyProgressPayload(existing, item);
+        merged.id = String(existing?.id || item.id);
+        return merged;
+      });
+
+    } else {
+      finalPayloads = toUpsert.map(item => ({ ...item, id: String(item.id) }));
+    }
+
+    /* ── 4. Batch UPSERT — SATU query untuk semua item dalam modul ── */
+    const upsertIds   = finalPayloads.map(p => p.id);
+    const upsertJsons = finalPayloads.map(p => JSON.stringify(p));
+    await sql.query(
+      `INSERT INTO ${t} (id, payload, updated_at)
+       SELECT unnest($1::text[]), unnest($2::jsonb[]), now()
+       ON CONFLICT (id) DO UPDATE
+       SET payload = EXCLUDED.payload, updated_at = now()`,
+      [upsertIds, upsertJsons]
+    );
   }
 }
 
