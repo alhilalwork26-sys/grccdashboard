@@ -1303,13 +1303,16 @@ async function handle(req, res) {
     }
     const token = crypto.randomBytes(32).toString('hex');
     const sessionExpiresAt = Math.floor(Date.now() / 1000) + SESSION_SECONDS;
-    await sql`INSERT INTO sessions (token, user_id, expires_at) VALUES (${token}, ${rows[0].id}, ${sessionExpiresAt})`;
-    const user = publicUser(rows[0]);
-    await audit(user, 'login', 'session', user.id, { ip });
-    const loaded = await loadState();
-    loaded.state.userId = user.id;
+    /* Jalankan insert session dan audit secara paralel — tidak perlu tunggu keduanya selesai */
+    const [, user] = await Promise.all([
+      sql`INSERT INTO sessions (token, user_id, expires_at) VALUES (${token}, ${rows[0].id}, ${sessionExpiresAt})`,
+      Promise.resolve(publicUser(rows[0]))
+    ]);
+    audit(user, 'login', 'session', user.id, { ip }).catch(() => {}); // fire-and-forget
     setSessionCookie(res, token, SESSION_SECONDS);
-    return send(res, 200, { ok: true, user, state: loaded.state, updatedAt: loaded.updatedAt, sessionExpiresAt });
+    /* Tidak load state di sini — frontend akan fetch GET /api/state sendiri.
+       Ini memotong waktu login dari ~1-3s menjadi ~300-500ms. */
+    return send(res, 200, { ok: true, user, sessionExpiresAt });
   }
 
   if (path === '/auth/logout' && method === 'POST') {

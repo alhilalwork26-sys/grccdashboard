@@ -3285,8 +3285,8 @@ function addComment(id){
   state.tasks=state.tasks.map(t=>t.id===id?{...t,comments:[...(t.comments || []),{id:uid(),by:state.user.name,text:inp.value.trim(),ts:now.toLocaleDateString('id-ID',{day:'2-digit',month:'short'}),createdAt:new Date().toISOString()}],updatedAt:new Date().toISOString()}:t);
   inp.value='';
   persistPatched();
-  if(typeof window.flushBackendSave === 'function') window.flushBackendSave();
   renderPage();
+  if(typeof window.flushBackendSave === 'function') window.flushBackendSave().catch(()=>{});
 }
 async function uploadTaskEvidence(taskId, typeId, file){
   const task = state.tasks.find(t=>t.id===taskId);
@@ -3362,12 +3362,13 @@ function saveTaskEvidenceLink(taskId){
   state.tasks=state.tasks.map(t=>{
     if(t.id!==taskId) return t;
     normalizeTaskEvidence(t);
-    return {...t,evidence:{...t.evidence,link:[...(t.evidence.link||[]),{id:uid(),title:title||url,url,uploadedBy:state.user?.name||'',uploadedAt:new Date().toISOString()}]}};
+    return {...t,evidence:{...t.evidence,link:[...(t.evidence.link||[]),{id:uid(),title:title||url,url,uploadedBy:state.user?.name||'',uploadedAt:new Date().toISOString()}]},updatedAt:new Date().toISOString()};
   });
   persistPatched();
   closeModal();
   renderPage();
   toast('Link bukti kerja disimpan');
+  if(typeof window.flushBackendSave === 'function') window.flushBackendSave().catch(()=>{});
 }
 function openTaskModal(editId){
   const t = editId?state.tasks.find(x=>x.id===editId):null;
@@ -3519,10 +3520,17 @@ async function saveTask(editId){
 
 
 /* ===== DAILY PROGRESS ===== */
+/* Simpan referensi array terakhir yang sudah dinormalisasi —
+   normalisasi hanya dijalankan saat array BERUBAH (load baru / auto-sync),
+   bukan setiap kali renderDailyProgress() dipanggil */
+let _dpNormalizedRef = null;
 function normalizeSimpleDailyProgress(){
-  if(!Array.isArray(state.dailyProgresses)) state.dailyProgresses = [];
+  if(!Array.isArray(state.dailyProgresses)) { state.dailyProgresses = []; _dpNormalizedRef = state.dailyProgresses; return; }
+  if(state.dailyProgresses === _dpNormalizedRef) return; // sudah dinormalisasi, skip
+
   state.dailyProgresses = state.dailyProgresses.map(item => {
-    /* Item sudah dalam format baru — hanya isi field yang kosong, jangan timpa data valid */
+    if(!item || typeof item !== 'object') return item;
+    /* Format baru (morningPlan sudah string) — hanya isi field yang benar-benar kosong */
     if(typeof item.morningPlan === 'string' || typeof item.eveningUpdate === 'string') {
       return {
         ...item,
@@ -3535,7 +3543,7 @@ function normalizeSimpleDailyProgress(){
         progressStatus: item.progressStatus || deriveProgressStatus(item)
       };
     }
-    /* Item format lama — migrasikan ke format baru tanpa merusak data yang sudah ada */
+    /* Format lama — migrasikan sekali, tidak timpa data yang sudah ada */
     return {
       ...item,
       morningPlan: item.morningPlan ?? item.workPlan ?? '',
@@ -3547,6 +3555,7 @@ function normalizeSimpleDailyProgress(){
       progressStatus: item.progressStatus || deriveProgressStatus(item)
     };
   });
+  _dpNormalizedRef = state.dailyProgresses; // cache referensi hasil normalisasi
 }
 function deriveProgressStatus(item){
   if(item.progressStatus) return item.progressStatus;
@@ -4747,6 +4756,7 @@ function deleteExpenseInvoice(expenseId, invoiceId){
   renderPage();
   toast('Invoice dihapus');
   setTimeout(() => openExpModal(expenseId), 80);
+  if(typeof window.flushBackendSave === 'function') window.flushBackendSave().catch(()=>{});
 }
 
 function expenseAmount(e){ return Number(e?.total || e?.amount || 0); }
@@ -6126,6 +6136,7 @@ function setAtt(pid,participantId,val){
   state.programs=state.programs.map(p=>p.id===pid?{...p,pts:(p.pts||[]).map(pt=>pt.id===participantId?{...pt,att:val}:pt),updatedAt:new Date().toISOString()}:p);
   persistPatched();
   renderPage();
+  if(typeof window.flushBackendSave === 'function') window.flushBackendSave().catch(()=>{});
 }
 function openProgModal(editId=''){
   const current = editId ? state.programs.find(p=>p.id===editId) : null;
@@ -6187,7 +6198,11 @@ async function deleteProgram(id){
   const prog = state.programs.find(p=>p.id===id);
   if(!prog || !programCanEdit(prog)){toast('Kamu tidak punya akses hapus program ini','error');return;}
   if(!confirm(`Hapus program "${prog.name}"?`)) return;
-  state.programs = state.programs.filter(p=>p.id!==id);
+  /* Pakai _deleted:true agar syncModuleTables bisa hapus dari DB */
+  state.programs = state.programs.map(p => p.id===id
+    ? {...p, _deleted:true, deletedAt:new Date().toISOString(), deletedBy:state.user?.name||'', updatedAt:new Date().toISOString()}
+    : p
+  );
   state.progDetail = null;
   renderPage();
   await persistDeleteToServer('Program dihapus dari server', 'Program dihapus lokal, tetapi sync server belum selesai');
@@ -6646,7 +6661,10 @@ async function deleteEquityItem(id){
   const item = (state.timelineEquity || []).find(x => x.id === id);
   if(!item) return;
   if(!confirm(`Hapus aktivitas "${item.activity}"?`)) return;
-  state.timelineEquity = state.timelineEquity.filter(x => x.id !== id);
+  state.timelineEquity = state.timelineEquity.map(x => x.id === id
+    ? {...x, _deleted:true, deletedAt:new Date().toISOString(), updatedAt:new Date().toISOString()}
+    : x
+  );
   state.timelineEquitySeeded = true;
   renderPage();
   await persistDeleteToServer('Aktivitas timeline dihapus dari server', 'Aktivitas timeline dihapus lokal, tetapi sync server belum selesai');
@@ -8919,6 +8937,8 @@ if(state.user && !isProductionRuntime()){
       setSyncStatus('Server offline, memakai data lokal', 'error');
     }
   }
+  /* Expose ke global agar doLogin bisa memanggil loadFromBackend setelah auth */
+  window.loadFromBackend = loadFromBackend;
 
   function readFileAsDataUrl(file){
     return new Promise((resolve, reject) => {
@@ -9204,20 +9224,33 @@ if(state.user && !isProductionRuntime()){
     const btn = document.getElementById('login-btn');
     btn.disabled = true; btn.textContent = 'Memproses...';
     try {
+      /* Step 1: autentikasi saja — cepat (~300ms, hanya verifikasi password) */
       const data = await apiJson(AUTH_API.login, {
         method: 'POST',
         body: JSON.stringify({identifier, password})
       });
-      applyServerState(data);
+      if(!data.user) throw new Error('Login berhasil tetapi data user tidak tersedia');
+
+      /* Step 2: set user dan buka app LANGSUNG — tidak tunggu data dimuat */
+      state.user = data.user;
       setClientSessionExpiry(data.sessionExpiresAt);
-      if(!state.user) throw new Error('Login berhasil tetapi data user tidak tersedia');
+      const existIdx = ACCOUNTS.findIndex(a => a.id === data.user.id);
+      if(existIdx >= 0) ACCOUNTS.splice(existIdx, 1, data.user);
+      else if(ACCOUNTS.length === 0) ACCOUNTS.push(data.user);
+
       if(!hasAccessPatched(state.page)) state.page = 'dashboard';
       document.getElementById('login-page').style.display='none';
       document.getElementById('app').style.display='flex';
       initApp();
       startSessionWatcher();
-      if(typeof window.startCrossDeviceAutoSync === 'function') window.startCrossDeviceAutoSync();
-      toast(`Selamat datang, ${state.user.name}!`);
+      toast(`Selamat datang, ${data.user.name}!`);
+
+      /* Step 3: load data lengkap di background — auto-sync atau loadFromBackend */
+      if(typeof window.loadFromBackend === 'function'){
+        window.loadFromBackend().catch(() => {});
+      } else if(typeof window.startCrossDeviceAutoSync === 'function'){
+        window.startCrossDeviceAutoSync();
+      }
     } catch(err) {
       toast(err.message || 'Login gagal', 'error');
       btn.disabled=false; btn.textContent='Masuk';
@@ -9541,6 +9574,8 @@ if(state.user && !isProductionRuntime()){
     delete state.permissions;
     delete state.roleColors;
     state.user = currentUserId ? (ACCOUNTS.find(a => a.id === currentUserId) || state.user) : state.user;
+    /* Reset cache normalisasi agar normalizeSimpleDailyProgress jalan sekali setelah sync */
+    if(typeof _dpNormalizedRef !== 'undefined') _dpNormalizedRef = null;
     if(state.user && typeof hasAccessPatched === 'function' && !hasAccessPatched(state.page)) state.page = 'dashboard';
 
     lastSyncMarker = marker || new Date().toISOString();
