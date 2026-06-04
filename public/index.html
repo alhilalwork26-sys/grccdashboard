@@ -3254,16 +3254,21 @@ function renderTaskDetail(){
 }
 
 function openTaskDetail(id){ state.taskDetail=id; renderPage(); }
-function updateTaskStatus(id,status){
+async function updateTaskStatus(id,status){
   const task = state.tasks.find(t=>t.id===id);
   if(status === 'Done' && task && !taskEvidenceComplete(task)){
     toast(`Bukti wajib belum lengkap: ${missingTaskEvidenceLabels(task).join(', ')}`, 'error');
     return;
   }
-  state.tasks=state.tasks.map(t=>t.id===id?{...t,status,updatedAt:new Date().toISOString()}:t);
+  state.tasks=state.tasks.map(t=>t.id===id?{...t,status,updatedAt:new Date().toISOString(),updatedBy:state.user?.name||''}:t);
   persistPatched();
-  toast(`Status diubah ke ${status}`);
   renderPage();
+  try {
+    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    toast(`Status diubah ke ${status}`);
+  } catch(err) {
+    toast(`Status diubah ke ${status} (lokal, sync dicoba ulang)`, 'warning');
+  }
 }
 async function deleteTask(id){
   const task = state.tasks.find(t=>t.id===id);
@@ -3435,7 +3440,7 @@ function openTaskModal(editId){
     </div>`;
   showModal(editId?'Edit Task':'Tambah Task Baru', html, 560);
 }
-function saveTask(editId){
+async function saveTask(editId){
   const title=document.getElementById('tf-title').value.trim();
   if(!title){toast('Judul task wajib diisi','error');return;}
 
@@ -3444,6 +3449,7 @@ function saveTask(editId){
   const deadline=document.getElementById('tf-deadline').value;
   const desc=document.getElementById('tf-desc').value;
   const requiredEvidence = Array.from(document.querySelectorAll('.tf-evidence-required:checked')).map(el=>el.value);
+  const now = new Date().toISOString();
 
   if(editId){
     const aId=document.getElementById('tf-assignee').value;
@@ -3453,11 +3459,16 @@ function saveTask(editId){
       toast(`Bukti wajib belum lengkap: ${missingTaskEvidenceLabels({...existingTask, requiredEvidence}).join(', ')}`, 'error');
       return;
     }
-    const data={title,status,priority,assignee:acc?.name||'',aId,deadline,desc,requiredEvidence};
+    const data={title,status,priority,assignee:acc?.name||'',aId,deadline,desc,requiredEvidence,updatedAt:now,updatedBy:state.user?.name||''};
     state.tasks=state.tasks.map(t=>t.id===editId?{...t,...data}:t);
     persistPatched();
-    toast('Task berhasil diperbarui');
     closeModal(); renderPage();
+    try {
+      if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+      toast('Task berhasil diperbarui');
+    } catch(err) {
+      toast('Task diperbarui secara lokal, sync server sedang dicoba ulang', 'warning');
+    }
     return;
   }
 
@@ -3488,14 +3499,22 @@ function saveTask(editId){
       desc,
       requiredEvidence,
       evidence:{photo:[],invoice:[],document:[],report:[],link:[]},
-      comments:[]
+      comments:[],
+      createdAt:now,
+      updatedAt:now,
+      createdBy:state.user?.name||''
     };
   });
 
   state.tasks=[...state.tasks, ...newTasks];
   persistPatched();
-  toast(newTasks.length > 1 ? `${newTasks.length} task baru berhasil ditambahkan` : 'Task baru ditambahkan');
   closeModal(); renderPage();
+  try {
+    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    toast(newTasks.length > 1 ? `${newTasks.length} task baru berhasil ditambahkan` : 'Task baru ditambahkan');
+  } catch(err) {
+    toast('Task tersimpan lokal, sync server sedang dicoba ulang', 'warning');
+  }
 }
 
 
@@ -4071,10 +4090,19 @@ function saveSchedule(editId){
     updatedByName:state.user.name,
     updatedAt:new Date().toISOString()
   };
-  if(editId){state.schedules=state.schedules.map(s=>s.id===editId?{...s,...data}:s);toast('Jadwal diperbarui');}
-  else{state.schedules=[...state.schedules,{...data,id:uid(),createdAt:new Date().toISOString()}];toast('Jadwal ditambahkan');}
+  const isEdit = Boolean(editId);
+  if(isEdit){state.schedules=state.schedules.map(s=>s.id===editId?{...s,...data}:s);}
+  else{state.schedules=[...state.schedules,{...data,id:uid(),createdAt:new Date().toISOString()}];}
   persistPatched();
   closeModal(); renderPage();
+  (async()=>{
+    try {
+      if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+      toast(isEdit ? 'Jadwal diperbarui' : 'Jadwal ditambahkan');
+    } catch(err) {
+      toast((isEdit ? 'Jadwal diperbarui' : 'Jadwal ditambahkan') + ' (lokal, sync dicoba ulang)', 'warning');
+    }
+  })();
 }
 
 /* ===== FINANCE ===== */
@@ -5806,14 +5834,26 @@ function saveRab(editId=''){
   persistPatched();
   closeModal();
   renderPage();
-  toast(warnings.length ? 'RAB tersimpan, tetapi ada warning angka yang perlu dicek' : 'RAB berhasil disimpan', warnings.length ? 'warning' : 'success');
+  (async()=>{
+    try {
+      if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+      toast(warnings.length ? 'RAB tersimpan (ada warning angka)' : 'RAB berhasil disimpan', warnings.length ? 'warning' : 'success');
+    } catch(err) {
+      toast('RAB tersimpan lokal, sync server sedang dicoba ulang', 'warning');
+    }
+  })();
 }
-function setRabStatus(id, status){
+async function setRabStatus(id, status){
   if(!canAccessRab()) return;
   state.rabItems = state.rabItems.map(r => r.id === id ? {...r,status,updatedAt:new Date().toISOString(),updatedBy:state.user?.name || ''} : r);
   persistPatched();
   renderPage();
-  toast(`Status RAB menjadi ${status}`, status === 'Approved' ? 'success' : 'info');
+  try {
+    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    toast(`Status RAB menjadi ${status}`, status === 'Approved' ? 'success' : 'info');
+  } catch(err) {
+    toast(`Status RAB menjadi ${status} (lokal, sync dicoba ulang)`, 'warning');
+  }
 }
 async function deleteRab(id){
   if(!canAccessRab()) return;
@@ -6120,23 +6160,28 @@ function openProgModal(editId=''){
     </div>`;
   showModal(current ? 'Edit Program' : 'Tambah Program', html, 520);
 }
-function saveProg(editId=''){
+async function saveProg(editId=''){
   if(!isManagerRole(state.user) && !isTrainerRole(state.user)){toast('Role kamu belum bisa membuat program','error');return;}
   const name=document.getElementById('pf-name').value.trim();
   const date=document.getElementById('pf-date').value;
   if(!name||!date){toast('Nama dan tanggal wajib diisi','error');return;}
   const tId=document.getElementById('pf-trainer').value;
   const acc=ACCOUNTS.find(a=>a.id===tId);
+  const isEdit = Boolean(editId);
   const data={name,batch:document.getElementById('pf-batch').value,date,end:document.getElementById('pf-end').value,trainer:acc?.name||'',tId,status:document.getElementById('pf-status').value,updatedAt:new Date().toISOString()};
-  if(editId){
+  if(isEdit){
     state.programs=state.programs.map(p=>p.id===editId?{...p,...data}:p);
-    toast('Program diperbarui');
   } else {
     state.programs=[...state.programs,{...data,id:uid(),pts:[],mats:[],createdAt:new Date().toISOString()}];
-    toast('Program ditambahkan');
   }
   persistPatched();
   closeModal(); renderPage();
+  try {
+    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    toast(isEdit ? 'Program diperbarui' : 'Program ditambahkan');
+  } catch(err) {
+    toast((isEdit ? 'Program diperbarui' : 'Program ditambahkan') + ' (lokal, sync dicoba ulang)', 'warning');
+  }
 }
 async function deleteProgram(id){
   const prog = state.programs.find(p=>p.id===id);
@@ -6164,7 +6209,7 @@ function openParticipantModal(programId, participantId=''){
     </div>`;
   showModal(pt ? 'Edit Peserta' : 'Tambah Peserta', html, 560);
 }
-function saveParticipant(programId, participantId=''){
+async function saveParticipant(programId, participantId=''){
   const name=document.getElementById('pp-name')?.value.trim();
   if(!name){toast('Nama peserta wajib diisi','error');return;}
   const item={id:participantId || uid(),name,email:document.getElementById('pp-email')?.value.trim()||'',phone:document.getElementById('pp-phone')?.value.trim()||'',note:document.getElementById('pp-note')?.value.trim()||'',att:null};
@@ -6174,7 +6219,13 @@ function saveParticipant(programId, participantId=''){
     return {...p,pts:participantId?pts.map(pt=>pt.id===participantId?{...pt,...item,att:pt.att}:pt):[...pts,item],updatedAt:new Date().toISOString()};
   });
   persistPatched();
-  closeModal(); renderPage(); toast(participantId?'Peserta diperbarui':'Peserta ditambahkan');
+  closeModal(); renderPage();
+  try {
+    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    toast(participantId ? 'Peserta diperbarui' : 'Peserta ditambahkan');
+  } catch(err) {
+    toast((participantId ? 'Peserta diperbarui' : 'Peserta ditambahkan') + ' (lokal, sync dicoba ulang)', 'warning');
+  }
 }
 async function deleteParticipant(programId, participantId){
   const prog = state.programs.find(p=>p.id===programId);
@@ -6567,7 +6618,7 @@ function openEquityModal(editId=''){
     </div>`;
   showModal(editId ? 'Edit Timeline Equity' : 'Tambah Timeline Equity', html, 620);
 }
-function saveEquityItem(editId=''){
+async function saveEquityItem(editId=''){
   const activity = document.getElementById('eq-activity')?.value.trim();
   const owner = document.getElementById('eq-owner')?.value || state.user?.name || 'Riset';
   const status = document.getElementById('eq-status')?.value || 'Planned';
@@ -6577,14 +6628,19 @@ function saveEquityItem(editId=''){
   const note = document.getElementById('eq-note')?.value.trim();
   if(!activity){ toast('Aktivitas wajib diisi', 'error'); return; }
   if(endWeek < startWeek){ toast('Minggu selesai tidak boleh sebelum minggu mulai', 'error'); return; }
-  const data = {activity, owner, status, startWeek, endWeek, marker, note};
+  const data = {activity, owner, status, startWeek, endWeek, marker, note, updatedAt: new Date().toISOString()};
   if(editId) state.timelineEquity = state.timelineEquity.map(item => item.id === editId ? {...item, ...data} : item);
-  else state.timelineEquity = [...state.timelineEquity, {id:uid(), ...data}];
+  else state.timelineEquity = [...state.timelineEquity, {id:uid(), createdAt: new Date().toISOString(), ...data}];
   state.timelineEquitySeeded = true;
   persistPatched();
   closeModal();
   renderPage();
-  toast(editId ? 'Timeline diperbarui' : 'Aktivitas timeline ditambahkan');
+  try {
+    if(typeof window.flushBackendSave === 'function') await window.flushBackendSave();
+    toast(editId ? 'Timeline diperbarui' : 'Aktivitas timeline ditambahkan');
+  } catch(err) {
+    toast((editId ? 'Timeline diperbarui' : 'Aktivitas ditambahkan') + ' (lokal, sync dicoba ulang)', 'warning');
+  }
 }
 async function deleteEquityItem(id){
   const item = (state.timelineEquity || []).find(x => x.id === id);
