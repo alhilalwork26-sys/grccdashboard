@@ -785,11 +785,13 @@ async function syncModuleTables(state) {
     const deletedItems = items.filter(item => item._deleted === true);
     const activeItems  = items.filter(item => item._deleted !== true);
 
-    /* ── 1. Batch DELETE + batch INSERT module_deletions ── */
+    /* ── 1. Batch DELETE + batch INSERT module_deletions (atomic) ── */
     if (deletedItems.length) {
       const ids = deletedItems.map(item => String(item.id));
       const bys = deletedItems.map(item => String(item.deletedById || item.updatedById || item.deletedByName || ''));
-      await Promise.all([
+      /* Jalankan dalam satu transaction agar tidak ada state inconsistent
+         (item terhapus tapi tidak ada record di module_deletions atau sebaliknya) */
+      await sql.transaction([
         sql.query(`DELETE FROM ${t} WHERE id = ANY($1::text[])`, [ids]),
         sql.query(
           `INSERT INTO module_deletions (module_key, entity_id, deleted_at, deleted_by)
@@ -841,13 +843,26 @@ async function syncModuleTables(state) {
       });
 
     } else if (stateKey === 'dailyProgresses') {
-      /* Batch SELECT semua existing daily progress */
-      const ids = toUpsert.map(item => String(item.id));
+      /* Dedup client items by userId+date — ambil yang paling baru */
+      const dedupMap = new Map();
+      for (const item of toUpsert) {
+        const key = `${item.userId||''}|${item.date||''}`;
+        const existing = dedupMap.get(key);
+        if (!existing) { dedupMap.set(key, item); continue; }
+        const existTime = Date.parse(existing.updatedAt || '');
+        const itemTime  = Date.parse(item.updatedAt || '');
+        if (!Number.isFinite(existTime) || (Number.isFinite(itemTime) && itemTime > existTime)) {
+          dedupMap.set(key, mergeDailyProgressPayload(existing, item));
+        }
+      }
+      const dedupedItems = [...dedupMap.values()];
+      /* Batch SELECT existing dari DB */
+      const ids = dedupedItems.map(item => String(item.id));
       const existRows = await sql.query(
         `SELECT id, payload FROM ${t} WHERE id = ANY($1::text[])`, [ids]
       );
       const existMap = new Map((existRows.rows || existRows).map(row => [String(row.id), row.payload]));
-      finalPayloads = toUpsert.map(item => {
+      finalPayloads = dedupedItems.map(item => {
         const existing = existMap.get(String(item.id)) || null;
         const merged = mergeDailyProgressPayload(existing, item);
         merged.id = String(existing?.id || item.id);

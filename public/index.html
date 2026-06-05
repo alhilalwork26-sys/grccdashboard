@@ -2870,7 +2870,7 @@ function renderDashboard(){
   const done   = taskItems.filter(t=>t.status==='Done').length;
   const mSched = state.schedules.filter(s=>thisMonth(s.date)).length;
   const mExp   = activeExpenses().filter(e=>thisMonth(e.date)&&(e.status==='Approved'||e.status==='Submitted')).reduce((s,e)=>s+(e.total||e.amount||0),0);
-  const programs = Array.isArray(state.programs) ? state.programs : [];
+  const programs = Array.isArray(state.programs) ? state.programs.filter(p=>!p._deleted) : [];
   const runningPrograms = programs.filter(p=>{
     const status = String(p.status || '').toLowerCase();
     return status.includes('progress') || status.includes('berjalan') || status.includes('ongoing') || status.includes('aktif');
@@ -3893,8 +3893,14 @@ async function saveDailyProgress(phase='full'){
   }
   persistPatched();
   if(typeof window.saveDailyProgressToServer === 'function'){
+    /* Cancel debounced full-state save agar tidak kirim ID lama saat
+       saveDailyProgressToServer masih in-flight (race condition) */
+    if(typeof window.cancelPendingBackendSave === 'function') window.cancelPendingBackendSave();
     try {
       await window.saveDailyProgressToServer(savedItem, shouldSaveEvening ? 'evening' : 'morning');
+      /* Setelah server save selesai (state.dailyProgresses sudah diupdate dgn ID baru),
+         jadwalkan debounced save dengan state yang sudah benar */
+      if(typeof window.scheduleFreshBackendSave === 'function') window.scheduleFreshBackendSave();
     } catch(err) {
       toast(err.message || 'Progres tersimpan lokal, tapi belum tersimpan ke server', 'error');
       console.warn('simpan progres harian gagal', err);
@@ -5985,12 +5991,15 @@ function openExpenseDetail(id){
 const PROGRAM_STATUSES = ['Upcoming','Ongoing','Completed','Cancelled'];
 function normalizePrograms(){
   if(!Array.isArray(state.programs)) state.programs = [];
-  state.programs = state.programs.map(p => ({
-    ...p,
-    status: PROGRAM_STATUSES.includes(p.status) ? p.status : 'Upcoming',
-    pts: Array.isArray(p.pts) ? p.pts.map(pt => typeof pt === 'string' ? {id:uid(), name:pt, att:null} : {id:pt.id || uid(), name:pt.name || '', att:pt.att ?? null, email:pt.email || '', phone:pt.phone || '', note:pt.note || ''}) : [],
-    mats: Array.isArray(p.mats) ? p.mats : []
-  }));
+  state.programs = state.programs.map(p => {
+    if(p._deleted) return p; // jangan normalize item yang sudah dihapus
+    return {
+      ...p,
+      status: PROGRAM_STATUSES.includes(p.status) ? p.status : 'Upcoming',
+      pts: Array.isArray(p.pts) ? p.pts.map(pt => typeof pt === 'string' ? {id:uid(), name:pt, att:null} : {id:pt.id || uid(), name:pt.name || '', att:pt.att ?? null, email:pt.email || '', phone:pt.phone || '', note:pt.note || ''}) : [],
+      mats: Array.isArray(p.mats) ? p.mats : []
+    };
+  });
 }
 function programCanEdit(program, user=state.user){
   return isManagerRole(user) || (isTrainerRole(user) && (!program || program.tId === user.id));
@@ -6002,8 +6011,9 @@ function renderPrograms(){
   const canEdit=isManagerRole(u) || isTrainerRole(u);
   const statusFilter = state.filterProgramStatus || 'Semua';
   const trainerFilter = state.filterProgramTrainer || 'Semua';
-  const trainerNames = ['Semua', ...new Set(state.programs.map(p => p.trainer).filter(Boolean))];
-  const myProgs=(isTrainerRole(u)?state.programs.filter(p=>p.tId===u.id):state.programs)
+  const activeProgs = state.programs.filter(p => !p._deleted);
+  const trainerNames = ['Semua', ...new Set(activeProgs.map(p => p.trainer).filter(Boolean))];
+  const myProgs=(isTrainerRole(u)?activeProgs.filter(p=>p.tId===u.id):activeProgs)
     .filter(p => statusFilter === 'Semua' || p.status === statusFilter)
     .filter(p => trainerFilter === 'Semua' || p.trainer === trainerFilter)
     .sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
@@ -8980,6 +8990,9 @@ if(state.user && !isProductionRuntime()){
   }
   /* Expose ke global agar doLogin bisa memanggil loadFromBackend setelah auth */
   window.loadFromBackend = loadFromBackend;
+  /* Untuk daily progress: cancel debounced save sebelum direct save, reschedule setelahnya */
+  window.cancelPendingBackendSave = function(){ clearTimeout(saveTimer); window.__grccPendingBackendSave = false; };
+  window.scheduleFreshBackendSave = function(){ scheduleBackendSave(); };
 
   function readFileAsDataUrl(file){
     return new Promise((resolve, reject) => {
@@ -9575,7 +9588,8 @@ if(state.user && !isProductionRuntime()){
   }
 
   /* Kunci modul yang isinya tidak boleh ditimpa server jika ada pending local save */
-  const DATA_MODULE_KEYS = ['expenses','reimburseRequests','dailyProgresses','rabItems','timelineEquity','researchItems','programs','tasks','schedules','notifications'];
+  /* notifications TIDAK diblokir — selalu sync agar user tidak ketinggalan notif dari user lain */
+  const DATA_MODULE_KEYS = ['expenses','reimburseRequests','dailyProgresses','rabItems','timelineEquity','researchItems','programs','tasks','schedules'];
 
   function applyAutoSyncPayload(payload, reason){
     const serverState = payload?.state || payload;
