@@ -686,36 +686,52 @@ tfoot tr { border-top:1px solid rgba(255,255,255,0.08); background:rgba(124,58,2
 /* ═══════════════════════════════════════════════
    KANBAN
 ═══════════════════════════════════════════════ */
-.kanban { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:flex-start; }
+.kanban { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; align-items:flex-start; }
 .kan-col {
-  background:rgba(255,255,255,0.02); border-radius:var(--radius);
-  border:1px solid var(--border); overflow:hidden;
+  background:rgba(255,255,255,0.018);
+  border-radius:14px; border:1px solid var(--border);
+  overflow:hidden;
+  border-top:3px solid var(--kan-col-c,var(--border));
 }
 .kan-head {
-  padding:11px 14px; display:flex; justify-content:space-between; align-items:center;
+  padding:14px 16px 13px; display:flex; justify-content:space-between; align-items:center;
   border-bottom:1px solid var(--border);
 }
-.kan-head-title { font-size:11.5px; font-weight:600; color:var(--text); letter-spacing:-.01em; }
-.kan-count { font-size:10.5px; font-weight:600; padding:2px 8px; border-radius:20px; }
-.kan-body  { padding:8px; display:flex; flex-direction:column; gap:6px; min-height:80px; }
+.kan-head-label { display:flex; align-items:center; gap:7px; }
+.kan-head-dot   { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.kan-head-title { font-size:13px; font-weight:700; color:var(--text); letter-spacing:-.01em; }
+.kan-count { font-size:11px; font-weight:700; padding:2px 10px; border-radius:20px; min-width:26px; text-align:center; }
+.kan-body  { padding:10px 10px 14px; display:flex; flex-direction:column; gap:8px; min-height:100px; }
 .kan-card  {
-  background: var(--surface2);
-  border-radius:9px; border:1px solid var(--border);
-  padding:11px 12px; cursor:pointer;
-  transition:
-    transform var(--t-base) var(--ease-spring),
-    box-shadow var(--t-base) var(--ease),
-    border-color var(--t-base) var(--ease);
-  animation:fadeUp var(--t-base) var(--ease);
+  background:var(--surface2);
+  border-radius:12px; border:1px solid var(--border);
+  padding:13px 14px; cursor:pointer;
+  transition:transform .22s cubic-bezier(.16,1,.3,1),box-shadow .22s ease,border-color .22s ease;
+  animation:fadeUp .25s ease both;
 }
 .kan-card:hover {
-  transform:translateY(-2px);
-  box-shadow: var(--shadow-md);
-  border-color:rgba(124,58,237,0.2);
+  transform:translateY(-3px) scale(1.008);
+  box-shadow:0 12px 30px rgba(0,0,0,0.22),0 0 0 1px rgba(124,58,237,0.22);
+  border-color:rgba(124,58,237,0.32);
 }
-.kan-card-title { font-size:12.5px; font-weight:500; color:var(--text); line-height:1.45; margin-bottom:8px; letter-spacing:-.01em; }
-.kan-card-meta  { display:flex; justify-content:space-between; align-items:center; }
-.kan-card-foot  { display:flex; align-items:center; gap:6px; margin-top:8px; }
+.kan-card-title { font-size:13px; font-weight:600; color:var(--text); line-height:1.5; margin-bottom:10px; letter-spacing:-.01em; }
+.kan-card-meta  { display:flex; justify-content:space-between; align-items:center; gap:6px; }
+.kan-card-pri   { display:flex; align-items:center; gap:4px; }
+.kan-card-pri-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.kan-card-pri-txt { font-size:10.5px; font-weight:700; letter-spacing:.01em; }
+.kan-card-date  { font-size:10.5px; font-weight:600; color:var(--sub); }
+.kan-card-date.overdue { color:#F87171; }
+.kan-card-date.soon    { color:#F59E0B; }
+.kan-card-evidence {
+  display:inline-flex; align-items:center; gap:4px;
+  font-size:10px; font-weight:700; padding:2px 8px; border-radius:6px;
+  margin-top:7px; margin-bottom:7px;
+}
+.kan-card-evidence.ok   { background:rgba(16,185,129,0.1); color:#34D399; }
+.kan-card-evidence.warn { background:rgba(239,68,68,0.08); color:#F87171; }
+.kan-card-foot  { display:flex; align-items:center; gap:6px; margin-top:10px; padding-top:9px; border-top:1px solid rgba(255,255,255,0.05); }
+.kan-card-name  { font-size:10.5px; color:var(--sub); font-weight:500; }
+.kan-card-cmt   { margin-left:auto; display:flex; align-items:center; gap:3px; font-size:10px; color:var(--sub); }
 
 /* ═══════════════════════════════════════════════
    CALENDAR
@@ -1781,16 +1797,19 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
 [data-theme="light"] .dash-sched-divider { background:rgba(0,0,0,0.09); }
 [data-theme="light"] .dash-progress-bar { background:rgba(0,0,0,0.06); }
 [data-theme="light"] .kan-col {
-  background: rgba(0,0,0,0.02);
-  border-color: rgba(0,0,0,0.07);
+  background:rgba(0,0,0,0.018);
+  border-color:rgba(0,0,0,0.07);
 }
 [data-theme="light"] .kan-card {
-  background: #fff;
-  border-color: rgba(0,0,0,0.07);
+  background:#fff;
+  border-color:rgba(0,0,0,0.07);
 }
 [data-theme="light"] .kan-card:hover {
-  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-  border-color: rgba(59,130,246,0.3);
+  box-shadow:0 10px 28px rgba(0,0,0,0.1),0 0 0 1px rgba(124,58,237,0.18);
+  border-color:rgba(124,58,237,0.25);
+}
+[data-theme="light"] .kan-card-foot {
+  border-color:rgba(0,0,0,0.06);
 }
 [data-theme="light"] .table-wrap { background: #fff; border-color: rgba(0,0,0,0.07); }
 [data-theme="light"] thead tr { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.07); }
@@ -3532,6 +3551,10 @@ function renderTasks(){
   const STATUSES=['Semua','To Do','On Progress','Review','Done'];
   const COLS=['To Do','On Progress','Review','Done'];
 
+  const PRIO_DOT = {High:'#F87171',Medium:'#FBBF24',Low:'#34D399',Critical:'#EF4444'};
+  const nowD = new Date(); nowD.setHours(0,0,0,0);
+  const dateClass = d => { if(!d||d==='Invalid Date') return ''; const dt=new Date(d); if(isNaN(dt)) return ''; if(dt<nowD) return ' overdue'; if((dt-nowD)/864e5<=3) return ' soon'; return ''; };
+
   return `
   <div class="page-header">
     <div class="filter-bar">
@@ -3554,27 +3577,39 @@ function renderTasks(){
   <div class="kanban">
     ${COLS.map(col=>{
       const colTasks=filtered.filter(t=>t.status===col);
-      return `<div class="kan-col">
-        <div class="kan-head" style="border-bottom-color:${COL_MAP[col]}">
-          <span class="kan-head-title">${col}</span>
-          <span class="kan-count" style="background:${COL_MAP[col]}22;color:${COL_MAP[col]}">${colTasks.length}</span>
+      const cc=COL_MAP[col];
+      return `<div class="kan-col" style="--kan-col-c:${cc}">
+        <div class="kan-head">
+          <div class="kan-head-label">
+            <div class="kan-head-dot" style="background:${cc}"></div>
+            <span class="kan-head-title">${col}</span>
+          </div>
+          <span class="kan-count" style="background:${cc}20;color:${cc}">${colTasks.length}</span>
         </div>
         <div class="kan-body">
-          ${colTasks.map(t=>`
+          ${colTasks.length===0?`<div style="padding:20px 0;text-align:center;font-size:11px;color:var(--sub);opacity:.5">Tidak ada task</div>`:''}
+          ${colTasks.map(t=>{
+            const priColor = PRIO_DOT[t.priority]||'#94A3B8';
+            const evid = (t.requiredEvidence||[]).length;
+            const evidOk = taskEvidenceComplete(t);
+            const dc = dateClass(t.deadline);
+            return `
           <div class="kan-card" onclick="openTaskDetail('${t.id}')">
             <div class="kan-card-title">${escHtml(t.title)}</div>
             <div class="kan-card-meta">
-              ${badge(t.priority,'priority')}
-              <span style="font-size:10px;color:var(--muted)">${fmtD(t.deadline)}</span>
+              <div class="kan-card-pri">
+                <div class="kan-card-pri-dot" style="background:${priColor}"></div>
+                <span class="kan-card-pri-txt" style="color:${priColor}">${escHtml(t.priority||'—')}</span>
+              </div>
+              <span class="kan-card-date${dc}">${fmtD(t.deadline)}</span>
             </div>
-            ${(t.requiredEvidence||[]).length?`<div style="font-size:10px;color:${taskEvidenceComplete(t)?'var(--green)':'var(--red)'};font-weight:800;margin-bottom:8px">${taskEvidenceComplete(t)?'Bukti lengkap':'Bukti wajib belum lengkap'}</div>`:''}
+            ${evid?`<div class="kan-card-evidence ${evidOk?'ok':'warn'}">${evidOk?'✓ Bukti lengkap':'⚠ Bukti belum lengkap'}</div>`:''}
             <div class="kan-card-foot">
-              ${av(t.assignee.split(' ').map(w=>w[0]).join('').substr(0,2),20,'var(--navy-md)')}
-              <span style="font-size:10px;color:var(--muted)">${escHtml(t.assignee.split(' ')[0])}</span>
-              ${t.comments.length>0?`<span style="margin-left:auto;font-size:10px;color:var(--muted);display:flex;align-items:center;gap:2px">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>${t.comments.length}</span>`:''}
+              ${av(t.assignee.split(' ').map(w=>w[0]).join('').substr(0,2),24,'var(--navy-md)')}
+              <span class="kan-card-name">${escHtml(t.assignee.split(' ')[0])}</span>
+              ${t.comments.length>0?`<div class="kan-card-cmt"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>${t.comments.length}</div>`:''}
             </div>
-          </div>`).join('')}
+          </div>`;}).join('')}
         </div>
       </div>`;
     }).join('')}
