@@ -1706,10 +1706,27 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
 [data-theme="light"] .toast-info    { background:#EFF6FF; border-color:#93C5FD; color:#1D4ED8; }
 [data-theme="light"] .toast-warning { background:#FFFBEB; border-color:#FCD34D; color:#92400E; }
 /* Light login */
-[data-theme="light"] #login-page::before { background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%); }
-[data-theme="light"] #login-page::after { background: radial-gradient(circle, rgba(124,58,237,0.1) 0%, transparent 70%); }
-[data-theme="light"] .login-orb3 { background: radial-gradient(circle, rgba(5,150,105,0.08) 0%, transparent 70%); }
-[data-theme="light"] .login-right { background: rgba(255,255,255,0.97); }
+/* Login page always stays dark regardless of app theme */
+[data-theme="light"] #login-page { background:#0D0F1C; }
+[data-theme="light"] #login-page::before { background: radial-gradient(circle, rgba(124,58,237,0.16) 0%, transparent 60%); }
+[data-theme="light"] #login-page::after { background: radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 60%); }
+[data-theme="light"] .login-orb3 { background: radial-gradient(circle, rgba(16,185,129,0.07) 0%, transparent 60%); }
+[data-theme="light"] .login-grid { background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px); }
+[data-theme="light"] .login-box { border-color:rgba(255,255,255,0.08); box-shadow:0 60px 140px rgba(0,0,0,0.65),0 0 0 1px rgba(124,58,237,0.14),0 0 100px rgba(124,58,237,0.07); }
+[data-theme="light"] .login-left { background:linear-gradient(155deg,#13152A 0%,#0E1025 55%,#0A0C1E 100%); border-right-color:rgba(255,255,255,0.06); }
+[data-theme="light"] .login-right { background:#161828; }
+[data-theme="light"] .login-form-title { color:#fff; }
+[data-theme="light"] .login-form-sub { color:rgba(255,255,255,.38); }
+[data-theme="light"] .login-label { color:rgba(255,255,255,.42); }
+[data-theme="light"] .login-input { background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.09); color:#fff; }
+[data-theme="light"] .login-input::placeholder { color:rgba(255,255,255,.22); }
+[data-theme="light"] .login-input:focus { border-color:rgba(124,58,237,.65); background:rgba(124,58,237,.07); box-shadow:0 0 0 3.5px rgba(124,58,237,.14); }
+[data-theme="light"] .login-divider::before,[data-theme="light"] .login-divider::after { background:rgba(255,255,255,.07); }
+[data-theme="light"] .login-divider span { color:rgba(255,255,255,.25); }
+[data-theme="light"] .quick-acc { background:rgba(255,255,255,.025); border-color:rgba(255,255,255,.07); }
+[data-theme="light"] .quick-acc:hover { background:rgba(124,58,237,.08); border-color:rgba(124,58,237,.22); }
+[data-theme="light"] .quick-acc-name { color:rgba(255,255,255,.85); }
+[data-theme="light"] .quick-acc-role { color:rgba(255,255,255,.35); }
 /* Light notif panel */
 [data-theme="light"] .notif-panel { background: #fff !important; border-color: rgba(0,0,0,0.1) !important; }
 [data-theme="light"] .notif-filter-row { background:#fff !important; border-color:rgba(0,0,0,0.08) !important; }
