@@ -1140,26 +1140,33 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
 ═══════════════════════════════════════════════ */
 #login-page {
   min-height:100vh; display:flex; align-items:center; justify-content:center; padding:16px;
-  background: var(--bg); overflow:hidden; position:relative;
+  background:#0D0F1C; overflow:hidden; position:relative;
 }
-/* Animated gradient orbs */
 #login-page::before {
-  content:''; position:fixed; width:600px; height:600px; border-radius:50%;
-  background:radial-gradient(circle, rgba(124,58,237,0.14) 0%, transparent 70%);
-  top:-150px; left:-150px; animation:orb1 12s ease-in-out infinite;
-  pointer-events:none;
+  content:''; position:fixed; width:900px; height:900px; border-radius:50%;
+  background:radial-gradient(circle, rgba(124,58,237,0.16) 0%, transparent 60%);
+  top:-280px; left:-280px; animation:orb1 14s ease-in-out infinite;
+  pointer-events:none; z-index:0;
 }
 #login-page::after {
-  content:''; position:fixed; width:500px; height:500px; border-radius:50%;
-  background:radial-gradient(circle, rgba(167,139,250,0.1) 0%, transparent 70%);
-  bottom:-100px; right:-100px; animation:orb2 15s ease-in-out infinite;
-  pointer-events:none;
+  content:''; position:fixed; width:700px; height:700px; border-radius:50%;
+  background:radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 60%);
+  bottom:-200px; right:-200px; animation:orb2 18s ease-in-out infinite;
+  pointer-events:none; z-index:0;
 }
 .login-orb3 {
-  position:fixed; width:300px; height:300px; border-radius:50%;
-  background:radial-gradient(circle, rgba(16,185,129,0.07) 0%, transparent 70%);
-  bottom:20%; left:30%; animation:orb3 10s ease-in-out infinite;
+  position:fixed; width:500px; height:500px; border-radius:50%;
+  background:radial-gradient(circle, rgba(16,185,129,0.07) 0%, transparent 60%);
+  bottom:10%; left:20%; animation:orb3 11s ease-in-out infinite;
   pointer-events:none; z-index:0;
+}
+.login-grid {
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+  background-size:52px 52px;
+  -webkit-mask-image:radial-gradient(ellipse 80% 80% at 50% 50%,black 30%,transparent 100%);
+  mask-image:radial-gradient(ellipse 80% 80% at 50% 50%,black 30%,transparent 100%);
 }
 .opening-screen {
   position:absolute; inset:0; z-index:3; overflow:hidden; background:#fff;
@@ -1240,58 +1247,145 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
   0%,100% { transform:translate3d(0,0,0) scale(1); opacity:.7; }
   50% { transform:translate3d(18px,-14px,0) scale(1.08); opacity:.95; }
 }
+/* ── LOGIN BOX ── */
 .login-box {
-  width:100%; max-width:860px; display:grid; grid-template-columns:1fr 1fr;
-  border-radius:20px; overflow:hidden;
-  border:1px solid rgba(255,255,255,0.09);
-  box-shadow:0 40px 100px rgba(0,0,0,0.55), 0 0 0 1px rgba(124,58,237,0.12);
-  animation:fadeScale var(--t-slow) var(--ease-spring);
+  width:100%; max-width:900px; display:grid; grid-template-columns:1.1fr 1fr;
+  border-radius:24px; overflow:hidden;
+  border:1px solid rgba(255,255,255,0.08);
+  box-shadow:0 60px 140px rgba(0,0,0,0.65), 0 0 0 1px rgba(124,58,237,0.14), 0 0 100px rgba(124,58,237,0.07);
   position:relative; z-index:1;
 }
-#login-page:not(.login-active) .login-box { opacity:0; pointer-events:none; transform:translateY(16px) scale(.98); }
-#login-page.login-active .login-box { opacity:1; pointer-events:auto; transform:none; transition:opacity .4s .14s, transform .4s .14s; }
+#login-page:not(.login-active) .login-box {
+  opacity:0; pointer-events:none; transform:translateY(24px) scale(.97);
+}
+#login-page.login-active .login-box {
+  opacity:1; pointer-events:auto; transform:none;
+  transition:opacity .5s .1s cubic-bezier(.16,1,.3,1), transform .5s .1s cubic-bezier(.16,1,.3,1);
+}
+
+/* ── LEFT PANEL ── */
 .login-left {
-  background:linear-gradient(160deg, var(--sidebar-bg) 0%, #0E1025 100%);
-  padding:44px 36px; display:flex; flex-direction:column; justify-content:space-between;
-  border-right:1px solid rgba(255,255,255,0.07); position:relative; overflow:hidden;
+  background:linear-gradient(155deg,#13152A 0%,#0E1025 55%,#0A0C1E 100%);
+  padding:52px 44px; display:flex; flex-direction:column; justify-content:space-between;
+  border-right:1px solid rgba(255,255,255,0.06); position:relative; overflow:hidden;
 }
 .login-left::before {
-  content:''; position:absolute; inset:0;
-  background:radial-gradient(ellipse at 30% 30%, rgba(124,58,237,0.13) 0%, transparent 60%);
-  pointer-events:none;
+  content:''; position:absolute; width:380px; height:380px; border-radius:50%;
+  background:radial-gradient(circle,rgba(124,58,237,.25) 0%,transparent 65%);
+  top:-100px; left:-80px; animation:orb1 10s ease-in-out infinite; pointer-events:none;
 }
-.login-right { background:var(--surface); padding:44px 36px; }
+.login-left::after {
+  content:''; position:absolute; width:200px; height:200px; border-radius:50%;
+  background:radial-gradient(circle,rgba(16,185,129,.12) 0%,transparent 65%);
+  bottom:50px; right:-50px; animation:orb2 13s ease-in-out infinite; pointer-events:none;
+}
+.login-brand { position:relative; z-index:1; }
+.login-brand-logo { display:flex; align-items:center; gap:14px; margin-bottom:44px; }
+.login-brand-name { font-size:20px; font-weight:800; color:#fff; letter-spacing:-.01em; }
+.login-brand-ver { font-size:10px; color:rgba(255,255,255,.28); font-family:var(--mono); margin-top:2px; }
+.login-headline {
+  font-size:28px; line-height:1.22; font-weight:850; color:#fff;
+  letter-spacing:-.03em; margin-bottom:12px; font-family:var(--font-h);
+}
+.login-headline span {
+  background:linear-gradient(135deg,#C4B5FD,#7C3AED);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+}
+.login-tagline { font-size:12.5px; color:rgba(255,255,255,.4); line-height:1.75; margin-bottom:36px; }
+.login-features { display:flex; flex-direction:column; gap:8px; }
 .login-feature {
-  display:flex; align-items:center; gap:9px; margin-bottom:8px;
-  padding:8px 10px; border-radius:8px;
-  background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06);
-  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+  display:flex; align-items:center; gap:10px;
+  padding:10px 12px; border-radius:10px;
+  background:rgba(255,255,255,.025); border:1px solid rgba(255,255,255,.055);
+  transition:background .15s,border-color .15s,transform .18s cubic-bezier(.34,1.56,.64,1);
   cursor:default;
+  animation:loginFeatIn .5s cubic-bezier(.16,1,.3,1) both;
 }
-.login-feature:hover { background:rgba(124,58,237,0.06); border-color:rgba(124,58,237,0.15); }
+.login-feature:nth-child(1){animation-delay:.15s}
+.login-feature:nth-child(2){animation-delay:.22s}
+.login-feature:nth-child(3){animation-delay:.29s}
+.login-feature:nth-child(4){animation-delay:.36s}
+@keyframes loginFeatIn {
+  from{opacity:0;transform:translateX(-14px)}
+  to{opacity:1;transform:none}
+}
+.login-feature:hover {
+  background:rgba(124,58,237,.08); border-color:rgba(124,58,237,.2); transform:translateX(4px);
+}
 .login-feature-dot {
-  width:22px; height:22px; border-radius:6px;
-  background:rgba(124,58,237,0.2); border:1px solid rgba(124,58,237,0.3);
-  display:flex; align-items:center; justify-content:center;
-  color:#A78BFA; font-size:11px; font-weight:600; flex-shrink:0;
+  width:26px; height:26px; border-radius:8px; flex-shrink:0;
+  background:rgba(124,58,237,.22); border:1px solid rgba(124,58,237,.35);
+  display:flex; align-items:center; justify-content:center; color:#C4B5FD; font-size:12px; font-weight:700;
 }
-.login-feature-txt { color:rgba(255,255,255,0.6); font-size:12.5px; }
-.login-footer { border-top:1px solid rgba(255,255,255,0.06); padding-top:16px; }
-.login-footer p { color:rgba(255,255,255,0.18); font-size:11px; font-family:var(--mono); }
+.login-feature-txt { color:rgba(255,255,255,.62); font-size:12.5px; font-weight:500; }
+.login-footer { position:relative; z-index:1; border-top:1px solid rgba(255,255,255,.06); padding-top:16px; margin-top:28px; }
+.login-footer p { color:rgba(255,255,255,.18); font-size:11px; font-family:var(--mono); }
+
+/* ── RIGHT PANEL / FORM ── */
+.login-right {
+  background:#161828; padding:52px 44px;
+  display:flex; flex-direction:column; justify-content:center;
+}
+.login-form-head { margin-bottom:32px; animation:fadeUp .5s .2s cubic-bezier(.16,1,.3,1) both; }
+.login-form-title {
+  font-size:26px; font-weight:800; color:#fff; letter-spacing:-.025em;
+  font-family:var(--font-h); margin-bottom:6px;
+}
+.login-form-sub { font-size:13px; color:rgba(255,255,255,.38); line-height:1.5; }
+.login-form-fields { display:flex; flex-direction:column; gap:16px; margin-bottom:24px; }
+.login-field { display:flex; flex-direction:column; gap:7px; animation:fadeUp .5s cubic-bezier(.16,1,.3,1) both; }
+.login-field:nth-child(1){animation-delay:.28s}
+.login-field:nth-child(2){animation-delay:.34s}
+.login-label {
+  font-size:11px; font-weight:700; color:rgba(255,255,255,.42);
+  text-transform:uppercase; letter-spacing:.9px; font-family:var(--mono);
+}
+.login-input {
+  width:100%; padding:13px 15px;
+  background:rgba(255,255,255,.05); border:1.5px solid rgba(255,255,255,.09);
+  border-radius:11px; color:#fff; font-size:14px; font-family:var(--font);
+  outline:none; transition:border-color .2s,box-shadow .2s,background .2s;
+}
+.login-input::placeholder { color:rgba(255,255,255,.22); }
+.login-input:hover { border-color:rgba(255,255,255,.16); }
+.login-input:focus {
+  border-color:rgba(124,58,237,.65);
+  background:rgba(124,58,237,.07);
+  box-shadow:0 0 0 3.5px rgba(124,58,237,.14);
+}
+.login-btn-wrap { animation:fadeUp .5s .38s cubic-bezier(.16,1,.3,1) both; }
+.login-submit {
+  width:100%; padding:14px;
+  background:linear-gradient(135deg,#7C3AED 0%,#6D28D9 100%);
+  border:none; border-radius:12px; color:#fff;
+  font-size:15px; font-weight:700; font-family:var(--font); letter-spacing:.02em;
+  cursor:pointer; box-shadow:0 8px 28px rgba(124,58,237,.32);
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1),box-shadow .18s;
+}
+.login-submit:hover { transform:translateY(-2px) scale(1.01); box-shadow:0 16px 40px rgba(124,58,237,.42); }
+.login-submit:active { transform:translateY(0) scale(.99); }
+.login-divider {
+  display:flex; align-items:center; gap:12px; margin:22px 0 14px;
+  animation:fadeUp .5s .42s cubic-bezier(.16,1,.3,1) both;
+}
+.login-divider::before,.login-divider::after {
+  content:''; flex:1; height:1px; background:rgba(255,255,255,.07);
+}
+.login-divider span { font-size:10px; color:rgba(255,255,255,.25); white-space:nowrap; font-family:var(--mono); letter-spacing:.8px; text-transform:uppercase; }
 .quick-acc {
-  display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:9px;
-  border:1px solid rgba(255,255,255,0.07); background:rgba(255,255,255,0.03);
-  cursor:pointer;
-  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
-  text-align:left; width:100%; margin-bottom:5px;
+  display:flex; align-items:center; gap:9px; padding:9px 12px; border-radius:10px;
+  border:1px solid rgba(255,255,255,.07); background:rgba(255,255,255,.025);
+  cursor:pointer; text-align:left; width:100%; margin-bottom:5px;
+  transition:background .15s,border-color .15s,transform .18s cubic-bezier(.34,1.56,.64,1);
+  animation:fadeUp .5s .46s cubic-bezier(.16,1,.3,1) both;
 }
-.quick-acc:hover { background:rgba(124,58,237,0.08); border-color:rgba(124,58,237,0.2); transform:translateX(2px); }
-.quick-acc-name { font-size:12px; font-weight:600; color:var(--text); }
-.quick-acc-role { font-size:11px; color:var(--muted); }
+.quick-acc:hover { background:rgba(124,58,237,.08); border-color:rgba(124,58,237,.22); transform:translateX(3px); }
+.quick-acc-name { font-size:12px; font-weight:600; color:rgba(255,255,255,.85); }
+.quick-acc-role { font-size:11px; color:rgba(255,255,255,.35); }
 .pw-wrap { position:relative; }
-.pw-wrap .form-control { padding-right:38px; }
-.pw-toggle { position:absolute; right:10px; top:50%; transform:translateY(-50%); font-size:16px; opacity:.5; }
-.pw-toggle:hover { opacity:1; }
+.pw-wrap .login-input { padding-right:42px; }
+.pw-toggle { position:absolute; right:12px; top:50%; transform:translateY(-50%); font-size:16px; opacity:.4; background:none; border:none; cursor:pointer; }
+.pw-toggle:hover { opacity:.9; }
 
 /* ═══════════════════════════════════════════════
    TASK DETAIL
@@ -1454,8 +1548,9 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
 @media (max-width:768px) {
   #sidebar { position:fixed; left:0; top:0; bottom:0; transform:translateX(-100%); transition:transform .3s cubic-bezier(.16,1,.3,1); }
   #sidebar.open { transform:none; }
-  .login-box { grid-template-columns:1fr; }
+  .login-box { grid-template-columns:1fr; max-width:440px; }
   .login-left { display:none; }
+  .login-right { padding:40px 32px; }
   .opening-screen { display:flex; flex-direction:column; justify-content:flex-start; padding:38px 24px 0; }
   .opening-copy { max-width:100%; }
   .opening-title { font-size:38px; }
@@ -2204,48 +2299,55 @@ textarea:focus {
     </div>
   </div>
   <div class="login-orb3"></div>
+  <div class="login-grid"></div>
   <div class="login-box">
+    <!-- Left: Brand panel -->
     <div class="login-left">
-      <div>
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:40px">
+      <div class="login-brand">
+        <div class="login-brand-logo">
           <div class="sb-logo-icon logo-mark">
             <img src="assets/grcc-logo-192.png" alt="Logo GRCC" class="brand-logo-img">
           </div>
           <div>
-            <div class="sb-logo-text">GRCC</div>
-            <div class="sb-logo-sub">v2.1.0</div>
+            <div class="login-brand-name">GRCC</div>
+            <div class="login-brand-ver">v2.1.0</div>
           </div>
         </div>
-        <h1 style="color:#fff;font-size:26px;font-weight:800;margin-bottom:12px;line-height:1.3;font-family:var(--font-h)">Governance, Risk &amp;<br>Compliance Center</h1>
-        <p style="color:rgba(255,255,255,0.5);font-size:13px;line-height:1.75;margin-bottom:32px">Platform manajemen operasional terpadu untuk tim GRCC.</p>
-        <div class="login-feature"><div class="login-feature-dot">✓</div><span class="login-feature-txt">Task & Project Tracking</span></div>
-        <div class="login-feature"><div class="login-feature-dot">✓</div><span class="login-feature-txt">Progres Harian Terpantau</span></div>
-        <div class="login-feature"><div class="login-feature-dot">✓</div><span class="login-feature-txt">Finance Operasional</span></div>
-        <div class="login-feature" style="margin-bottom:0"><div class="login-feature-dot">✓</div><span class="login-feature-txt">Role-Based Access Control</span></div>
+        <h1 class="login-headline">Governance,<br>Risk &amp; <span>Compliance</span></h1>
+        <p class="login-tagline">Platform manajemen operasional terpadu untuk mendukung tata kelola dan kinerja tim GRCC.</p>
+        <div class="login-features">
+          <div class="login-feature"><div class="login-feature-dot">✓</div><span class="login-feature-txt">Task &amp; Project Tracking</span></div>
+          <div class="login-feature"><div class="login-feature-dot">✓</div><span class="login-feature-txt">Progres Harian Terpantau</span></div>
+          <div class="login-feature"><div class="login-feature-dot">✓</div><span class="login-feature-txt">Finance Operasional</span></div>
+          <div class="login-feature"><div class="login-feature-dot">✓</div><span class="login-feature-txt">Role-Based Access Control</span></div>
+        </div>
       </div>
       <div class="login-footer"><p>© 2026 GRCC · Internal Dashboard</p></div>
     </div>
+    <!-- Right: Form panel -->
     <div class="login-right">
-      <h2 style="font-size:22px;font-weight:800;color:var(--text);margin-bottom:4px;font-family:var(--font-h)">Selamat Datang</h2>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:28px">Masukkan kredensial yang diberikan admin</p>
-      <div style="display:flex;flex-direction:column;gap:14px;margin-bottom:20px">
-        <div class="form-group">
-          <label class="form-label">Email / Username <span>*</span></label>
-          <input id="login-email" class="form-control" placeholder="email@grcc.id atau username">
+      <div class="login-form-head">
+        <h2 class="login-form-title">Selamat Datang</h2>
+        <p class="login-form-sub">Masukkan kredensial yang diberikan admin</p>
+      </div>
+      <div class="login-form-fields">
+        <div class="login-field">
+          <label class="login-label">Email / Username <span style="color:var(--red)">*</span></label>
+          <input id="login-email" class="login-input" placeholder="email@grcc.id atau username">
         </div>
-        <div class="form-group">
-          <label class="form-label">Password <span>*</span></label>
+        <div class="login-field">
+          <label class="login-label">Password <span style="color:var(--red)">*</span></label>
           <div class="pw-wrap">
-            <input id="login-pw" type="password" class="form-control" placeholder="Password Anda" onkeydown="if(event.key==='Enter')doLogin()">
+            <input id="login-pw" type="password" class="login-input" placeholder="Password Anda" onkeydown="if(event.key==='Enter')doLogin()">
             <button class="pw-toggle" onclick="togglePw()" id="pw-eye">👁</button>
           </div>
         </div>
       </div>
-      <button class="btn btn-pri btn-lg" id="login-btn" onclick="doLogin()">Masuk</button>
-      <div style="border-top:1px solid rgba(255,255,255,0.07);padding-top:20px;margin-top:22px">
-        <p style="font-size:10px;color:var(--muted);margin-bottom:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;font-family:var(--mono)">Akun Awal</p>
-        <div id="quick-accounts"></div>
+      <div class="login-btn-wrap">
+        <button class="login-submit" id="login-btn" onclick="doLogin()">Masuk</button>
       </div>
+      <div class="login-divider"><span>Akun Awal</span></div>
+      <div id="quick-accounts"></div>
     </div>
   </div>
 </div>
