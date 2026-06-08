@@ -2834,6 +2834,24 @@ tbody tr:hover td,
   border-radius: 12px !important;
 }
 .kan-card-title { color: var(--text) !important; font-weight: 750; }
+.kan-card[draggable="true"] { cursor: grab; }
+.kan-card[draggable="true"]:active { cursor: grabbing; }
+.kan-card.is-dragging {
+  opacity: .56;
+  transform: rotate(1deg) scale(.985) !important;
+  box-shadow: 0 18px 36px rgba(17,24,39,.18) !important;
+}
+.kan-col.is-drop-target {
+  background: rgba(123,104,238,.08) !important;
+  border-color: rgba(123,104,238,.55) !important;
+  box-shadow: inset 0 0 0 2px rgba(123,104,238,.16), 0 18px 42px rgba(123,104,238,.12) !important;
+}
+.kan-col.is-drop-target .kan-head {
+  border-color: rgba(123,104,238,.28) !important;
+}
+.kan-col.is-drop-target .kan-body {
+  min-height: 140px;
+}
 
 .modal-overlay { background: rgba(15,23,42,.45) !important; backdrop-filter: blur(10px); }
 .modal-box {
@@ -2936,6 +2954,11 @@ tbody tr:hover td,
 }
 [data-theme="dark"] .sb-item { color: #AAB2C8 !important; }
 [data-theme="dark"] .sb-item:hover { background: rgba(255,255,255,.06) !important; color:#fff !important; }
+[data-theme="dark"] .kan-col.is-drop-target {
+  background: rgba(123,104,238,.12) !important;
+  border-color: rgba(167,139,250,.55) !important;
+  box-shadow: inset 0 0 0 2px rgba(167,139,250,.18), 0 18px 42px rgba(0,0,0,.28) !important;
+}
 [data-theme="dark"] .form-control,
 [data-theme="dark"] .f-inp,
 [data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
@@ -4103,7 +4126,7 @@ function renderTasks(){
     ${COLS.map(col=>{
       const colTasks=filtered.filter(t=>t.status===col);
       const cc=COL_MAP[col];
-      return `<div class="kan-col" style="--kan-col-c:${cc}">
+      return `<div class="kan-col" style="--kan-col-c:${cc}" data-task-status="${escHtml(col)}" ondragover="handleTaskDragOver(event)" ondragenter="handleTaskDragEnter(event)" ondragleave="handleTaskDragLeave(event)" ondrop="handleTaskDrop(event,'${col}')">
         <div class="kan-head">
           <div class="kan-head-label">
             <div class="kan-head-dot" style="background:${cc}"></div>
@@ -4119,7 +4142,7 @@ function renderTasks(){
             const evidOk = taskEvidenceComplete(t);
             const dc = dateClass(t.deadline);
             return `
-          <div class="kan-card" onclick="openTaskDetail('${t.id}')">
+          <div class="kan-card" draggable="true" data-task-id="${escHtml(t.id)}" ondragstart="handleTaskDragStart(event,'${t.id}')" ondragend="handleTaskDragEnd(event)" onclick="if(!window.__taskDragJustDropped) openTaskDetail('${t.id}')">
             <div class="kan-card-title">${escHtml(t.title)}</div>
             <div class="kan-card-meta">
               <div class="kan-card-pri">
@@ -4222,6 +4245,53 @@ function renderTaskDetail(){
 }
 
 function openTaskDetail(id){ state.taskDetail=id; renderPage(); }
+let draggedTaskId = '';
+function handleTaskDragStart(event,id){
+  draggedTaskId = id;
+  window.__taskDragging = true;
+  if(event.dataTransfer){
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', id);
+  }
+  event.currentTarget?.classList.add('is-dragging');
+}
+function handleTaskDragOver(event){
+  event.preventDefault();
+  if(event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+}
+function handleTaskDragEnter(event){
+  event.preventDefault();
+  event.currentTarget?.classList.add('is-drop-target');
+}
+function handleTaskDragLeave(event){
+  const target = event.currentTarget;
+  if(target && (!event.relatedTarget || !target.contains(event.relatedTarget))){
+    target.classList.remove('is-drop-target');
+  }
+}
+async function handleTaskDrop(event,status){
+  event.preventDefault();
+  event.currentTarget?.classList.remove('is-drop-target');
+  const id = event.dataTransfer?.getData('text/plain') || draggedTaskId;
+  draggedTaskId = '';
+  window.__taskDragJustDropped = true;
+  setTimeout(()=>{ window.__taskDragJustDropped = false; }, 160);
+  const task = state.tasks.find(t=>t.id===id && !t._deleted);
+  if(!task) return;
+  if(task.status === status){
+    toast(`Task sudah berada di ${status}`, 'info');
+    return;
+  }
+  await updateTaskStatus(id,status);
+}
+function handleTaskDragEnd(event){
+  event.currentTarget?.classList.remove('is-dragging');
+  document.querySelectorAll('.kan-col.is-drop-target').forEach(el=>el.classList.remove('is-drop-target'));
+  setTimeout(()=>{
+    draggedTaskId = '';
+    window.__taskDragging = false;
+  },0);
+}
 async function updateTaskStatus(id,status){
   const task = state.tasks.find(t=>t.id===id);
   if(status === 'Done' && task && !taskEvidenceComplete(task)){
