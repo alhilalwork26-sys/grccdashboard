@@ -606,6 +606,70 @@ select.form-control { appearance:none; cursor:pointer; }
 .stat-icon  { width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
 
 /* ═══════════════════════════════════════════════
+   DASHBOARD V2
+═══════════════════════════════════════════════ */
+.dash-hero {
+  background:linear-gradient(135deg,rgba(124,58,237,0.1) 0%,rgba(109,40,217,0.05) 60%,transparent 100%);
+  border:1px solid rgba(124,58,237,0.16);
+  border-radius:20px;padding:28px 32px;margin-bottom:24px;
+  position:relative;overflow:hidden;
+  animation:fadeUp var(--t-slow) var(--ease) both;
+}
+.dash-hero::before {
+  content:'';position:absolute;right:-60px;top:-60px;
+  width:280px;height:280px;border-radius:50%;
+  background:radial-gradient(circle,rgba(124,58,237,0.13),transparent 70%);
+  pointer-events:none;
+}
+.dash-hero-greeting { font-size:26px;font-weight:800;color:var(--text);letter-spacing:-.5px;margin-bottom:4px; }
+.dash-hero-greeting strong { background:linear-gradient(135deg,#C4B5FD,#7C3AED);-webkit-background-clip:text;-webkit-text-fill-color:transparent; }
+.dash-hero-date { font-size:13px;color:var(--sub); }
+.dash-hero-pills { display:flex;gap:8px;margin-top:16px;flex-wrap:wrap; }
+.dash-hero-pill {
+  display:flex;align-items:center;gap:5px;
+  background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.09);
+  border-radius:20px;padding:5px 12px;font-size:11.5px;color:var(--sub);
+}
+.dash-hero-pill b { color:var(--text);font-weight:700; }
+.stat-card-v2 {
+  background:var(--surface);border-radius:16px;border:1px solid var(--border);
+  padding:0;overflow:hidden;box-shadow:var(--shadow);
+  animation:fadeUp var(--t-slow) var(--ease) both;
+  transition:transform var(--t-base) var(--ease),box-shadow var(--t-base) var(--ease);
+}
+.stat-card-v2:hover { transform:translateY(-4px);box-shadow:0 20px 40px rgba(0,0,0,0.22); }
+.stat-card-v2:nth-child(1){animation-delay:.05s} .stat-card-v2:nth-child(2){animation-delay:.1s}
+.stat-card-v2:nth-child(3){animation-delay:.15s} .stat-card-v2:nth-child(4){animation-delay:.2s}
+.stat-card-v2-bar { height:3px;width:100%; }
+.stat-card-v2-body { padding:20px 20px 18px;display:flex;justify-content:space-between;align-items:flex-start; }
+.stat-card-v2-label { font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--sub);margin-bottom:10px; }
+.stat-card-v2-val { font-size:28px;font-weight:800;color:var(--text);letter-spacing:-1px;line-height:1;margin-bottom:5px; }
+.stat-card-v2-sub { font-size:11.5px;color:var(--sub); }
+.stat-card-v2-icon { width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+.dash-card { background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);animation:fadeUp var(--t-slow) var(--ease) both; }
+.dash-card-head { padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center; }
+.dash-card-title { font-size:14px;font-weight:700;color:var(--text);letter-spacing:-.2px; }
+.dash-task-row { padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;gap:12px;transition:background var(--t-fast) var(--ease); }
+.dash-task-row:last-child { border-bottom:none; }
+.dash-task-row:hover { background:rgba(124,58,237,0.05); }
+.dash-task-title { flex:1;font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:-.1px; }
+.dash-task-meta { font-size:11px;color:var(--sub);margin-top:2px; }
+.dash-sched-row { padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;gap:14px;transition:background var(--t-fast) var(--ease); }
+.dash-sched-row:last-child { border-bottom:none; }
+.dash-sched-row:hover { background:rgba(124,58,237,0.05); }
+.dash-sched-date { min-width:40px;text-align:center;flex-shrink:0; }
+.dash-sched-date-day { font-size:20px;font-weight:800;color:var(--text);line-height:1;letter-spacing:-1px; }
+.dash-sched-date-mon { font-size:10px;font-weight:600;color:var(--sub);text-transform:uppercase;letter-spacing:.5px; }
+.dash-sched-divider { width:1px;height:34px;background:var(--border);flex-shrink:0; }
+.dash-sched-name { font-size:13px;font-weight:600;color:var(--text);letter-spacing:-.1px; }
+.dash-sched-loc { font-size:11px;color:var(--sub);margin-top:2px; }
+.dash-progress-bar { height:8px;border-radius:8px;background:rgba(255,255,255,0.06);overflow:hidden;display:flex;margin-bottom:16px; }
+.dash-progress-seg { height:100%; }
+.dash-legend { display:flex;gap:20px;flex-wrap:wrap; }
+.dash-legend-item { display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sub); }
+.dash-legend-dot { width:8px;height:8px;border-radius:50%;flex-shrink:0; }
+
+/* ═══════════════════════════════════════════════
    TABLE
 ═══════════════════════════════════════════════ */
 .table-wrap   { background:var(--surface); border-radius:var(--radius); border:1px solid var(--border); overflow:hidden; box-shadow:var(--shadow); }
@@ -1703,6 +1767,19 @@ hr { border:none; border-top:1px solid rgba(255,255,255,0.07); margin:14px 0; }
 [data-theme="light"] .stat-card:hover {
   box-shadow: 0 8px 24px rgba(0,0,0,0.12);
 }
+[data-theme="light"] .dash-hero { background:linear-gradient(135deg,rgba(124,58,237,0.06) 0%,rgba(109,40,217,0.03) 60%,transparent 100%); border-color:rgba(124,58,237,0.14); }
+[data-theme="light"] .dash-hero::before { background:radial-gradient(circle,rgba(124,58,237,0.07),transparent 70%); }
+[data-theme="light"] .dash-hero-pill { background:rgba(0,0,0,0.03);border-color:rgba(0,0,0,0.08); }
+[data-theme="light"] .stat-card-v2 { background:#fff;border-color:rgba(0,0,0,0.07); }
+[data-theme="light"] .stat-card-v2:hover { box-shadow:0 12px 28px rgba(0,0,0,0.1); }
+[data-theme="light"] .dash-card { background:#fff;border-color:rgba(0,0,0,0.07); }
+[data-theme="light"] .dash-card-head { border-color:rgba(0,0,0,0.07); }
+[data-theme="light"] .dash-task-row { border-color:rgba(0,0,0,0.05); }
+[data-theme="light"] .dash-task-row:hover { background:rgba(124,58,237,0.04); }
+[data-theme="light"] .dash-sched-row { border-color:rgba(0,0,0,0.05); }
+[data-theme="light"] .dash-sched-row:hover { background:rgba(124,58,237,0.04); }
+[data-theme="light"] .dash-sched-divider { background:rgba(0,0,0,0.09); }
+[data-theme="light"] .dash-progress-bar { background:rgba(0,0,0,0.06); }
 [data-theme="light"] .kan-col {
   background: rgba(0,0,0,0.02);
   border-color: rgba(0,0,0,0.07);
@@ -3192,110 +3269,128 @@ function renderDashboard(){
   const activeTasks = taskItems.filter(t=>t.status!=='Done').slice(0,4);
   const COLS = ['To Do','On Progress','Review','Done'];
 
+  const ID_DAYS = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+  const ID_MONTHS_SHORT = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const ID_MONTHS_FULL = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  const dateStr = `${ID_DAYS[now.getDay()]}, ${now.getDate()} ${ID_MONTHS_FULL[now.getMonth()]} ${now.getFullYear()}`;
+  const STATUS_DOT = {'To Do':'#60A5FA','On Progress':'#F59E0B','Review':'#A78BFA','Done':'#34D399'};
+
   return `
-  <div class="page-header">
-    <div>
-      <div class="page-title">Selamat Datang, ${escHtml(u.name.split(' ')[0])}! 👋</div>
-      <div class="page-sub">Berikut ringkasan operasional GRCC hari ini.</div>
+  <div class="dash-hero">
+    <div class="dash-hero-greeting">Selamat Datang, <strong>${escHtml(u.name.split(' ')[0])}</strong> 👋</div>
+    <div class="dash-hero-date">${dateStr}</div>
+    <div class="dash-hero-pills">
+      <div class="dash-hero-pill">📋 Task aktif: <b>${active}</b></div>
+      <div class="dash-hero-pill">📅 Jadwal bulan ini: <b>${mSched}</b></div>
+      <div class="dash-hero-pill">✅ Selesai: <b>${done}</b></div>
     </div>
   </div>
-  <div class="stat-grid">
-    <div class="stat-card">
-      <div class="stat-card-top">
+  <div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:24px">
+    <div class="stat-card-v2">
+      <div class="stat-card-v2-bar" style="background:linear-gradient(90deg,#2563EB,#60A5FA)"></div>
+      <div class="stat-card-v2-body">
         <div>
-          <div class="stat-label">Kegiatan Bulan Ini</div>
-          <div class="stat-val">${mSched}</div>
-          <div class="stat-sub">jadwal aktif</div>
+          <div class="stat-card-v2-label">Kegiatan Bulan Ini</div>
+          <div class="stat-card-v2-val">${mSched}</div>
+          <div class="stat-card-v2-sub">jadwal aktif</div>
         </div>
-        <div class="stat-icon" style="background:rgba(59,130,246,0.15)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <div class="stat-card-v2-icon" style="background:rgba(59,130,246,0.13)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         </div>
       </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-card-top">
+    <div class="stat-card-v2">
+      <div class="stat-card-v2-bar" style="background:linear-gradient(90deg,#6D28D9,#A78BFA)"></div>
+      <div class="stat-card-v2-body">
         <div>
-          <div class="stat-label">Task Aktif</div>
-          <div class="stat-val">${active}</div>
-          <div class="stat-sub">${done} selesai</div>
+          <div class="stat-card-v2-label">Task Aktif</div>
+          <div class="stat-card-v2-val">${active}</div>
+          <div class="stat-card-v2-sub">${done} selesai</div>
         </div>
-        <div class="stat-icon" style="background:rgba(124,58,237,0.15)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <div class="stat-card-v2-icon" style="background:rgba(124,58,237,0.13)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         </div>
       </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-card-top">
+    <div class="stat-card-v2">
+      <div class="stat-card-v2-bar" style="background:linear-gradient(90deg,#059669,#34D399)"></div>
+      <div class="stat-card-v2-body">
         <div>
-          <div class="stat-label">Total Pengeluaran</div>
-          <div class="stat-val" style="font-size:16px">${fmt$(mExp)}</div>
-          <div class="stat-sub">bulan ini</div>
+          <div class="stat-card-v2-label">Total Pengeluaran</div>
+          <div class="stat-card-v2-val" style="font-size:${mExp>=10000000?'17px':mExp>=1000000?'22px':'28px'}">${fmt$(mExp)}</div>
+          <div class="stat-card-v2-sub">bulan ini</div>
         </div>
-        <div class="stat-icon" style="background:rgba(16,185,129,0.15)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <div class="stat-card-v2-icon" style="background:rgba(16,185,129,0.13)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         </div>
       </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-card-top">
+    <div class="stat-card-v2">
+      <div class="stat-card-v2-bar" style="background:linear-gradient(90deg,#B45309,#F59E0B)"></div>
+      <div class="stat-card-v2-body">
         <div>
-          <div class="stat-label">Program Training</div>
-          <div class="stat-val">${programs.length}</div>
-          <div class="stat-sub">${runningPrograms} sedang berjalan</div>
+          <div class="stat-card-v2-label">Program Training</div>
+          <div class="stat-card-v2-val">${programs.length}</div>
+          <div class="stat-card-v2-sub">${runningPrograms} sedang berjalan</div>
         </div>
-        <div class="stat-icon" style="background:rgba(245,158,11,0.15)">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <div class="stat-card-v2-icon" style="background:rgba(245,158,11,0.13)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
         </div>
       </div>
     </div>
   </div>
   ${isSuperAdminRole(u) ? renderResearchMonitorCard() : ''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
-    <div class="card">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-        <div style="font-size:14px;font-weight:700">Task Aktif</div>
+    <div class="dash-card">
+      <div class="dash-card-head">
+        <div class="dash-card-title">Task Aktif</div>
         ${badge(`${active} task`)}
       </div>
-      <div style="padding:8px 0">
+      <div>
         ${activeTasks.length===0?'<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">Semua task selesai</div></div>':
           activeTasks.map(t=>`
-          <div style="padding:10px 18px;border-bottom:1px solid var(--bg2);display:flex;align-items:center;gap:12px">
+          <div class="dash-task-row">
+            <div style="width:8px;height:8px;border-radius:50%;background:${STATUS_DOT[t.status]||'#64748B'};flex-shrink:0"></div>
             <div style="flex:1;overflow:hidden">
-              <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(t.title)}</div>
-              <div style="font-size:11px;color:var(--muted)">${escHtml(t.assignee)} · ${fmtD(t.deadline)}</div>
+              <div class="dash-task-title">${escHtml(t.title)}</div>
+              <div class="dash-task-meta">${escHtml(t.assignee)} · ${fmtD(t.deadline)}</div>
             </div>
             ${badge(t.status)}
           </div>`).join('')}
       </div>
     </div>
-    <div class="card">
-      <div style="padding:14px 18px;border-bottom:1px solid var(--border)">
-        <div style="font-size:14px;font-weight:700">Jadwal Mendatang</div>
+    <div class="dash-card">
+      <div class="dash-card-head">
+        <div class="dash-card-title">Jadwal Mendatang</div>
       </div>
-      <div style="padding:8px 0">
+      <div>
         ${upcoming.length===0?'<div class="empty"><div class="empty-icon">📅</div><div class="empty-text">Tidak ada jadwal</div></div>':
-          upcoming.map(s=>{ const tm=scheduleTypeMeta(s.type); return `
-          <div style="padding:10px 18px;border-bottom:1px solid var(--bg2);display:flex;gap:12px;align-items:flex-start">
-            <div style="width:4px;height:36px;border-radius:4px;background:${tm.dot};flex-shrink:0;margin-top:2px"></div>
-            <div style="flex:1">
-              <div style="font-size:13px;font-weight:600">${escHtml(s.name)}</div>
-              <div style="font-size:11px;color:var(--muted)">${fmtD(s.date)} · ${escHtml(s.loc)}</div>
+          upcoming.map(s=>{ const tm=scheduleTypeMeta(s.type); const dt=new Date(s.date); return `
+          <div class="dash-sched-row">
+            <div class="dash-sched-date">
+              <div class="dash-sched-date-day">${dt.getDate()}</div>
+              <div class="dash-sched-date-mon">${ID_MONTHS_SHORT[dt.getMonth()]}</div>
             </div>
-            <span style="background:${tm.bg};color:${tm.c};font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;flex-shrink:0">${escHtml(s.type)}</span>
+            <div class="dash-sched-divider"></div>
+            <div style="flex:1;overflow:hidden">
+              <div class="dash-sched-name">${escHtml(s.name)}</div>
+              <div class="dash-sched-loc">${escHtml(s.loc)}</div>
+            </div>
+            <span style="background:${tm.bg};color:${tm.c};font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;flex-shrink:0;white-space:nowrap">${escHtml(s.type)}</span>
           </div>`;}).join('')}
       </div>
     </div>
   </div>
-  <div class="card" style="padding:16px 20px">
-    <div style="font-size:14px;font-weight:700;margin-bottom:14px">Progres Task Keseluruhan</div>
-    <div class="progress-bar" style="margin-bottom:14px">
-      ${COLS.map(st=>{ const cnt=taskItems.filter(t=>t.status===st).length; const pct=taskItems.length?cnt/taskItems.length*100:0; return pct>0?`<div class="progress-seg" style="width:${pct}%;background:${COL_MAP[st]}"></div>`:''; }).join('')}
+  <div class="dash-card" style="padding:20px 24px">
+    <div class="dash-card-title" style="margin-bottom:16px">Progres Task Keseluruhan</div>
+    <div class="dash-progress-bar">
+      ${COLS.map(st=>{ const cnt=taskItems.filter(t=>t.status===st).length; const pct=taskItems.length?cnt/taskItems.length*100:0; return pct>0?`<div class="dash-progress-seg" style="width:${pct}%;background:${COL_MAP[st]}"></div>`:''; }).join('')}
     </div>
-    <div class="progress-legend">
+    <div class="dash-legend">
       ${[['To Do','#3B82F6'],['On Progress','#D97706'],['Review','#7C3AED'],['Done','#059669']].map(([st,col])=>`
-      <div style="display:flex;align-items:center;gap:6px">
-        <div class="progress-dot" style="background:${col}"></div>
-        <span style="font-size:12px;color:var(--sub)">${st}: <strong style="color:var(--text)">${taskItems.filter(t=>t.status===st).length}</strong></span>
+      <div class="dash-legend-item">
+        <div class="dash-legend-dot" style="background:${col}"></div>
+        <span>${st}: <strong style="color:var(--text)">${taskItems.filter(t=>t.status===st).length}</strong></span>
       </div>`).join('')}
     </div>
   </div>`;
