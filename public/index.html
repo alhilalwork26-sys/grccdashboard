@@ -3763,7 +3763,7 @@ function runAutomaticReminders(){
     }
   }
 
-  state.tasks.filter(t => t.status !== 'Done' && t.deadline).forEach(t => {
+  activeTaskItems().filter(t => t.status !== 'Done' && t.deadline).forEach(t => {
     const recipients = [...new Set([t.aId, ...admins].filter(Boolean))];
     if((t.requiredEvidence || []).length && !taskEvidenceComplete(t)){
       activeStableReminderKeys.add(`auto_task_evidence_missing_${t.id}`);
@@ -8250,7 +8250,7 @@ function refreshDeadlineBanner() {
   const today_ = today();
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1);
   const tomStr = tomorrow.toISOString().split('T')[0];
-  const urgent = state.tasks.filter(t => t.status !== 'Done' && t.deadline &&
+  const urgent = activeTaskItems().filter(t => t.status !== 'Done' && t.deadline &&
     (t.deadline === today_ || t.deadline === tomStr || t.deadline < today_));
   const banner = document.getElementById('deadline-banner');
   const chips  = document.getElementById('banner-task-chips');
@@ -8461,7 +8461,13 @@ function restorePatched(){
     if(rawAccounts){
       const parsedAccounts = JSON.parse(rawAccounts);
       if(Array.isArray(parsedAccounts) && parsedAccounts.length){
-        legacyLocalData = !parsedAccounts.some(a => a.id === 'owner') && parsedAccounts.some(a => ['finance@grcc.id','program@grcc.id','trainer@grcc.id','staff@grcc.id'].includes(a.email));
+        /* Deteksi format akun LAMA: hanya jika id akun cocok dengan pola statis lama (bukan uid),
+           misalnya {id:'finance', email:'finance@grcc.id'}. Tidak boleh trigger untuk akun modern
+           yang kebetulan memakai email lama tapi ID-nya sudah uid (dimulai dengan '_'). */
+        legacyLocalData = parsedAccounts.some(a =>
+          ['finance','program','trainer','staff'].includes(a.id) &&
+          ['finance@grcc.id','program@grcc.id','trainer@grcc.id','staff@grcc.id'].includes(a.email)
+        );
         if(!legacyLocalData) ACCOUNTS.splice(0, ACCOUNTS.length, ...parsedAccounts);
       }
     }
@@ -9428,7 +9434,7 @@ if(state.user && !isProductionRuntime()){
     const now = new Date();
     const admins = ACCOUNTS.filter(a => isManagerRole(a)).map(a => a.id);
     let changed = false;
-    state.tasks.filter(t => t.status !== 'Done' && t.deadline).forEach(t => {
+    activeTaskItems().filter(t => t.status !== 'Done' && t.deadline).forEach(t => {
       const due = new Date(t.deadline + 'T23:59:59');
       const days = Math.ceil((due - now) / 86400000);
       if(days > 3) return;
@@ -10164,7 +10170,9 @@ if(state.user && !isProductionRuntime()){
       const payload = await res.json();
       if(payload.state?.schedules) payload.state.schedules = payload.state.schedules.filter(s => !s._deleted);
       if(!payload.state){
-        await saveToBackend(true);
+        /* Hanya inisialisasi server jika user sudah login — mencegah menimpa server
+           dengan state kosong ketika loadFromBackend dipanggil sebelum login selesai */
+        if(state?.user) await saveToBackend(true);
         setSyncStatus('Database server disiapkan', 'success');
         return;
       }
@@ -10356,6 +10364,9 @@ if(state.user && !isProductionRuntime()){
 
   window.addEventListener('beforeunload', () => {
     if(location.protocol === 'file:') return;
+    /* Jangan kirim beacon jika user belum/tidak login — mengirim state kosong bisa
+       menimpa data server yang valid. Beacon hanya aman jika session aktif. */
+    if(!state?.user) return;
     if(navigator.sendBeacon){
       const blob = new Blob([JSON.stringify({state: statePayload()})], {type: 'application/json'});
       navigator.sendBeacon(API.state, blob);
@@ -10819,8 +10830,10 @@ if(state.user && !isProductionRuntime()){
       return false;
     }
 
-    /* Jika ada data lokal yang belum tersimpan ke server, jangan timpa modul data */
-    const hasPendingLocalSave = Boolean(window.__grccPendingBackendSave);
+    /* Jika ada data lokal yang belum tersimpan ke server, jangan timpa modul data.
+       Cek juga __grccSavingToBackend: flag ini true selama network request berlangsung
+       (setelah __grccPendingBackendSave di-clear tapi sebelum fetch selesai). */
+    const hasPendingLocalSave = Boolean(window.__grccPendingBackendSave) || Boolean(window.__grccSavingToBackend);
 
     const currentUserId = state.user?.id || (!isProductionRuntime() ? localStorage.getItem(STORAGE_KEYS_PATCH.session) : '') || '';
     const beforeSignature = pageSyncSignature();
