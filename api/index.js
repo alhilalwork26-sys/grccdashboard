@@ -856,16 +856,33 @@ async function syncModuleTables(state) {
         }
       }
       const dedupedItems = [...dedupMap.values()];
-      /* Batch SELECT existing dari DB */
+      /* Batch SELECT existing dari DB.
+         Progress harian uniknya adalah userId+date, bukan hanya id.
+         Jika client sempat punya id lokal lalu server memberi id lain, lookup by id saja
+         membuat data pagi/sore terlihat hilang atau menjadi duplikat setelah refresh. */
       const ids = dedupedItems.map(item => String(item.id));
+      const keys = dedupedItems
+        .map(item => `${item.userId || ''}|${item.date || ''}`)
+        .filter(key => key !== '|');
       const existRows = await sql.query(
-        `SELECT id, payload FROM ${t} WHERE id = ANY($1::text[])`, [ids]
+        `SELECT id, payload FROM ${t}
+         WHERE id = ANY($1::text[])
+            OR ((payload->>'userId') || '|' || (payload->>'date')) = ANY($2::text[])
+         ORDER BY updated_at DESC`,
+        [ids, keys]
       );
       const existMap = new Map((existRows.rows || existRows).map(row => [String(row.id), row.payload]));
+      const existKeyMap = new Map();
+      (existRows.rows || existRows).forEach(row => {
+        const key = `${row.payload?.userId || ''}|${row.payload?.date || ''}`;
+        if (key !== '|' && !existKeyMap.has(key)) existKeyMap.set(key, { id: String(row.id), payload: row.payload });
+      });
       finalPayloads = dedupedItems.map(item => {
-        const existing = existMap.get(String(item.id)) || null;
+        const key = `${item.userId || ''}|${item.date || ''}`;
+        const byKey = existKeyMap.get(key) || null;
+        const existing = existMap.get(String(item.id)) || byKey?.payload || null;
         const merged = mergeDailyProgressPayload(existing, item);
-        merged.id = String(existing?.id || item.id);
+        merged.id = String(existing?.id || byKey?.id || item.id);
         return merged;
       });
 
@@ -883,6 +900,30 @@ async function syncModuleTables(state) {
        SET payload = EXCLUDED.payload, updated_at = now()`,
       [upsertIds, upsertJsons]
     );
+
+    if (stateKey === 'dailyProgresses') {
+      const uniq = finalPayloads
+        .filter(p => p.userId && p.date && p.id)
+        .map(p => ({ userId: String(p.userId), date: String(p.date), id: String(p.id) }));
+      if (uniq.length) {
+        await sql.query(
+          `DELETE FROM daily_progresses d
+           USING (
+             SELECT unnest($1::text[]) AS user_id,
+                    unnest($2::text[]) AS date_key,
+                    unnest($3::text[]) AS keep_id
+           ) v
+           WHERE (d.payload->>'userId') = v.user_id
+             AND (d.payload->>'date') = v.date_key
+             AND d.id <> v.keep_id`,
+          [
+            uniq.map(x => x.userId),
+            uniq.map(x => x.date),
+            uniq.map(x => x.id)
+          ]
+        );
+      }
+    }
   }
 }
 
