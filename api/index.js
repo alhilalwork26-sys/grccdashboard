@@ -1698,6 +1698,25 @@ async function handle(req, res) {
         const user = await currentUser(req);
         if (!user) throw new Error('Sesi tidak valid, silakan login ulang');
         const payload = JSON.parse(clientPayload || '{}');
+        const mode = String(payload.mode || 'document');
+        if (mode === 'avatar') {
+          const filename = String(payload.filename || 'profile-photo').trim();
+          const contentType = String(payload.contentType || '');
+          const size = Number(payload.size || 0);
+          if (!/^image\/(png|jpe?g|webp)$/.test(contentType)) throw new Error('Foto harus PNG, JPG, atau WebP');
+          if (size > 15 * 1024 * 1024) throw new Error('Ukuran foto profil maksimal 15 MB');
+          return {
+            tokenPayload: JSON.stringify({
+              mode,
+              filename,
+              contentType,
+              size,
+              userId: user.id,
+              userName: user.name,
+              userRole: user.role
+            })
+          };
+        }
         const id = String(payload.id || '').trim();
         const filename = String(payload.filename || '').trim();
         const contentType = String(payload.contentType || 'application/octet-stream');
@@ -1727,6 +1746,7 @@ async function handle(req, res) {
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
         const payload = JSON.parse(tokenPayload || '{}');
+        if (payload.mode === 'avatar') return;
         const actor = { id: payload.userId, name: payload.userName, role: payload.userRole };
         const previous = await sql`SELECT filename, content_type, blob_url, blob_access, visibility, folder, size, uploaded_by, google_drive_file_id, google_drive_url FROM documents WHERE id=${payload.id}`;
         const access = blob.url && blob.url.includes('.private.blob.vercel-storage.com') ? 'private' : 'public';

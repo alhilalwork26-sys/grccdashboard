@@ -8842,9 +8842,10 @@ async function downloadDoc(id){
 }
 function previewProfileAvatar(input){
   const file = input.files?.[0];
-  if(!file) return;
-  if(!/^image\/(png|jpe?g|webp)$/.test(file.type)){ toast('Foto harus PNG, JPG, atau WebP', 'error'); input.value=''; return; }
-  if(file.size > 15 * 1024 * 1024){ toast('Ukuran foto maksimal 15 MB', 'error'); input.value=''; return; }
+  if(!file){ window.pendingProfileAvatarDataUrl = ''; window.pendingProfileAvatarFile = null; return; }
+  if(!/^image\/(png|jpe?g|webp)$/.test(file.type)){ toast('Foto harus PNG, JPG, atau WebP', 'error'); input.value=''; window.pendingProfileAvatarFile = null; return; }
+  if(file.size > 15 * 1024 * 1024){ toast('Ukuran foto maksimal 15 MB', 'error'); input.value=''; window.pendingProfileAvatarFile = null; return; }
+  window.pendingProfileAvatarFile = file;
   const reader = new FileReader();
   reader.onload = () => {
     window.pendingProfileAvatarDataUrl = reader.result;
@@ -8865,11 +8866,14 @@ async function saveProfile(){
   const oldName = state.user.name;
   if(location.protocol !== 'file:'){
     try {
+      const avatarUrl = window.pendingProfileAvatarFile
+        ? await uploadAvatarFileToServer(window.pendingProfileAvatarFile, state.user.id)
+        : (state.user.avatarUrl || '');
       const data = await fetch('/api/profile', {
         method: 'PUT',
         credentials: 'same-origin',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({name, email, whatsapp, password, avatarUrl: state.user.avatarUrl || '', avatarDataUrl: window.pendingProfileAvatarDataUrl || ''})
+        body: JSON.stringify({name, email, whatsapp, password, avatarUrl, avatarDataUrl: ''})
       }).then(async res => {
         const payload = await res.json().catch(() => ({}));
         if(!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
@@ -8883,6 +8887,7 @@ async function saveProfile(){
       state.expenses = state.expenses.map(e => e.pic === oldName ? {...e, pic: state.user.name} : e);
       state.programs = state.programs.map(p => p.tId === state.user.id ? {...p, trainer: state.user.name} : p);
       window.pendingProfileAvatarDataUrl = '';
+      window.pendingProfileAvatarFile = null;
       initApp();
       renderPage();
       toast('Profil berhasil diperbarui');
@@ -9768,6 +9773,7 @@ if(state.user && !isProductionRuntime()){
     ensureAccountUsernames();
     const user = editId ? ACCOUNTS.find(a => a.id === editId) : null;
     window.pendingUserAvatarDataUrl = '';
+    window.pendingUserAvatarFile = null;
     const html = `
       <div style="display:grid;gap:12px">
         <div style="display:flex;align-items:center;gap:14px;padding:12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.025)">
@@ -9798,9 +9804,10 @@ if(state.user && !isProductionRuntime()){
 
   window.previewUserAvatar = function(input){
     const file = input.files?.[0];
-    if(!file) return;
-    if(!/^image\/(png|jpe?g|webp)$/.test(file.type)){ toast('Foto harus PNG, JPG, atau WebP', 'error'); input.value=''; return; }
-    if(file.size > 15 * 1024 * 1024){ toast('Ukuran foto maksimal 15 MB', 'error'); input.value=''; return; }
+    if(!file){ window.pendingUserAvatarDataUrl = ''; window.pendingUserAvatarFile = null; return; }
+    if(!/^image\/(png|jpe?g|webp)$/.test(file.type)){ toast('Foto harus PNG, JPG, atau WebP', 'error'); input.value=''; window.pendingUserAvatarFile = null; return; }
+    if(file.size > 15 * 1024 * 1024){ toast('Ukuran foto maksimal 15 MB', 'error'); input.value=''; window.pendingUserAvatarFile = null; return; }
+    window.pendingUserAvatarFile = file;
     const reader = new FileReader();
     reader.onload = () => {
       window.pendingUserAvatarDataUrl = reader.result;
@@ -10274,6 +10281,25 @@ if(state.user && !isProductionRuntime()){
   }
   window.uploadDocumentToServer = uploadDocumentToServer;
 
+  async function uploadAvatarFileToServer(file, userId='profile'){
+    if(!file) return '';
+    if(!isProductionRuntime()) return URL.createObjectURL(file);
+    const { upload } = await import('https://esm.sh/@vercel/blob@2.3.0/client');
+    const safeName = String(file.name || 'profile-photo').replace(/[^A-Za-z0-9._-]+/g, '_');
+    const blob = await upload(`profiles/${userId}_${Date.now()}_${safeName}`, file, {
+      access: 'public',
+      handleUploadUrl: '/api/documents/client-upload',
+      clientPayload: JSON.stringify({
+        mode: 'avatar',
+        filename: file.name || safeName,
+        contentType: file.type || 'application/octet-stream',
+        size: file.size
+      })
+    });
+    return blob?.url || '';
+  }
+  window.uploadAvatarFileToServer = uploadAvatarFileToServer;
+
   function updateDocUploadProgress(id, progress, step=''){
     const pct = Math.max(1, Math.min(99, Math.round(Number(progress) || 1)));
     state.docs = (state.docs || []).map(item => item.id === id ? {
@@ -10571,6 +10597,9 @@ if(state.user && !isProductionRuntime()){
     if(!name || !username || !email){ toast('Nama, username, dan email wajib diisi', 'error'); return; }
     if(!editId && password.length < 6){ toast('Password minimal 6 karakter', 'error'); return; }
     try {
+      const avatarUrl = window.pendingUserAvatarFile
+        ? await uploadAvatarFileToServer(window.pendingUserAvatarFile, existing?.id || editId || username || 'new-user')
+        : (existing?.avatarUrl || '');
       const data = await apiJson(editId ? `${AUTH_API.users}/${encodeURIComponent(editId)}` : AUTH_API.users, {
         method: editId ? 'PUT' : 'POST',
         body: JSON.stringify({
@@ -10582,14 +10611,16 @@ if(state.user && !isProductionRuntime()){
           role,
           dept,
           av: initialsFromName(name),
-          avatarUrl: existing?.avatarUrl || '',
-          avatarDataUrl: window.pendingUserAvatarDataUrl || ''
+          avatarUrl,
+          avatarDataUrl: ''
         })
       });
       const idx = ACCOUNTS.findIndex(a => a.id === data.user.id);
       if(idx >= 0) ACCOUNTS.splice(idx, 1, data.user);
       else ACCOUNTS.push(data.user);
       if(state.user?.id === data.user.id) state.user = data.user;
+      window.pendingUserAvatarDataUrl = '';
+      window.pendingUserAvatarFile = null;
       closeModal();
       renderPage();
       toast(editId ? 'Akun berhasil diperbarui' : 'Akun baru berhasil dibuat');
