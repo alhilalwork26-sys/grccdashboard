@@ -230,7 +230,7 @@ async function uploadAvatarDataUrl(dataUrl, userId) {
   if (!match) throw new Error('Foto profil harus berupa PNG, JPG, atau WebP');
   const contentType = match[1] === 'image/jpg' ? 'image/jpeg' : match[1];
   const buffer = Buffer.from(match[2], 'base64');
-  if (buffer.length > 1.5 * 1024 * 1024) throw new Error('Ukuran foto profil maksimal 1.5 MB');
+  if (buffer.length > 15 * 1024 * 1024) throw new Error('Ukuran foto profil maksimal 15 MB');
   const ext = contentType.split('/')[1].replace('jpeg', 'jpg');
   const blob = await put(`profiles/${userId}_${Date.now()}.${ext}`, buffer, {
     access: process.env.BLOB_ACCESS === 'private' ? 'private' : 'public',

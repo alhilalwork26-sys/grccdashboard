@@ -7929,7 +7929,7 @@ function renderSettings(){
       <div style="display:flex;flex-direction:column;gap:12px">
         <div class="form-group"><label class="form-label">Foto Profil</label>
           <input id="set-avatar-file" class="form-control" type="file" accept="image/png,image/jpeg,image/webp" onchange="previewProfileAvatar(this)">
-          <div class="inline-help" style="margin-top:6px">Opsional. JPG, PNG, atau WebP maksimal 1.5 MB.</div>
+          <div class="inline-help" style="margin-top:6px">Opsional. JPG, PNG, atau WebP maksimal 15 MB.</div>
         </div>
         <div class="form-group"><label class="form-label">Nama Lengkap</label>
           <input id="set-name" class="form-control" value="${escHtml(u.name)}">
@@ -8844,7 +8844,7 @@ function previewProfileAvatar(input){
   const file = input.files?.[0];
   if(!file) return;
   if(!/^image\/(png|jpe?g|webp)$/.test(file.type)){ toast('Foto harus PNG, JPG, atau WebP', 'error'); input.value=''; return; }
-  if(file.size > 1.5 * 1024 * 1024){ toast('Ukuran foto maksimal 1.5 MB', 'error'); input.value=''; return; }
+  if(file.size > 15 * 1024 * 1024){ toast('Ukuran foto maksimal 15 MB', 'error'); input.value=''; return; }
   const reader = new FileReader();
   reader.onload = () => {
     window.pendingProfileAvatarDataUrl = reader.result;
@@ -9775,7 +9775,7 @@ if(state.user && !isProductionRuntime()){
           <div style="flex:1;min-width:0">
             <label class="form-label" style="margin-bottom:6px">Foto Profil</label>
             <input id="um-avatar-file" class="form-control" type="file" accept="image/png,image/jpeg,image/webp" onchange="previewUserAvatar(this)">
-            <div class="inline-help" style="margin-top:6px">Opsional. Gunakan foto JPG, PNG, atau WebP maksimal 1.5 MB.</div>
+            <div class="inline-help" style="margin-top:6px">Opsional. Gunakan foto JPG, PNG, atau WebP maksimal 15 MB.</div>
           </div>
         </div>
         <div class="form-group"><label class="form-label">Nama Lengkap <span>*</span></label><input id="um-name" class="form-control" value="${escHtml(user?.name || '')}" placeholder="Nama staf"></div>
@@ -9800,7 +9800,7 @@ if(state.user && !isProductionRuntime()){
     const file = input.files?.[0];
     if(!file) return;
     if(!/^image\/(png|jpe?g|webp)$/.test(file.type)){ toast('Foto harus PNG, JPG, atau WebP', 'error'); input.value=''; return; }
-    if(file.size > 1.5 * 1024 * 1024){ toast('Ukuran foto maksimal 1.5 MB', 'error'); input.value=''; return; }
+    if(file.size > 15 * 1024 * 1024){ toast('Ukuran foto maksimal 15 MB', 'error'); input.value=''; return; }
     const reader = new FileReader();
     reader.onload = () => {
       window.pendingUserAvatarDataUrl = reader.result;
