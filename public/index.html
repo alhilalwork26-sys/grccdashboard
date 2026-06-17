@@ -3462,6 +3462,34 @@ function cleanServerStateForClient(serverState={}){
   return cleaned;
 }
 
+/* Merge dua array berdasarkan .id, selalu pakai versi dengan updatedAt lebih baru.
+   Item yang ada di lokal tapi tidak di server dipertahankan (belum tersimpan ke server).
+   Ini mencegah last-write-wins race condition antar user: jika Admin save state LAMA
+   yang belum tahu Finance sudah set status Paid, status Finance tetap terlindungi. */
+function mergeStateArrayById(local, remote){
+  if(!Array.isArray(remote)) return Array.isArray(local) ? local : [];
+  if(!Array.isArray(local) || !local.length) return remote;
+  const localMap = new Map(local.map(x => [x.id, x]));
+  const remoteMap = new Map(remote.map(x => [x.id, x]));
+  const merged = [];
+  for(const [id, remoteItem] of remoteMap){
+    const localItem = localMap.get(id);
+    if(!localItem){
+      merged.push(remoteItem);
+    } else {
+      const lt = new Date(localItem.updatedAt || localItem.createdAt || 0).getTime();
+      const rt = new Date(remoteItem.updatedAt || remoteItem.createdAt || 0).getTime();
+      /* Jika timestamp sama (misalnya keduanya 0), server menang untuk konsistensi */
+      merged.push(rt > lt ? remoteItem : localItem);
+    }
+  }
+  /* Pertahankan item lokal yang tidak ada di server (belum tersimpan / pending save) */
+  for(const [id, localItem] of localMap){
+    if(!remoteMap.has(id)) merged.push(localItem);
+  }
+  return merged;
+}
+
 /* ===== HELPERS ===== */
 const uid = () => '_'+Math.random().toString(36).substr(2,9);
 const fmt$ = v => new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(v||0);
@@ -4513,6 +4541,8 @@ async function uploadTaskEvidence(taskId, typeId, file){
   const type = WORK_EVIDENCE_TYPES.find(t=>t.id===typeId);
   if(!task || !type || !file) return;
   const docId = `task_${taskId}_${typeId}_${uid().replace(/^_/, '')}`;
+  /* Blokir auto-sync selama upload berlangsung */
+  window.__grccPendingBackendSave = true;
   try {
     toast('Mengupload bukti kerja...', 'info');
     const dataUrl = await new Promise((resolve, reject) => {
@@ -4548,6 +4578,8 @@ async function uploadTaskEvidence(taskId, typeId, file){
     toast('Bukti kerja berhasil diupload');
   } catch(err) {
     toast(err.message || 'Upload bukti kerja gagal', 'error');
+  } finally {
+    if(window.__grccPendingBackendSave && !window.__grccSavingToBackend) window.__grccPendingBackendSave = false;
   }
 }
 function triggerTaskEvidenceUpload(taskId,typeId){
@@ -6354,6 +6386,9 @@ function updateReimburseUploadProgress(progress, step='Mengupload struk'){
   if(stepEl) stepEl.textContent = step;
 }
 async function submitReimburseRequest(){
+  /* Blokir auto-sync selama upload berlangsung — mencegah state.reimburseRequests
+     ditimpa server saat file struk sedang diupload (proses bisa 10-60 detik) */
+  window.__grccPendingBackendSave = true;
   const btn = document.getElementById('rr-submit');
   const date = document.getElementById('rr-date')?.value || today();
   const items = [...document.querySelectorAll('[data-rr-row]')].map(row => ({
@@ -6423,6 +6458,8 @@ async function submitReimburseRequest(){
     toast(err.message || 'Pengajuan reimburse gagal dikirim', 'error');
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = 'Ajukan ke Finance'; }
+    /* Reset flag agar auto-sync tidak diblokir selamanya jika operasi gagal */
+    if(window.__grccPendingBackendSave && !window.__grccSavingToBackend) window.__grccPendingBackendSave = false;
   }
 }
 function openReimburseDetail(id){
@@ -6530,6 +6567,9 @@ async function submitReimbursePaid(id){
   const files = [...(document.getElementById('rp-files')?.files || [])];
   if(!note){toast('Keterangan pembayaran wajib diisi', 'error');return;}
   if(!files.length){toast('Upload minimal satu bukti pembayaran', 'error');return;}
+  /* Blokir auto-sync selama upload bukti pembayaran — mencegah status Paid
+     ditimpa server yang masih punya state lama (Approved) dari user lain */
+  window.__grccPendingBackendSave = true;
   const btn = document.getElementById('rp-submit');
   try {
     if(btn){ btn.disabled = true; btn.textContent = 'Mengupload...'; }
@@ -6573,6 +6613,8 @@ async function submitReimbursePaid(id){
     toast(err.message || 'Upload bukti pembayaran gagal', 'error');
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = 'Simpan Pembayaran'; }
+    /* Reset flag agar auto-sync tidak diblokir selamanya jika upload gagal */
+    if(window.__grccPendingBackendSave && !window.__grccSavingToBackend) window.__grccPendingBackendSave = false;
   }
 }
 async function deleteReimburseRequest(id){
@@ -10893,6 +10935,17 @@ if(state.user && !isProductionRuntime()){
     if(hasPendingLocalSave) {
       /* Hanya apply metadata (accounts, permissions, non-module state), jangan timpa data modul */
       DATA_MODULE_KEYS.forEach(key => delete clientState[key]);
+    }
+
+    /* Merge data modul dengan strategi updatedAt — jangan ganti array penuh.
+       Ini mencegah status Paid/Approved reimburse berubah karena user lain save state lama:
+       item yang lokal punya updatedAt lebih baru akan dipertahankan meski server kirim versi lama. */
+    if(!hasPendingLocalSave){
+      DATA_MODULE_KEYS.forEach(key => {
+        if(Array.isArray(clientState[key]) && Array.isArray(state[key])){
+          clientState[key] = mergeStateArrayById(state[key], clientState[key]);
+        }
+      });
     }
 
     Object.assign(state, clientState);
