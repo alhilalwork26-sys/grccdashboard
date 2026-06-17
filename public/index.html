@@ -3643,7 +3643,11 @@ function startLogin(){
   setTimeout(()=>document.getElementById('login-email')?.focus(), 260);
 }
 function doLogout(){
+  /* Hapus semua data dari state agar user berikutnya tidak melihat data user sebelumnya */
   state.user=null; state.page='dashboard'; state.taskDetail=null; state.progDetail=null;
+  state.tasks=[]; state.expenses=[]; state.schedules=[]; state.programs=[];
+  state.reimburseRequests=[]; state.rabItems=[]; state.dailyProgresses=[];
+  state.notifications=[]; state.docs=[]; state.timelineEquity=[]; state.researchItems=[];
   document.getElementById('app').style.display='none';
   document.getElementById('login-page').style.display='flex';
   document.getElementById('login-page')?.classList.remove('login-active');
@@ -4001,14 +4005,14 @@ function renderDashboard(){
   const taskItems = activeTaskItems();
   const active = taskItems.filter(t=>t.status!=='Done').length;
   const done   = taskItems.filter(t=>t.status==='Done').length;
-  const mSched = state.schedules.filter(s=>thisMonth(s.date)).length;
+  const mSched = (state.schedules||[]).filter(s=>!s._deleted&&thisMonth(s.date)).length;
   const mExp   = activeExpenses().filter(e=>thisMonth(e.date)&&(e.status==='Approved'||e.status==='Submitted')).reduce((s,e)=>s+(e.total||e.amount||0),0);
   const programs = Array.isArray(state.programs) ? state.programs.filter(p=>!p._deleted) : [];
   const runningPrograms = programs.filter(p=>{
     const status = String(p.status || '').toLowerCase();
     return status.includes('progress') || status.includes('berjalan') || status.includes('ongoing') || status.includes('aktif');
   }).length;
-  const upcoming = [...state.schedules].sort((a,b)=>new Date(a.date)-new Date(b.date)).filter(s=>new Date(s.date)>=now).slice(0,4);
+  const upcoming = (state.schedules||[]).filter(s=>!s._deleted).sort((a,b)=>new Date(a.date)-new Date(b.date)).filter(s=>new Date(s.date)>=now).slice(0,4);
   const activeTasks = taskItems.filter(t=>t.status!=='Done').slice(0,4);
   const COLS = ['To Do','On Progress','Review','Done'];
 
@@ -4470,8 +4474,9 @@ function handleTaskDragEnd(event){
   },0);
 }
 async function updateTaskStatus(id,status){
-  const task = state.tasks.find(t=>t.id===id);
-  if(status === 'Done' && task && !taskEvidenceComplete(task)){
+  const task = state.tasks.find(t=>t.id===id && !t._deleted);
+  if(!task) return;
+  if(status === 'Done' && !taskEvidenceComplete(task)){
     toast(`Bukti wajib belum lengkap: ${missingTaskEvidenceLabels(task).join(', ')}`, 'error');
     return;
   }
@@ -4497,7 +4502,7 @@ function addComment(id){
   const inp=document.getElementById('comment-inp');
   if(!inp||!inp.value.trim()) return;
   const now=new Date();
-  state.tasks=state.tasks.map(t=>t.id===id?{...t,comments:[...(t.comments || []),{id:uid(),by:state.user.name,text:inp.value.trim(),ts:now.toLocaleDateString('id-ID',{day:'2-digit',month:'short'}),createdAt:new Date().toISOString()}],updatedAt:new Date().toISOString()}:t);
+  state.tasks=state.tasks.map(t=>t.id===id?{...t,comments:[...(t.comments || []),{id:uid(),by:state.user?.name||'',text:inp.value.trim(),ts:now.toLocaleDateString('id-ID',{day:'2-digit',month:'short'}),createdAt:new Date().toISOString()}],updatedAt:new Date().toISOString()}:t);
   inp.value='';
   persistPatched();
   renderPage();
@@ -5003,7 +5008,7 @@ function resetProgressMonitorFilters(){
 }
 
 function loadDailyProgressByDate(date){
-  const item = state.dailyProgresses.find(x => x.userId === state.user.id && x.date === date);
+  const item = state.dailyProgresses.find(x => x.userId === state.user?.id && x.date === date);
   document.getElementById('dp-date').value = date;
   document.getElementById('dp-status').value = item?.progressStatus || 'On Track';
   document.getElementById('dp-morning-plan').value = item?.morningPlan || '';
@@ -5055,7 +5060,7 @@ async function saveDailyProgress(phase='full'){
   }
 
   const nowIso = new Date().toISOString();
-  const existing = state.dailyProgresses.find(x => x.userId === state.user.id && x.date === date);
+  const existing = state.dailyProgresses.find(x => x.userId === state.user?.id && x.date === date);
   const shouldSaveEvening = phase === 'evening' || (phase === 'full' && Boolean(eveningUpdate));
   let savedItem = null;
   if(existing){
@@ -5074,9 +5079,9 @@ async function saveDailyProgress(phase='full'){
   } else {
     savedItem = {
       id: uid(),
-      userId: state.user.id,
-      userName: state.user.name,
-      role: state.user.role,
+      userId: state.user?.id||'',
+      userName: state.user?.name||'',
+      role: state.user?.role||'',
       date,
       morningPlan,
       eveningUpdate: shouldSaveEvening ? eveningUpdate : '',
@@ -5258,18 +5263,20 @@ function renderSchedule(){
 function prevMonth(){ const m=state.calMonth; state.calMonth=new Date(m.getFullYear(),m.getMonth()-1,1); renderPage(); }
 function nextMonth(){ const m=state.calMonth; state.calMonth=new Date(m.getFullYear(),m.getMonth()+1,1); renderPage(); }
 async function deleteSchedule(id){
-  const sched = state.schedules.find(s=>s.id===id);
-  if(sched && !isManagerRole(state.user) && !scheduleOwnedByUser(sched,state.user)){toast('Kamu hanya bisa menghapus jadwal yang kamu buat','error');return;}
+  const sched = state.schedules.find(s=>s.id===id && !s._deleted);
+  if(!sched) return;
+  if(!isManagerRole(state.user) && !scheduleOwnedByUser(sched,state.user)){toast('Kamu hanya bisa menghapus jadwal yang kamu buat','error');return;}
   state.schedules=state.schedules.map(s=>s.id===id?{...s,_deleted:true,deletedAt:new Date().toISOString(),deletedBy:state.user?.id||''}:s);
   renderPage();
   await persistDeleteToServer('Jadwal dihapus dari server', 'Jadwal dihapus lokal, tetapi sync server belum selesai');
 }
 function openSchedModal(editId){
   if(!(PERMS[state.user?.role]||[]).includes('schedule')){toast('Role kamu belum punya akses jadwal','error');return;}
-  const s=editId?state.schedules.find(x=>x.id===editId):null;
-  if(editId && s && !isManagerRole(state.user) && !scheduleOwnedByUser(s,state.user)){toast('Kamu hanya bisa mengedit jadwal yang kamu buat','error');return;}
-  const creatorName = editId ? scheduleCreatorName(s) : state.user.name;
-  const creatorRole = editId ? scheduleCreatorRole(s) : state.user.role;
+  const s=editId?state.schedules.find(x=>x.id===editId && !x._deleted):null;
+  if(editId && !s){toast('Jadwal tidak ditemukan atau sudah dihapus','error');return;}
+  if(editId && !isManagerRole(state.user) && !scheduleOwnedByUser(s,state.user)){toast('Kamu hanya bisa mengedit jadwal yang kamu buat','error');return;}
+  const creatorName = editId ? scheduleCreatorName(s) : (state.user?.name||'');
+  const creatorRole = editId ? scheduleCreatorRole(s) : (state.user?.role||'');
   const selectedType = SCHEDULE_TYPES.includes(s?.type) ? s.type : (isResearchRole(state.user) ? 'Riset' : 'Pelatihan In-House');
   const html=`
     <div class="form-group"><label class="form-label">Nama Kegiatan <span>*</span></label>
@@ -5305,7 +5312,7 @@ function saveSchedule(editId){
   const name=document.getElementById('sf-name').value.trim();
   const date=document.getElementById('sf-date').value;
   if(!name||!date){toast('Nama dan tanggal wajib diisi','error');return;}
-  const current = editId ? state.schedules.find(s=>s.id===editId) : null;
+  const current = editId ? state.schedules.find(s=>s.id===editId && !s._deleted) : null;
   const data={
     name,
     date,
@@ -7292,8 +7299,8 @@ function renderPrograms(){
 
 function renderProgDetail(){
   normalizePrograms();
-  const p=state.programs.find(x=>x.id===state.progDetail);
-  if(!p) return renderPrograms();
+  const p=state.programs.find(x=>x.id===state.progDetail && !x._deleted);
+  if(!p){ state.progDetail=null; return renderPrograms(); }
   const u=state.user;
   const canAtt=programCanEdit(p,u);
   const canEdit=programCanEdit(p,u);
@@ -7369,7 +7376,8 @@ function setAtt(pid,participantId,val){
   if(typeof window.flushBackendSave === 'function') window.flushBackendSave().catch(()=>{});
 }
 function openProgModal(editId=''){
-  const current = editId ? state.programs.find(p=>p.id===editId) : null;
+  const current = editId ? state.programs.find(p=>p.id===editId && !p._deleted) : null;
+  if(editId && !current){toast('Program tidak ditemukan atau sudah dihapus','error');return;}
   if(current && !programCanEdit(current)){toast('Kamu tidak punya akses edit program ini','error');return;}
   const trainers=ACCOUNTS.filter(a=>isTrainerRole(a) || isSuperAdminRole(a));
   const html=`
@@ -7425,7 +7433,7 @@ async function saveProg(editId=''){
   }
 }
 async function deleteProgram(id){
-  const prog = state.programs.find(p=>p.id===id);
+  const prog = state.programs.find(p=>p.id===id && !p._deleted);
   if(!prog || !programCanEdit(prog)){toast('Kamu tidak punya akses hapus program ini','error');return;}
   if(!confirm(`Hapus program "${prog.name}"?`)) return;
   /* Pakai _deleted:true agar syncModuleTables bisa hapus dari DB */
@@ -7438,7 +7446,7 @@ async function deleteProgram(id){
   await persistDeleteToServer('Program dihapus dari server', 'Program dihapus lokal, tetapi sync server belum selesai');
 }
 function openParticipantModal(programId, participantId=''){
-  const prog = state.programs.find(p=>p.id===programId);
+  const prog = state.programs.find(p=>p.id===programId && !p._deleted);
   if(!prog || !programCanEdit(prog)){toast('Kamu tidak punya akses mengubah peserta','error');return;}
   const pt = (prog.pts || []).find(x=>x.id===participantId);
   const html=`
@@ -7473,7 +7481,7 @@ async function saveParticipant(programId, participantId=''){
   }
 }
 async function deleteParticipant(programId, participantId){
-  const prog = state.programs.find(p=>p.id===programId);
+  const prog = state.programs.find(p=>p.id===programId && !p._deleted);
   const pt = prog?.pts?.find(x=>x.id===participantId);
   if(!prog || !programCanEdit(prog) || !pt) return;
   if(!confirm(`Hapus peserta ${pt.name}?`)) return;
@@ -9615,7 +9623,7 @@ if(state.user && !isProductionRuntime()){
     const originalSetAttNotif = setAtt;
     setAtt = function(pid,name,val){
       originalSetAttNotif(pid,name,val);
-      const prog = state.programs.find(p => p.id === pid);
+      const prog = state.programs.find(p => p.id === pid && !p._deleted);
       if(prog){
         createAppNotification({ title:'Absensi peserta diperbarui', message:`Absensi ${name} pada ${prog.name} telah diperbarui.`, type:'info', recipientRoles:['Super Admin','Super Admin + Manager','Program Admin','Program Admin + Kepala Marketing/Kreatif'], linkPage:'programs', linkId:pid, dedupeKey:`att_${pid}_${name}_${val}` });
       }
@@ -10565,7 +10573,11 @@ if(state.user && !isProductionRuntime()){
 
   window.doLogout = async function(){
     try { await apiJson(AUTH_API.logout, {method:'POST', body:'{}'}); } catch(e) {}
+    /* Hapus semua data agar user berikutnya tidak melihat data user sebelumnya */
     state.user=null; state.page='dashboard'; state.taskDetail=null; state.progDetail=null;
+    state.tasks=[]; state.expenses=[]; state.schedules=[]; state.programs=[];
+    state.reimburseRequests=[]; state.rabItems=[]; state.dailyProgresses=[];
+    state.notifications=[]; state.docs=[]; state.timelineEquity=[]; state.researchItems=[];
     localStorage.removeItem(STORAGE_KEYS_PATCH.session);
     localStorage.removeItem('grcc_session_expires_at');
     clearInterval(sessionCheckTimer);
