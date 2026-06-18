@@ -7322,7 +7322,8 @@ function renderPrograms(){
           </div>
         </div>
         <div style="font-size:14px;font-weight:800;margin-bottom:4px">${escHtml(p.name)}</div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:12px">${escHtml(p.batch)}</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:${p.lokasi?'4px':'12px'}">${escHtml(p.batch)}</div>
+        ${p.lokasi?`<div style="font-size:11px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:4px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${escHtml(p.lokasi)}</div>`:''}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
           <div><div style="font-size:10px;color:var(--muted);font-weight:600">TANGGAL</div><div style="font-size:11px;font-weight:600">${fmtD(p.date)}</div></div>
           <div><div style="font-size:10px;color:var(--muted);font-weight:600">TRAINER</div><div style="font-size:11px;font-weight:600">${escHtml(p.trainer.split(' ')[0])}</div></div>
@@ -7366,7 +7367,9 @@ function renderProgDetail(){
       </div>
       <div class="detail-meta">
         <div><div class="detail-meta-label">TRAINER</div><div class="detail-meta-val">${escHtml(p.trainer)}</div></div>
-        <div><div class="detail-meta-label">PESERTA</div><div class="detail-meta-val">${pts.length} orang</div></div>
+        <div><div class="detail-meta-label">PESERTA</div><div class="detail-meta-val">${p.targetPeserta ? `${pts.length} / ${p.targetPeserta} orang` : `${pts.length} orang`}</div></div>
+        ${p.lokasi ? `<div style="grid-column:1/-1"><div class="detail-meta-label">LOKASI</div><div class="detail-meta-val">${escHtml(p.lokasi)}</div></div>` : ''}
+        ${(p.narasumber && p.narasumber.length) ? `<div style="grid-column:1/-1"><div class="detail-meta-label">NARASUMBER</div><div class="detail-meta-val" style="display:flex;flex-direction:column;gap:3px">${p.narasumber.map(ns=>`<span>${escHtml(ns.name)}${ns.jabatan?`<span style="font-weight:400;color:var(--muted);font-size:12px"> — ${escHtml(ns.jabatan)}</span>`:''}</span>`).join('')}</div></div>` : ''}
       </div>
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px">
         <div style="font-size:14px;font-weight:700">Daftar Peserta & Absensi</div>
@@ -7417,11 +7420,31 @@ function setAtt(pid,participantId,val){
   renderPage();
   if(typeof window.flushBackendSave === 'function') window.flushBackendSave().catch(()=>{});
 }
+function addNarasumberRow(name='', jabatan=''){
+  const list = document.getElementById('pf-narasumber-list');
+  if(!list) return;
+  const rowId = uid();
+  const row = document.createElement('div');
+  row.className = 'ns-row';
+  row.dataset.nsId = rowId;
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
+  row.innerHTML = `<input class="form-control ns-name" placeholder="Nama narasumber..." value="${escHtml(name)}" style="flex:1.2;min-width:0"><input class="form-control ns-jabatan" placeholder="Jabatan/Instansi (opsional)" value="${escHtml(jabatan)}" style="flex:1;min-width:0"><button type="button" onclick="this.closest('.ns-row').remove()" class="btn btn-dan btn-sm" style="flex-shrink:0;padding:0 10px;font-size:18px;line-height:1" title="Hapus">×</button>`;
+  list.appendChild(row);
+}
 function openProgModal(editId=''){
   const current = editId ? state.programs.find(p=>p.id===editId && !p._deleted) : null;
   if(editId && !current){toast('Program tidak ditemukan atau sudah dihapus','error');return;}
   if(current && !programCanEdit(current)){toast('Kamu tidak punya akses edit program ini','error');return;}
   const trainers=ACCOUNTS.filter(a=>isTrainerRole(a) || isSuperAdminRole(a));
+  const nsExisting = (current?.narasumber || []).filter(ns => ns.name);
+  const nsRows = (nsExisting.length ? nsExisting : [{id:uid(),name:'',jabatan:''}]).map(ns => {
+    const rowId = ns.id || uid();
+    return `<div class="ns-row" data-ns-id="${rowId}" style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+      <input class="form-control ns-name" placeholder="Nama narasumber..." value="${escHtml(ns.name||'')}" style="flex:1.2;min-width:0">
+      <input class="form-control ns-jabatan" placeholder="Jabatan/Instansi (opsional)" value="${escHtml(ns.jabatan||'')}" style="flex:1;min-width:0">
+      <button type="button" onclick="this.closest('.ns-row').remove()" class="btn btn-dan btn-sm" style="flex-shrink:0;padding:0 10px;font-size:18px;line-height:1" title="Hapus">×</button>
+    </div>`;
+  }).join('');
   const html=`
     <div class="form-group"><label class="form-label">Nama Program <span>*</span></label>
       <input id="pf-name" class="form-control" placeholder="Nama program training..." value="${escHtml(current?.name || '')}">
@@ -7434,6 +7457,9 @@ function openProgModal(editId=''){
         <select id="pf-trainer" class="form-control">${trainers.map(a=>`<option value="${a.id}"${(current?.tId || state.user?.id)===a.id?' selected':''}>${escHtml(a.name)}</option>`).join('')}</select>
       </div>
     </div>
+    <div class="form-group"><label class="form-label">Lokasi</label>
+      <input id="pf-lokasi" class="form-control" placeholder="Contoh: Gedung A Lt.3, Jakarta / Online via Zoom..." value="${escHtml(current?.lokasi || '')}">
+    </div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Tanggal Mulai <span>*</span></label>
         <input id="pf-date" type="date" class="form-control" value="${escHtml(current?.date || '')}">
@@ -7442,14 +7468,26 @@ function openProgModal(editId=''){
         <input id="pf-end" type="date" class="form-control" value="${escHtml(current?.end || '')}">
       </div>
     </div>
-    <div class="form-group"><label class="form-label">Status</label>
-      <select id="pf-status" class="form-control">${PROGRAM_STATUSES.map(s=>`<option${(current?.status || 'Upcoming')===s?' selected':''}>${s}</option>`).join('')}</select>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Target Jumlah Peserta</label>
+        <input id="pf-target-peserta" type="number" min="0" class="form-control" placeholder="0" value="${escHtml(String(current?.targetPeserta || ''))}">
+      </div>
+      <div class="form-group"><label class="form-label">Status</label>
+        <select id="pf-status" class="form-control">${PROGRAM_STATUSES.map(s=>`<option${(current?.status || 'Upcoming')===s?' selected':''}>${s}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Narasumber</span>
+        <button type="button" onclick="addNarasumberRow()" class="btn btn-sec btn-sm" style="font-size:11px;padding:3px 10px">+ Tambah</button>
+      </label>
+      <div id="pf-narasumber-list">${nsRows}</div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-sec" onclick="closeModal()">Batal</button>
       <button class="btn btn-pri" onclick="saveProg('${editId}')">Simpan</button>
     </div>`;
-  showModal(current ? 'Edit Program' : 'Tambah Program', html, 520);
+  showModal(current ? 'Edit Program' : 'Tambah Program', html, 620);
 }
 async function saveProg(editId=''){
   if(!isManagerRole(state.user) && !isTrainerRole(state.user)){toast('Role kamu belum bisa membuat program','error');return;}
@@ -7459,7 +7497,14 @@ async function saveProg(editId=''){
   const tId=document.getElementById('pf-trainer').value;
   const acc=ACCOUNTS.find(a=>a.id===tId);
   const isEdit = Boolean(editId);
-  const data={name,batch:document.getElementById('pf-batch').value,date,end:document.getElementById('pf-end').value,trainer:acc?.name||'',tId,status:document.getElementById('pf-status').value,updatedAt:new Date().toISOString()};
+  const narasumber = [...document.querySelectorAll('#pf-narasumber-list .ns-row')].map(row => ({
+    id: row.dataset.nsId || uid(),
+    name: (row.querySelector('.ns-name')?.value || '').trim(),
+    jabatan: (row.querySelector('.ns-jabatan')?.value || '').trim()
+  })).filter(ns => ns.name);
+  const targetPeserta = parseInt(document.getElementById('pf-target-peserta').value, 10) || 0;
+  const lokasi = document.getElementById('pf-lokasi').value.trim();
+  const data={name,batch:document.getElementById('pf-batch').value,date,end:document.getElementById('pf-end').value,trainer:acc?.name||'',tId,status:document.getElementById('pf-status').value,lokasi,targetPeserta,narasumber,updatedAt:new Date().toISOString()};
   if(isEdit){
     state.programs=state.programs.map(p=>p.id===editId?{...p,...data}:p);
   } else {
