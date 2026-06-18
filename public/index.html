@@ -3458,7 +3458,9 @@ function cleanServerStateForClient(serverState={}){
   delete cleaned.user;
   delete cleaned.userId;
   LOCAL_UI_STATE_KEYS.forEach(key => delete cleaned[key]);
-  if(Array.isArray(cleaned.docs)) cleaned.docs = cleaned.docs.filter(d => !d._deleted);
+  /* Jangan strip _deleted docs di sini — biarkan mergeStateArrayById membandingkan
+     updatedAt agar penghapusan dari device lain tidak di-restore oleh device yang
+     belum sync. activeDocs() sudah filter _deleted:true untuk tampilan. */
   return cleaned;
 }
 
@@ -7692,9 +7694,34 @@ function renderDocuments(){
     </table>
   </div></div>`;
 }
-async function deleteDoc(id){
+function deleteDoc(id){
   const doc = activeDocs().find(d=>d.id===id);
-  if(doc && !confirm(`Hapus dokumen "${doc.name}"?`)) return;
+  if(!doc) return;
+  const html=`
+    <div style="margin-bottom:18px">
+      <div style="font-size:14px;color:var(--text);margin-bottom:12px">Yakin ingin menghapus dokumen berikut?</div>
+      <div style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;align-items:center;gap:10px">
+        <div style="min-width:36px;height:36px;border-radius:7px;background:rgba(239,68,68,.12);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--red)">PDF</div>
+        <div>
+          <div style="font-weight:700;font-size:13px">${escHtml(doc.name)}</div>
+          <div style="color:var(--muted);font-size:12px;margin-top:2px">${escHtml(doc.folder || 'Tanpa folder')} · ${doc.size ? (doc.size/1048576).toFixed(1)+' MB' : 'Ukuran tidak diketahui'}</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;padding:10px 12px;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);border-radius:7px;font-size:12px;color:var(--red);display:flex;align-items:center;gap:7px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Tindakan ini tidak dapat dibatalkan. File akan dihapus permanen.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Batal</button>
+      <button class="btn btn-dan" onclick="closeModal();confirmDeleteDoc('${id}')">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+        Ya, Hapus Dokumen
+      </button>
+    </div>`;
+  showModal('Hapus Dokumen', html, 440);
+}
+async function confirmDeleteDoc(id){
   state.docs=state.docs.map(d=>d.id===id?{...d,_deleted:true,updatedAt:new Date().toISOString(),updatedBy:state.user?.name || ''}:d);
   renderPage();
   await persistDeleteToServer('Dokumen dihapus dari server', 'Dokumen dihapus lokal, tetapi sync server belum selesai');
