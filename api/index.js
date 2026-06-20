@@ -1364,11 +1364,9 @@ async function touchAppStateMarker(sql) {
 }
 
 async function handle(req, res) {
-  await ensureSchema();
   const url = new URL(req.url, 'https://local.invalid');
   let path = url.pathname.replace(/^\/api/, '') || '/';
   const method = req.method;
-  const sql = db();
 
   if (path === '/health') {
     try {
@@ -1384,6 +1382,9 @@ async function handle(req, res) {
       return send(res, 503, { ok: false, db: 'error', error: err.message });
     }
   }
+
+  await ensureSchema();
+  const sql = db();
 
   const cronMatch = path.match(/^\/cron\/progress-(morning|evening)$/);
   if (cronMatch && method === 'GET') {
