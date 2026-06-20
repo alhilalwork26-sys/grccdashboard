@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { Readable } = require('stream');
-const { neon } = require('@neondatabase/serverless');
+const postgres = require('postgres');
 const { get, put } = require('@vercel/blob');
 const { handleUpload } = require('@vercel/blob/client');
 const pdfParse = require('pdf-parse');
@@ -85,7 +85,7 @@ const EMPTY_STATE = {
 };
 
 let schemaReady = false;
-let _sqlClient = null; // cached neon client — reused across warm invocations
+let _sqlClient = null; // cached postgres client — reused across warm invocations
 const JAKARTA_TIMEZONE = 'Asia/Jakarta';
 let googleDriveTokenCache = null;
 
@@ -129,8 +129,18 @@ function clientIp(req) {
 
 function db() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL belum diset');
-  /* Reuse client di warm invocation — neon() safe untuk di-cache */
-  if (!_sqlClient) _sqlClient = neon(process.env.DATABASE_URL);
+  if (!_sqlClient) {
+    const pg = postgres(process.env.DATABASE_URL, {
+      ssl: 'require',
+      max: 1,
+      idle_timeout: 20,
+      connect_timeout: 10,
+    });
+    const wrapped = (strings, ...values) => pg(strings, ...values);
+    wrapped.unsafe = (text, params) => pg.unsafe(text, params || []);
+    wrapped.begin = (fn) => pg.begin(fn);
+    _sqlClient = wrapped;
+  }
   return _sqlClient;
 }
 
@@ -643,12 +653,12 @@ async function ensureSchema() {
   // Batch 5: semua module tables + index secara paralel
   await Promise.all(Object.values(MODULE_TABLES).map(table => {
     const t = safeTable(table);
-    return sql.query(`CREATE TABLE IF NOT EXISTS ${t} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
+    return sql.unsafe(`CREATE TABLE IF NOT EXISTS ${t} (id text PRIMARY KEY, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())`);
   }));
   await Promise.all([
     ...Object.values(MODULE_TABLES).map(table => {
       const t = safeTable(table);
-      return sql.query(`CREATE INDEX IF NOT EXISTS idx_${t}_updated_at ON ${t}(updated_at DESC)`);
+      return sql.unsafe(`CREATE INDEX IF NOT EXISTS idx_${t}_updated_at ON ${t}(updated_at DESC)`);
     }),
     sql`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)`,
     sql`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`,
@@ -669,10 +679,10 @@ async function ensureSchema() {
 
   // Batch 7: migrasi data sekuensial (urutan penting)
   await Promise.all([
-    sql.query(`UPDATE roles SET permissions = permissions || '["schedule"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'schedule'`),
-    sql.query(`UPDATE roles SET permissions = permissions || '["reimburse"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'reimburse'`),
-    sql.query(`UPDATE roles SET permissions = permissions || '["tasks"]'::jsonb, updated_at = now() WHERE name IN ('Finance','Staff Finance + Dokumen','Kepala Trainer') AND NOT permissions ? 'tasks'`),
-    sql.query(`UPDATE roles SET permissions = permissions - 'rab' - 'settings', updated_at = now() WHERE name NOT IN ('Super Admin','Super Admin + Manager') AND (permissions ? 'rab' OR permissions ? 'settings')`),
+    sql.unsafe(`UPDATE roles SET permissions = permissions || '["schedule"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'schedule'`),
+    sql.unsafe(`UPDATE roles SET permissions = permissions || '["reimburse"]'::jsonb, updated_at = now() WHERE NOT permissions ? 'reimburse'`),
+    sql.unsafe(`UPDATE roles SET permissions = permissions || '["tasks"]'::jsonb, updated_at = now() WHERE name IN ('Finance','Staff Finance + Dokumen','Kepala Trainer') AND NOT permissions ? 'tasks'`),
+    sql.unsafe(`UPDATE roles SET permissions = permissions - 'rab' - 'settings', updated_at = now() WHERE name NOT IN ('Super Admin','Super Admin + Manager') AND (permissions ? 'rab' OR permissions ? 'settings')`),
   ]);
 
   for (const [oldRole, newRole] of Object.entries(LEGACY_ROLE_MIGRATIONS)) {
@@ -688,7 +698,7 @@ async function ensureSchema() {
       await Promise.all(legacyItems.filter(Boolean).map(item => {
         const id = String(item.id || crypto.randomBytes(8).toString('hex'));
         item.id = id;
-        return sql.query(
+        return sql.unsafe(
           `INSERT INTO research_items (id, payload, updated_at) VALUES ($1, $2::jsonb, now()) ON CONFLICT (id) DO NOTHING`,
           [id, JSON.stringify(item)]
         );
@@ -791,16 +801,16 @@ async function syncModuleTables(state) {
       const bys = deletedItems.map(item => String(item.deletedById || item.updatedById || item.deletedByName || ''));
       /* Jalankan dalam satu transaction agar tidak ada state inconsistent
          (item terhapus tapi tidak ada record di module_deletions atau sebaliknya) */
-      await sql.transaction([
-        sql.query(`DELETE FROM ${t} WHERE id = ANY($1::text[])`, [ids]),
-        sql.query(
+      await sql.begin(async tx => {
+        await tx.unsafe(`DELETE FROM ${t} WHERE id = ANY($1::text[])`, [ids]);
+        await tx.unsafe(
           `INSERT INTO module_deletions (module_key, entity_id, deleted_at, deleted_by)
            SELECT $1, unnest($2::text[]), now(), unnest($3::text[])
            ON CONFLICT (module_key, entity_id) DO UPDATE
            SET deleted_at = EXCLUDED.deleted_at, deleted_by = EXCLUDED.deleted_by`,
           [stateKey, ids, bys]
-        )
-      ]);
+        );
+      });
     }
 
     if (!activeItems.length) continue;
@@ -808,7 +818,7 @@ async function syncModuleTables(state) {
     const activeIds = activeItems.map(item => String(item.id));
 
     /* ── 2. Batch check module_deletions (1 query utk semua ID aktif) ── */
-    const delRows = await sql.query(
+    const delRows = await sql.unsafe(
       `SELECT entity_id, deleted_at FROM module_deletions
        WHERE module_key = $1 AND entity_id = ANY($2::text[])`,
       [stateKey, activeIds]
@@ -832,7 +842,7 @@ async function syncModuleTables(state) {
     if (stateKey === 'tasks') {
       /* Batch SELECT semua task yang ada di DB sekaligus */
       const ids = toUpsert.map(item => String(item.id));
-      const existRows = await sql.query(
+      const existRows = await sql.unsafe(
         `SELECT id, payload FROM ${t} WHERE id = ANY($1::text[])`, [ids]
       );
       const existMap = new Map((existRows.rows || existRows).map(row => [String(row.id), row.payload]));
@@ -864,7 +874,7 @@ async function syncModuleTables(state) {
       const keys = dedupedItems
         .map(item => `${item.userId || ''}|${item.date || ''}`)
         .filter(key => key !== '|');
-      const existRows = await sql.query(
+      const existRows = await sql.unsafe(
         `SELECT id, payload FROM ${t}
          WHERE id = ANY($1::text[])
             OR ((payload->>'userId') || '|' || (payload->>'date')) = ANY($2::text[])
@@ -893,7 +903,7 @@ async function syncModuleTables(state) {
     /* ── 4. Batch UPSERT — SATU query untuk semua item dalam modul ── */
     const upsertIds   = finalPayloads.map(p => p.id);
     const upsertJsons = finalPayloads.map(p => JSON.stringify(p));
-    await sql.query(
+    await sql.unsafe(
       `INSERT INTO ${t} (id, payload, updated_at)
        SELECT unnest($1::text[]), unnest($2::jsonb[]), now()
        ON CONFLICT (id) DO UPDATE
@@ -906,7 +916,7 @@ async function syncModuleTables(state) {
         .filter(p => p.userId && p.date && p.id)
         .map(p => ({ userId: String(p.userId), date: String(p.date), id: String(p.id) }));
       if (uniq.length) {
-        await sql.query(
+        await sql.unsafe(
           `DELETE FROM daily_progresses d
            USING (
              SELECT unnest($1::text[]) AS user_id,
@@ -974,7 +984,7 @@ async function upsertDailyProgressItem(sql, incoming, actor) {
   item.role = String(item.role || actor?.role || '').trim();
   item.updatedAt = item.updatedAt || new Date().toISOString();
 
-  const existingRows = await sql.query(
+  const existingRows = await sql.unsafe(
     `SELECT id, payload FROM daily_progresses
      WHERE id = $1
         OR ((payload->>'userId') = $2 AND (payload->>'date') = $3)
@@ -988,8 +998,8 @@ async function upsertDailyProgressItem(sql, incoming, actor) {
   item.id = id;
   const payload = mergeDailyProgressPayload(existing, item);
   payload.id = id;
-  await sql.query(`DELETE FROM daily_progresses WHERE ((payload->>'userId') = $1 AND (payload->>'date') = $2) AND id <> $3`, [userId, date, id]);
-  await sql.query(
+  await sql.unsafe(`DELETE FROM daily_progresses WHERE ((payload->>'userId') = $1 AND (payload->>'date') = $2) AND id <> $3`, [userId, date, id]);
+  await sql.unsafe(
     `INSERT INTO daily_progresses (id, payload, updated_at)
      VALUES ($1, $2::jsonb, now())
      ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
@@ -1026,7 +1036,7 @@ function mergeTaskPayload(existing, incoming) {
 async function moduleItems(table) {
   const sql = db();
   const t = safeTable(table);
-  const result = await sql.query(`SELECT payload FROM ${t} ORDER BY updated_at DESC`);
+  const result = await sql.unsafe(`SELECT payload FROM ${t} ORDER BY updated_at DESC`);
   return (result.rows || result).map(row => row.payload).filter(item => !item?._deleted);
 }
 
@@ -1342,7 +1352,7 @@ async function mergeAppStatePayload(sql, cleaned, incomingState) {
 async function touchAppStateMarker(sql) {
   const savedAt = new Date().toISOString();
   const marker = JSON.stringify({ serverSavedAt: savedAt });
-  await sql.query(
+  await sql.unsafe(
     `INSERT INTO app_state (id, payload, updated_at)
      VALUES (1, $1::jsonb, now())
      ON CONFLICT (id) DO UPDATE
