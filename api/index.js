@@ -132,7 +132,7 @@ function db() {
   if (!_sqlClient) {
     const pg = postgres(process.env.DATABASE_URL, {
       ssl: 'require',
-      max: 1,
+      max: Number(process.env.DB_POOL_MAX || 5),
       idle_timeout: 20,
       connect_timeout: 10,
       prepare: false,
