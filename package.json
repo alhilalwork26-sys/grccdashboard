@@ -9,7 +9,7 @@
     "deploy:prod": "vercel deploy --prod"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.0.2",
+    "postgres": "^3.4.5",
     "@vercel/blob": "^2.3.0",
     "mammoth": "^1.12.0",
     "pdf-parse": "^1.1.1"
