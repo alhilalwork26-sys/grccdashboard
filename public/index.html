@@ -4626,10 +4626,9 @@ function saveTaskEvidenceLink(taskId){
 }
 function openTaskModal(editId){
   const t = editId?state.tasks.find(x=>x.id===editId):null;
-  const canCreateMultiAssigneeTask = isManagerRole(state.user) && !editId;
-  const assigneeBlock = canCreateMultiAssigneeTask
+  const assigneeBlock = !editId
     ? `<div class="form-group">
-        <label class="form-label">Assign ke beberapa orang</label>
+        <label class="form-label">Assign ke</label>
         <div class="assignee-checklist">
           ${ACCOUNTS.map(a=>`
             <label class="assignee-check">
@@ -4727,18 +4726,11 @@ async function saveTask(editId){
     return;
   }
 
-  const canCreateMultiAssigneeTask = isManagerRole(state.user);
   let selectedIds = [];
-
-  if(canCreateMultiAssigneeTask){
-    selectedIds = Array.from(document.querySelectorAll('.tf-assignee-multi:checked')).map(el => el.value);
-    if(selectedIds.length === 0){
-      toast('Pilih minimal satu assignee','error');
-      return;
-    }
-  } else {
-    const aId=document.getElementById('tf-assignee').value;
-    if(aId) selectedIds = [aId];
+  selectedIds = Array.from(document.querySelectorAll('.tf-assignee-multi:checked')).map(el => el.value);
+  if(selectedIds.length === 0){
+    toast('Pilih minimal satu assignee','error');
+    return;
   }
 
   const newTasks = selectedIds.map(aId => {
