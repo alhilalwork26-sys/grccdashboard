@@ -6513,8 +6513,14 @@ function openReimburseDetail(id){
       Tanggal: ${fmtD(req.date)}${req.note?`<br>Catatan: ${escHtml(req.note)}`:''}
     </div>
     <div class="table-scroll" style="border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:12px">
-      <table><thead><tr><th>Kategori</th><th>Keperluan</th><th>Nominal</th><th>Keterangan</th></tr></thead>
-      <tbody>${(req.items||[]).map(item=>`<tr><td>${escHtml(item.category)}</td><td>${escHtml(item.description)}</td><td>${fmt$(item.amount)}</td><td>${escHtml(item.note || '-')}</td></tr>`).join('')}</tbody></table>
+      <table><thead><tr><th>Kategori</th><th>Keperluan</th><th>Nominal</th><th>Keterangan</th>${req.status==='Rejected'&&req.applicantId===state.user?.id?'<th></th>':''}</tr></thead>
+      <tbody>${(req.items||[]).map((item,idx)=>`<tr>
+        <td>${escHtml(item.category)}</td>
+        <td>${escHtml(item.description)}</td>
+        <td>${fmt$(item.amount)}</td>
+        <td>${escHtml(item.note || '-')}</td>
+        ${req.status==='Rejected'&&req.applicantId===state.user?.id?`<td><button class="btn btn-dan btn-sm" onclick="deleteReimburseItem('${req.id}',${idx})" style="padding:3px 8px;font-size:11px">Hapus</button></td>`:''}
+      </tr>`).join('')}</tbody></table>
     </div>
     <div style="margin-bottom:12px"><strong>Preview Struk</strong><div style="margin-top:8px">${renderReimburseFilePreviews(req.receipts || [], `detail_receipt_${req.id}`)}</div></div>
     <div style="margin-bottom:12px"><strong>Preview Bukti Pembayaran</strong><div style="margin-top:8px">${renderReimburseFilePreviews(req.paymentProofs || [], `detail_payment_${req.id}`)}</div></div>
@@ -6527,6 +6533,23 @@ function openReimburseDetail(id){
     <div class="modal-footer"><button class="btn btn-sec" onclick="closeModal()">Tutup</button></div>`;
   showModal(`Detail Reimburse`, html, 760);
 }
+function deleteReimburseItem(reqId, itemIdx){
+  const req = activeReimburseRequests().find(r => r.id === reqId);
+  if(!req) return;
+  if(req.applicantId !== state.user?.id){ toast('Hanya pemohon yang bisa menghapus item','error'); return; }
+  if(req.status !== 'Rejected'){ toast('Item hanya bisa dihapus saat status Ditolak','error'); return; }
+  const item = (req.items||[])[itemIdx];
+  if(!item || !confirm(`Hapus item "${item.category} - ${item.description}"?`)) return;
+  const newItems = (req.items||[]).filter((_,i)=>i!==itemIdx);
+  if(newItems.length === 0){ toast('Tidak bisa menghapus semua item — gunakan tombol Hapus pengajuan','error'); return; }
+  state.reimburseRequests = state.reimburseRequests.map(r => r.id===reqId ? {...r, items:newItems, updatedAt:new Date().toISOString()} : r);
+  persistPatched();
+  if(typeof window.flushBackendSave==='function') window.flushBackendSave().catch(()=>{});
+  toast('Item dihapus');
+  closeModal();
+  renderPage();
+}
+
 function reviewReimburse(id, status){
   if(!canReviewReimburse(state.user)){toast('Hanya Finance dan Super Admin yang bisa review reimburse','error');return;}
   const req = activeReimburseRequests().find(r => r.id === id);
