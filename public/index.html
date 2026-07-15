@@ -3140,6 +3140,37 @@ tbody tr:hover td,
   .page-title { font-size: 26px; }
 }
 
+/* ===== ANNOUNCEMENT PAGE ===== */
+.ann-tabs { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:22px; overflow-x:auto; }
+.ann-tab { padding:8px 18px; font-size:13px; font-weight:700; color:var(--muted); background:none; border:none; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; white-space:nowrap; transition:color .15s,border-color .15s; }
+.ann-tab.active { color:var(--amber); border-bottom-color:var(--amber); }
+.ann-tab:hover:not(.active) { color:var(--text); }
+.ann-section-label { font-size:11px; font-weight:900; letter-spacing:1.2px; color:var(--amber); margin:0 0 10px; display:flex; align-items:center; gap:6px; }
+.ann-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px 20px; margin-bottom:14px; position:relative; transition:box-shadow .18s; }
+.ann-card:hover { box-shadow:0 4px 24px rgba(0,0,0,.13); }
+.ann-card.pinned { border-color:rgba(245,158,11,.35); background:rgba(245,158,11,.04); }
+.ann-card-header { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.ann-card-title { font-size:15px; font-weight:900; color:var(--text); flex:1; min-width:0; }
+.ann-card-actions { display:flex; gap:6px; align-items:center; flex-shrink:0; }
+.ann-card-actions button { background:none; border:none; cursor:pointer; color:var(--muted); padding:4px; border-radius:8px; display:flex; align-items:center; justify-content:center; transition:color .15s,background .15s; }
+.ann-card-actions button:hover { color:var(--text); background:var(--surface2); }
+.ann-card-actions button.pinned-btn.active { color:var(--amber); }
+.ann-card-body { font-size:13.5px; color:var(--text); line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }
+.ann-card-body.collapsed { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.ann-expand-btn { background:none; border:none; cursor:pointer; color:var(--accent); font-size:12.5px; font-weight:700; padding:4px 0; margin-top:6px; }
+.ann-card-meta { margin-top:12px; padding-top:10px; border-top:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.ann-card-meta-author { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); }
+.ann-type-pill { display:inline-flex; align-items:center; gap:4px; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:700; border:1px solid; }
+.ann-type-pill.info    { background:rgba(59,130,246,.1);   color:#60A5FA; border-color:rgba(59,130,246,.25); }
+.ann-type-pill.penting { background:rgba(245,158,11,.12);  color:var(--amber); border-color:rgba(245,158,11,.3); }
+.ann-type-pill.sukses  { background:rgba(34,197,94,.12);   color:#4ADE80; border-color:rgba(34,197,94,.25); }
+.ann-type-pill.event   { background:rgba(124,58,237,.12);  color:#A78BFA; border-color:rgba(124,58,237,.25); }
+.ann-blast-btn { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:700; background:rgba(245,158,11,.12); color:var(--amber); border:1px solid rgba(245,158,11,.3); cursor:pointer; transition:background .15s; }
+.ann-blast-btn:hover { background:rgba(245,158,11,.22); }
+.ann-blast-btn:disabled { opacity:.5; cursor:not-allowed; }
+[data-theme="light"] .ann-card { background:#fff; }
+[data-theme="light"] .ann-card.pinned { background:rgba(245,158,11,.04); }
+
 </style>
 </head>
 <body>
@@ -3339,14 +3370,14 @@ const ACCOUNTS = [
   {id:'owner',name:'Administrator GRCC', username:'admin', email:'admin@grcc.id', pw:'', role:'Super Admin + Manager', dept:'Manajemen', av:'AG'},
 ];
 const PERMS = {
-  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','rab','documents','settings','timeline'],
-  'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents'],
-  'Staff Kreatif': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
-  'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','reimburse','documents'],
-  'Finance': ['dashboard','tasks','daily_progress','schedule','finance','reimburse'],
-  'Staff Finance + Dokumen': ['dashboard','tasks','daily_progress','schedule','finance','reimburse','documents'],
-  'Kepala Trainer': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents'],
-  'Riset': ['dashboard','tasks','daily_progress','schedule','reimburse','documents','timeline'],
+  'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','rab','documents','settings','timeline','announcements'],
+  'Program Admin + Kepala Marketing/Kreatif': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents','announcements'],
+  'Staff Kreatif': ['dashboard','tasks','daily_progress','schedule','reimburse','documents','announcements'],
+  'Staff Marketing': ['dashboard','tasks','daily_progress','schedule','reimburse','documents','announcements'],
+  'Finance': ['dashboard','tasks','daily_progress','schedule','finance','reimburse','announcements'],
+  'Staff Finance + Dokumen': ['dashboard','tasks','daily_progress','schedule','finance','reimburse','documents','announcements'],
+  'Kepala Trainer': ['dashboard','tasks','daily_progress','schedule','programs','reimburse','documents','announcements'],
+  'Riset': ['dashboard','tasks','daily_progress','schedule','reimburse','documents','timeline','announcements'],
 };
 const REQUIRED_ROLE_PERMS = {
   'Super Admin + Manager': ['dashboard','tasks','daily_progress','schedule','programs','finance','reimburse','rab','documents','timeline','settings'],
@@ -3408,6 +3439,7 @@ const NAV = [
   {id:'documents',label:'Dokumen', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`},
   {id:'settings', label:'Pengaturan', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`},
   {id:'timeline', label:'Timeline Equity', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="8" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="11" cy="18" r="2" fill="currentColor" stroke="none"/></svg>`},
+  {id:'announcements', label:'Pengumuman', icon:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3l-8.646 8.646M22 3H15M22 3v7"/><path d="M3 11l1.5 1.5"/><path d="M3 7h4"/><path d="M3 15h2"/><path d="M8 4l2 2"/><circle cx="11" cy="13" r="3"/><path d="M13.5 15.5L17 19"/></svg>`},
 ];
 
 /* ===== APP STATE ===== */
@@ -3442,6 +3474,8 @@ let state = {
   notificationFilter:'all',
   filterEquityStatus:'Semua',
   filterEquityOwner:'Semua',
+  announcements: [],
+  filterAnnouncementTab: 'Semua',
 };
 
 const LOCAL_UI_STATE_KEYS = [
@@ -3451,7 +3485,7 @@ const LOCAL_UI_STATE_KEYS = [
   'searchDoc','folderDoc',
   'filterProgressUser','filterProgressStatus','filterProgressDate',
   'filterProgramStatus','filterProgramTrainer','notificationFilter',
-  'filterEquityStatus','filterEquityOwner','filterReimburseStatus','filterRabStatus'
+  'filterEquityStatus','filterEquityOwner','filterReimburseStatus','filterRabStatus','filterAnnouncementTab'
 ];
 function cleanServerStateForClient(serverState={}){
   const cleaned = {...serverState};
@@ -3766,6 +3800,7 @@ function renderPage(){
   else if(p==='documents') c.innerHTML=renderDocuments();
   else if(p==='settings') c.innerHTML=renderSettings();
   else if(p==='timeline') c.innerHTML=renderTimeline();
+  else if(p==='announcements') c.innerHTML=renderAnnouncements();
 
   if(!isPageChange && savedScroll > 0) c.scrollTop = savedScroll;
   afterRender();
@@ -8027,6 +8062,175 @@ function exportEquityCsv(){
   ])];
   const csv = rows.map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
   downloadTextFilePatch(`timeline-equity-${today()}.csv`, csv, 'text/csv;charset=utf-8;');
+}
+
+/* ===== ANNOUNCEMENTS ===== */
+function getAnnouncements(){ return (state.announcements||[]).filter(a=>!a._deleted); }
+
+function renderAnnouncementTypePill(type){
+  const map={info:'Info',penting:'Penting',sukses:'Sukses',event:'Event'};
+  return `<span class="ann-type-pill ${type||'info'}">${map[type]||'Info'}</span>`;
+}
+
+function renderAnnouncements(){
+  const u=state.user;
+  const canManage=isManagerRole(u);
+  const all=getAnnouncements().sort((a,b)=>new Date(b.createdAt||0)-new Date(a.createdAt||0));
+  const tab=state.filterAnnouncementTab||'Semua';
+  const tabs=['Semua','Info','Penting','Sukses','Event'];
+  const pinned=all.filter(a=>a.pinned);
+  const unpinned=all.filter(a=>!a.pinned);
+  const filtered=(tab==='Semua'?unpinned:unpinned.filter(a=>(a.type||'info')===tab.toLowerCase()));
+  const tabCounts={Info:all.filter(a=>a.type==='info').length,Penting:all.filter(a=>a.type==='penting').length,Sukses:all.filter(a=>a.type==='sukses').length,Event:all.filter(a=>a.type==='event').length};
+  const totalAll=all.length;
+  const pinnedCount=pinned.length;
+
+  function cardHtml(ann){
+    const isOwner=ann.authorId===u?.id;
+    const canEdit=canManage||isOwner;
+    const blastDone=ann._lastBlastAt && (Date.now()-new Date(ann._lastBlastAt).getTime())<60000;
+    return `<div class="ann-card${ann.pinned?' pinned':''}">
+      <div class="ann-card-header">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
+          ${renderAnnouncementTypePill(ann.type||'info')}
+          <div class="ann-card-title">${escHtml(ann.title)}</div>
+        </div>
+        <div class="ann-card-actions">
+          ${canEdit?`<button class="ann-blast-btn" onclick="blastAnnouncementNotif('${ann.id}')" title="Blast ke semua user" ${blastDone?'disabled':''}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3l-8.646 8.646M22 3H15M22 3v7"/><path d="M8.5 3.5 3 9l3.5 3.5"/><path d="m3 9 4.5 4.5 4-4"/><path d="M12.5 15 9 18.5l-5.5.5.5-5.5L7.5 10"/></svg>
+            ${blastDone?'Terkirim':'Blast Notif'}
+          </button>
+          <button onclick="pinAnnouncement('${ann.id}')" title="${ann.pinned?'Unpin':'Pin'}" class="pinned-btn${ann.pinned?' active':''}">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>
+          </button>
+          <button onclick="openAnnouncementModal('${ann.id}')" title="Edit">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button onclick="deleteAnnouncement('${ann.id}')" title="Hapus" style="color:#F87171">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </button>`:''}
+        </div>
+      </div>
+      <div class="ann-card-body collapsed" id="ann-body-${ann.id}">${escHtml(ann.body||'')}</div>
+      <button class="ann-expand-btn" onclick="toggleAnnBody('${ann.id}')">Tampilkan lebih banyak</button>
+      <div class="ann-card-meta">
+        <div class="ann-card-meta-author">
+          ${av((ann.authorName||'?').split(' ').map(w=>w[0]).join('').substr(0,2),22,'var(--navy-md)')}
+          <span>${escHtml(ann.authorName||'-')} · ${escHtml(ann.authorRole||'')} · ${new Date(ann.createdAt||Date.now()).toLocaleString('id-ID',{dateStyle:'long',timeStyle:'short'})}</span>
+        </div>
+        ${ann._lastBlastAt?`<span style="font-size:11px;color:var(--muted)">📢 Terakhir di-blast: ${new Date(ann._lastBlastAt).toLocaleString('id-ID',{dateStyle:'short',timeStyle:'short'})}</span>`:''}
+      </div>
+    </div>`;
+  }
+
+  return `
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <div>
+        <div class="page-title">Announcement</div>
+        <div class="page-sub">${totalAll} pengumuman · ${pinnedCount} dipinned</div>
+      </div>
+      ${canManage?`<button class="btn btn-pri" onclick="openAnnouncementModal()">+ Buat Pengumuman</button>`:''}
+    </div>
+    <div class="ann-tabs">
+      ${tabs.map(t=>`<button class="ann-tab${tab===t?' active':''}" onclick="state.filterAnnouncementTab='${t}';renderPage()">${t}${t!=='Semua'?` <span style="opacity:.6;font-size:11px">${tabCounts[t]||0}</span>`:` <span style="opacity:.6;font-size:11px">${totalAll}</span>`}</button>`).join('')}
+    </div>
+    ${pinned.length?`<div class="ann-section-label">📌 DIPINNED (${pinned.length})</div>${pinned.map(cardHtml).join('')}`:''}
+    ${filtered.length?filtered.map(cardHtml).join(''):`<div style="text-align:center;padding:40px;color:var(--muted)">Belum ada pengumuman.</div>`}
+  `;
+}
+
+function toggleAnnBody(id){
+  const el=document.getElementById(`ann-body-${id}`);
+  const btn=el?.nextElementSibling;
+  if(!el||!btn) return;
+  const collapsed=el.classList.toggle('collapsed');
+  btn.textContent=collapsed?'Tampilkan lebih banyak':'Tampilkan lebih sedikit';
+}
+
+function openAnnouncementModal(editId){
+  const ann=editId?(state.announcements||[]).find(a=>a.id===editId):null;
+  const html=`
+    <div class="form-group"><label class="form-label">Judul <span>*</span></label>
+      <input id="ann-title" class="form-control" placeholder="Judul pengumuman..." value="${escHtml(ann?.title||'')}">
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Tipe</label>
+        <select id="ann-type" class="form-control">
+          ${['info','penting','sukses','event'].map(t=>`<option value="${t}"${(ann?.type||'info')===t?' selected':''}>${{info:'Info',penting:'Penting',sukses:'Sukses',event:'Event'}[t]}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Pin di atas?</label>
+        <select id="ann-pin" class="form-control">
+          <option value="0"${!ann?.pinned?' selected':''}>Tidak</option>
+          <option value="1"${ann?.pinned?' selected':''}>Ya, pin</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label class="form-label">Isi Pengumuman <span>*</span></label>
+      <textarea id="ann-body" class="form-control" rows="6" placeholder="Tulis isi pengumuman...">${escHtml(ann?.body||'')}</textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sec" onclick="closeModal()">Batal</button>
+      <button class="btn btn-pri" onclick="saveAnnouncement('${editId||''}')">Simpan</button>
+    </div>`;
+  showModal(editId?'Edit Pengumuman':'Buat Pengumuman Baru', html, 540);
+}
+
+function saveAnnouncement(editId){
+  const title=document.getElementById('ann-title').value.trim();
+  const body=document.getElementById('ann-body').value.trim();
+  if(!title){toast('Judul wajib diisi','error');return;}
+  if(!body){toast('Isi pengumuman wajib diisi','error');return;}
+  const type=document.getElementById('ann-type').value;
+  const pinned=document.getElementById('ann-pin').value==='1';
+  const now=new Date().toISOString();
+  if(!Array.isArray(state.announcements)) state.announcements=[];
+  if(editId){
+    state.announcements=state.announcements.map(a=>a.id===editId?{...a,title,body,type,pinned,updatedAt:now}:a);
+    toast('Pengumuman diperbarui');
+  } else {
+    state.announcements.unshift({id:uid(),title,body,type,pinned,authorId:state.user?.id||'',authorName:state.user?.name||'',authorRole:state.user?.role||'',createdAt:now,updatedAt:now});
+    toast('Pengumuman dibuat');
+  }
+  persistPatched();
+  closeModal(); renderPage();
+  if(typeof window.flushBackendSave==='function') window.flushBackendSave().catch(()=>{});
+}
+
+function deleteAnnouncement(id){
+  if(!confirm('Hapus pengumuman ini?')) return;
+  if(!Array.isArray(state.announcements)) return;
+  state.announcements=state.announcements.map(a=>a.id===id?{...a,_deleted:true,updatedAt:new Date().toISOString()}:a);
+  persistPatched(); renderPage();
+  if(typeof window.flushBackendSave==='function') window.flushBackendSave().catch(()=>{});
+  toast('Pengumuman dihapus');
+}
+
+function pinAnnouncement(id){
+  if(!Array.isArray(state.announcements)) return;
+  state.announcements=state.announcements.map(a=>a.id===id?{...a,pinned:!a.pinned,updatedAt:new Date().toISOString()}:a);
+  persistPatched(); renderPage();
+  if(typeof window.flushBackendSave==='function') window.flushBackendSave().catch(()=>{});
+}
+
+function blastAnnouncementNotif(id){
+  const ann=(state.announcements||[]).find(a=>a.id===id);
+  if(!ann) return;
+  if(!confirm(`Blast notifikasi "${ann.title}" ke semua pengguna?`)) return;
+  const allIds=ACCOUNTS.map(a=>a.id);
+  if(typeof window.createAppNotification==='function'){
+    window.createAppNotification({
+      title:`📢 ${ann.title}`,
+      message:(ann.body||'').slice(0,200)+(ann.body?.length>200?'…':''),
+      type: ann.type==='penting'?'warning': ann.type==='sukses'?'success': ann.type==='event'?'info': 'info',
+      recipientUserIds: allIds,
+      linkPage: 'announcements',
+    });
+  }
+  state.announcements=state.announcements.map(a=>a.id===id?{...a,_lastBlastAt:new Date().toISOString()}:a);
+  persistPatched(); renderPage();
+  if(typeof window.flushBackendSave==='function') window.flushBackendSave().catch(()=>{});
+  toast(`📢 Notifikasi "${ann.title}" dikirim ke ${allIds.length} pengguna`,'success');
 }
 
 function renderSettings(){
