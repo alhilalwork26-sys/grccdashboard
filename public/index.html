@@ -6243,7 +6243,7 @@ function renderReimburseRow(req, canReview){
   window.__reimbursePreviewFiles[`payment_${req.id}`] = req.paymentProofs || [];
   const canAct = canReview && req.status === 'Submitted';
   const canPay = canReview && req.status === 'Approved';
-  const canDelete = canReview || (req.applicantId === state.user?.id && req.status === 'Submitted');
+  const canDelete = canReview || (req.applicantId === state.user?.id && (req.status === 'Submitted' || req.status === 'Rejected'));
   const itemList = (req.items || []).map(item => `<li><strong>${escHtml(item.category)}</strong> - ${escHtml(item.description || '-')} (${fmt$(item.amount)})${item.note?`<br><span style="color:var(--muted)">${escHtml(item.note)}</span>`:''}</li>`).join('');
   const receipts = renderReimburseFilePreviews(req.receipts || [], `receipt_${req.id}`);
   return `<tr>
