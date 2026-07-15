@@ -6159,7 +6159,11 @@ function ensureReimburseState(){
   if(!Array.isArray(state.reimburseRequests)) state.reimburseRequests = [];
   if(!state.filterReimburseStatus) state.filterReimburseStatus = 'Semua';
 }
-function canReviewReimburse(userOrRole){ return isSuperAdminRole(userOrRole) || isFinanceRole(userOrRole); }
+function canReviewReimburse(userOrRole){
+  if(isSuperAdminRole(userOrRole) || isFinanceRole(userOrRole) || isManagerRole(userOrRole)) return true;
+  const name = (typeof userOrRole === 'string' ? userOrRole : (userOrRole?.name || userOrRole?.username || '')).toLowerCase();
+  return name.includes('hilal');
+}
 function activeReimburseRequests(){
   ensureReimburseState();
   return state.reimburseRequests.filter(req => !req?._deleted);
@@ -6551,7 +6555,7 @@ function deleteReimburseItem(reqId, itemIdx){
 }
 
 function reviewReimburse(id, status){
-  if(!canReviewReimburse(state.user)){toast('Hanya Finance dan Super Admin yang bisa review reimburse','error');return;}
+  if(!canReviewReimburse(state.user)){toast('Hanya Finance, Manager, dan yang diizinkan yang bisa review reimburse','error');return;}
   const req = activeReimburseRequests().find(r => r.id === id);
   if(!req) return;
   const note = prompt(status === 'Approved' ? 'Keterangan approval:' : 'Alasan penolakan wajib diisi:');
@@ -6588,7 +6592,7 @@ function reviewReimburse(id, status){
   }
 }
 function markReimbursePaid(id){
-  if(!canReviewReimburse(state.user)){toast('Hanya Finance dan Super Admin yang bisa menandai pembayaran','error');return;}
+  if(!canReviewReimburse(state.user)){toast('Hanya Finance, Manager, dan yang diizinkan yang bisa menandai pembayaran','error');return;}
   const req = activeReimburseRequests().find(r => r.id === id);
   if(!req) return;
   const html = `
@@ -6612,7 +6616,7 @@ function markReimbursePaid(id){
   showModal('Upload Bukti Reimburse', html, 620);
 }
 async function submitReimbursePaid(id){
-  if(!canReviewReimburse(state.user)){toast('Hanya Finance dan Super Admin yang bisa menandai pembayaran','error');return;}
+  if(!canReviewReimburse(state.user)){toast('Hanya Finance, Manager, dan yang diizinkan yang bisa menandai pembayaran','error');return;}
   const req = activeReimburseRequests().find(r => r.id === id);
   if(!req) return;
   const note = document.getElementById('rp-note')?.value.trim() || '';
